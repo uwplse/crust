@@ -156,9 +156,6 @@ const T *ref_mut_deref(ref_mut_t *self) {
   return unsafe_cell_get(T)(&self->parent->value);
 }
 
-short nondet_action();
-short nondet_target();
-
 typedef struct {
   int borrowed_from;
   int immutable;
@@ -197,6 +194,11 @@ typedef struct {
 
 #define MAX_STACK 10
 #define MAX_ACTIONS 10
+
+short __CPROVER_uninterpreted_nondet_action(int i);
+short __CPROVER_uninterpreted_nondet_target(int i, int action, int t);
+short __CPROVER_uninterpreted_nondet_source(int i, int action, int t);
+int __CPROVER_uninterpreted_nondet_value(int i);
 
 int i_of_src(int slot, int type) {
   if(type == TYPE_MUT_PTR) {
@@ -244,8 +246,8 @@ int main(int argc, char **argv) {
   int stack_ptr = 0;
   int i;
   for(i = 0; i < MAX_ACTIONS; i++) {
-	int action = nondet_action();
-	__CPROVER_assume(action >= 0 && action < 7);
+	int action = __CPROVER_uninterpreted_nondet_action(i);
+	__CPROVER_assume(action > 0 && action <= 6);
 	if(action > 0) {
 	  __CPROVER_assume(stack_ptr < MAX_STACK);
 	}
@@ -276,8 +278,8 @@ int main(int argc, char **argv) {
 	  }
 	  stack_ptr--;
 	} else if(action == 1) { // new ref-cell
-	  int slot = nondet_target();
-	  T value = { nondet_target() };
+	  int slot = __CPROVER_uninterpreted_nondet_target(i, action, TYPE_REF_CELL);
+	  T value = { __CPROVER_uninterpreted_nondet_value(i) };
 	  __CPROVER_assume(slot >= 0 && slot < N_REF_CELL);
 	  int target_i = i_of_src(slot, TYPE_REF_CELL);
 	  __CPROVER_assume(live[target_i] == 0);
@@ -285,8 +287,8 @@ int main(int argc, char **argv) {
 	  live[target_i] = 1;
 	  update_stack(target_i, slot, NO_BORROW, NO_BORROW, TYPE_REF_CELL);
 	} else if(action == 2) { // rc_borrow
-	  int source_slot = nondet_target();
-	  int target_slot = nondet_target();
+	  int source_slot = __CPROVER_uninterpreted_nondet_source(i, action, TYPE_REF_CELL);
+	  int target_slot = __CPROVER_uninterpreted_nondet_target(i, action, TYPE_REF);
 	  __CPROVER_assume(source_slot >= 0 && source_slot < N_REF_CELL);
 	  __CPROVER_assume(target_slot >= 0 && target_slot < N_REF);
 	  int src_i = i_of_src(source_slot, TYPE_REF_CELL);
@@ -300,8 +302,8 @@ int main(int argc, char **argv) {
 	  update_stack(target_i, target_slot, src_i, IMMUTABLE, TYPE_REF);
 	  users[src_i]++;
 	} else if(action == 3) { // rc_borrow_mut
-	  int source_slot = nondet_target();
-	  int target_slot = nondet_target();
+	  int source_slot = __CPROVER_uninterpreted_nondet_source(i, action, TYPE_REF_CELL);
+	  int target_slot = __CPROVER_uninterpreted_nondet_target(i, action, TYPE_REF_MUT);
 	  __CPROVER_assume(source_slot >= 0 && source_slot < N_REF_CELL);
 	  __CPROVER_assume(target_slot >= 0 && target_slot < N_REF_MUT);
 	  int src_i = i_of_src(source_slot, TYPE_REF_CELL);
@@ -311,10 +313,11 @@ int main(int argc, char **argv) {
 	  __CPROVER_assume(users[src_i] != -1);
 	  mut_refs[target_slot] = ref_cell_borrow_mut(&r_cell[source_slot]);
 	  users[src_i]++;
+	  live[target_i] = 1;
 	  update_stack(target_i, target_slot, src_i, IMMUTABLE, TYPE_REF);
 	} else if(action == 4) { // ref deref
-	  int source_slot = nondet_target();
-	  int target_slot = nondet_target();
+	  int source_slot = __CPROVER_uninterpreted_nondet_source(i, action, TYPE_REF);
+	  int target_slot = __CPROVER_uninterpreted_nondet_target(i, action, TYPE_CONST_PTR);
 	  __CPROVER_assume(source_slot >= 0 && source_slot < N_REF);
 	  __CPROVER_assume(target_slot >= 0 && target_slot < N_CONST_PTR);
 	  int src_i = i_of_src(source_slot, TYPE_REF);
@@ -322,13 +325,14 @@ int main(int argc, char **argv) {
 	  __CPROVER_assume(live[src_i] == 1);
 	  __CPROVER_assume(live[target_i] == 0);
 	  __CPROVER_assume(users[src_i] != -1);
-	  const_t_ptr[target_slot] = ref_deref(&refs[source_slot]);
+	  const_t_ptr[target_slot] = ref_deref(&refs[source_slot]);;
+	  assert(const_t_ptr[target_slot] != NULL);
 	  live[target_i] = 1;
 	  users[src_i]++;
 	  update_stack(target_i, target_slot, src_i, IMMUTABLE, TYPE_CONST_PTR);
 	} else if(action == 5) { // mut_ref deref
-	  int source_slot = nondet_target();
-	  int target_slot = nondet_target();
+	  int source_slot = __CPROVER_uninterpreted_nondet_source(i, action, TYPE_REF_MUT);
+	  int target_slot = __CPROVER_uninterpreted_nondet_target(i, action, TYPE_CONST_PTR);
 	  __CPROVER_assume(source_slot >= 0 && source_slot < N_REF_MUT);
 	  __CPROVER_assume(target_slot >= 0 && target_slot < N_CONST_PTR);
 	  int source_i = i_of_src(source_slot, TYPE_REF_MUT);
@@ -337,12 +341,13 @@ int main(int argc, char **argv) {
 	  __CPROVER_assume(live[target_i] == 0);
 	  __CPROVER_assume(users[source_i] != -1);
 	  const_t_ptr[target_slot] = ref_mut_deref(&mut_refs[source_slot]);
+	  assert(const_t_ptr[target_slot] != NULL);
 	  live[target_i] = 1;
 	  users[source_i]++;
 	  update_stack(target_i, target_slot, source_i, IMMUTABLE, TYPE_CONST_PTR);
 	} else if(action == 6) { // mut_ref deref_mut
-	  int source_slot = nondet_target();
-	  int target_slot = nondet_target();
+	  int source_slot = __CPROVER_uninterpreted_nondet_source(i, action, TYPE_REF_MUT);
+	  int target_slot = __CPROVER_uninterpreted_nondet_target(i, action, TYPE_MUT_PTR);
 	  __CPROVER_assume(source_slot >= 0 && source_slot < N_REF_MUT);
 	  __CPROVER_assume(target_slot >= 0 && target_slot < N_MUT_PTR);
 	  int source_i = i_of_src(source_slot, TYPE_REF_MUT);
@@ -351,15 +356,19 @@ int main(int argc, char **argv) {
 	  __CPROVER_assume(live[target_i] == 0);
 	  __CPROVER_assume(users[source_i] == 0);
 	  t_ptr[target_slot] = ref_mut_deref_mut(&mut_refs[source_slot]);
+	  assert(t_ptr[target_slot] != NULL);
 	  live[target_i] = 1;
 	  users[source_i] = -1;
 	  update_stack(target_i, target_slot, source_i, MUTABLE, TYPE_MUT_PTR);
 	}
-	for(int j = 0; j < N_MUT_PTR; j++) {
-	  for(int k = 0; k < N_MUT_PTR; k++) {
-		assert(live[i_of_src(j, TYPE_MUT_PTR)] == 0 || live[i_of_src(k, TYPE_CONST_PTR)] || t_ptr[i_of_src(j, TYPE_MUT_PTR)] != const_t_ptr[i_of_src(k, TYPE_CONST_PTR)]);
-		if(j == k) { continue; }
-		assert(live[i_of_src(j, TYPE_MUT_PTR)] == 0 || live[i_of_src(k, TYPE_MUT_PTR)] || t_ptr[i_of_src(j, TYPE_MUT_PTR)] != t_ptr[i_of_src(k, TYPE_MUT_PTR)]);
+	{
+	  int j = 0, k = 0;
+	  for( ; j < N_MUT_PTR; j++) {
+		for(; k < N_MUT_PTR; k++) {
+		  assert(live[i_of_src(j, TYPE_MUT_PTR)] == 0 || live[i_of_src(k, TYPE_CONST_PTR)] == 0|| t_ptr[j] != const_t_ptr[k]);
+		  if(j == k) { continue; }
+		  assert(live[i_of_src(j, TYPE_MUT_PTR)] == 0 || live[i_of_src(k, TYPE_MUT_PTR)] == 0 || t_ptr[j] != t_ptr[k]);
+		}
 	  }
 	}
   }
