@@ -1,0 +1,89 @@
+# Syntax consists of whitespace-separated words.  Characters "()[]{}<>:;" are
+# for human readability ONLY - for parsing, treat them like whitespace.
+# Variable-length structures are prefixed with the number of elements.
+#
+# Type variables are prefixed with 'var' (when used).  struct/enum type names
+# are unprefixed.  Lifetimes and ordinary variables are unprefixed because they
+# don't share a namespace with anything else.
+
+# 'Cell' has zero lifetime parameters and one type parameter.  The type
+# parameter is named T.
+struct Cell<0><1: T>
+# Cell has one field.
+{1
+    # Field name + type.  The type is UnsafeCell which takes 0 lifetime
+    # parameters and 1 type parameter.  The type parameter is instantiated with
+    # the type variable 'T'.
+    value: UnsafeCell<0><1: var T>
+}
+
+fn Cell_new<0><1: T>
+    args (1: value: var T)
+    return Cell<0><1: var T>
+    body
+        struct_literal Cell<0><1: var T>
+        {1
+            # Initialize 'value' with 'UnsafeCell::new::<T>(value)
+            value: call UnsafeCell_new<0><1: var T>(1: var value)
+        }
+
+struct UnsafeCell<0><1: T>
+{1
+    value: var T
+}
+
+fn UnsafeCell_new<0><1: T>
+    args (1: value: var T)
+    return UnsafeCell<0><1: var T>
+    body struct_literal UnsafeCell<0><1: var T> {1 value: var value}
+
+# Notation:
+#
+# Quoted strings denote literal words.
+#
+# "*" denotes zero or more copies.  The actual list of items will be prefixed
+# with the number of items present.
+#   
+# Words in parentheses are used to distinguish different uses of the same
+# syntactic class.  For example, a struct definition contains a name and two
+# lists of names.  These are written "name(struct)", "name(lifetime_param)",
+# and "name(type_param)" to indicate the purpose of each "name".
+
+# Syntax:
+#   word: any sequence of letters, underscores, and/or digits
+#
+#   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def*
+#   field_def ::= name(field) type
+#   type ::= "var" name
+#          | name(struct) lifetime* type*
+#          | "ref" lifetime type
+#          | "ref_mut" lifetime type
+#          | "int" word(bits)
+#          | "uint" word(bits)
+#          | "bool"
+#          | "unit"
+#   lifetime ::= name
+#   name ::= word
+#
+#   fn_def ::= "fn" name(fn) name(lifetime_param)* name(type_param)*
+#                   "args" arg_decl*  "return" type  "body" expr
+#   arg_decl ::= name(arg) type
+#
+#   expr ::= var name
+#          | "simple_literal" type word
+#          | "struct_literal" type(struct) field*
+#          | "enum_literal" type(enum) name(variant) word(variant_index) value*
+#          | "match" expr match_arm*
+#          | "block" stmt* expr
+#          | "field" expr(struct) name(field)
+#          | "deref" expr
+#          | "addr_of" expr
+#          | "call" name(fn) lifetime* type* expr(arg)*
+#          | "unsafe" stmt* expr
+#   match_arm ::= pattern expr
+#   pattern ::= "bind" type name(var)
+#             | "enum" type(enum) name(variant) word(variant_index) pattern*
+#             | "wild"
+#   field ::= name(field) expr
+#   stmt ::= "expr" expr
+#          | "let" name(var) type(var) expr
