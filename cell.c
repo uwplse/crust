@@ -1,27 +1,58 @@
 #include<stdlib.h>
 #include<assert.h>
+#define unsafe_cell_t(type) unsafe_cell_##type##_t
 #define option_t(type) option_##type##_t
 #define option_t_impl(type) typedef struct { option_flag_t flag; type maybe; } option_t(type);
+#define unsafe_cell_new(type) Unsafe_Cell_##type##_new
+#define unsafe_cell_unwrap(type) Unsafe_Cell_##type##_unwrap
+#define unsafe_cell_get(type) Unsafe_Cell_##type##_get
+#define unsafe_cell_t_impl(type) typedef struct { type value; } unsafe_cell_t(type); \
+  unsafe_cell_t(type) unsafe_cell_new(type)(type t) {					\
+	unsafe_cell_t(type) to_ret;											\
+	to_ret.value = t;													\
+  }																		\
+  type *unsafe_cell_get(type)(unsafe_cell_t(type) *self) {				\
+	return &self->value;												\
+  }																		\
+  type unsafe_cell_unwrap(type)(unsafe_cell_t(type) *self) {			\
+	return self->value;													\
+  }
+	
+#define cell_t(type) cell_##type##_t
+#define cell_new(type) Cell_##type##_new
+#define cell_get(type) Cell_##type##_get
+#define cell_set(type) Cell_##type##_set
+#define cell_t_impl(type) typedef struct { unsafe_cell_t(type) value; } cell_t(type); \
+  cell_t(type) cell_new(type)(type t) {									\
+	cell_t(type) to_ret;												\
+	to_ret.value = unsafe_cell_new(type)(t);							\
+	return to_ret;														\
+  }																		\
+  type cell_get(type)(cell_t(type) *self) {								\
+	return *(unsafe_cell_get(type)(&self->value));						\
+  }																		\
+  void cell_set(type)(cell_t(type) *self, type value) {					\
+	*(unsafe_cell_get(type)(&self->value)) = value;						\
+  }
 //#define __CPROVER_assume(x)
 
-struct T {
+typedef struct {
   int a;
-};
+} T;
+
+unsafe_cell_t_impl(T)
+unsafe_cell_t_impl(int);
+cell_t_impl(int);
 
 typedef enum {
   SOME,
   NONE
 } option_flag_t;
 
-typedef struct unsafe_cell {
-  struct T value;
-} unsafe_cell_t;
-
 typedef struct ref_cell {
-  int borrow;
-  struct unsafe_cell value;
+  cell_t(int) borrow;
+  unsafe_cell_t(T) value;
 } ref_cell_t;
-
 
 typedef struct {
   ref_cell_t *parent;
@@ -35,47 +66,36 @@ typedef struct {
 
 option_t_impl(ref_t)
 
-unsafe_cell_t unsafe_cell_new(struct T value) {
-  unsafe_cell_t to_ret = { value };
+ref_cell_t ref_cell_new(T value) {
+  ref_cell_t to_ret = { 0, unsafe_cell_new(T)(value) };
   return to_ret;
 }
 
-struct T *unsafe_cell_get(unsafe_cell_t *self) {
-  return &(self->value);
-}
-
-struct T unsafe_cell_unwrap(unsafe_cell_t *self) {
-  return self->value;
-}
-
-ref_cell_t ref_cell_new(struct T value) {
-  ref_cell_t to_ret = { 0, unsafe_cell_new(value) };
-  return to_ret;
-}
-
-struct T ref_cell_unwrap(ref_cell_t *self) {
-  return unsafe_cell_unwrap(&self->value);
+T ref_cell_unwrap(ref_cell_t *self) {
+  return unsafe_cell_unwrap(T)(&self->value);
 }
 
 option_t(ref_t) ref_cell_try_borrow(ref_cell_t *self) {
-  if(self->borrow == -1) {
+  int _temp = cell_get(int)(&self->borrow);
+  if(_temp == -1) {
 	option_t(ref_t) to_ret;
 	to_ret.flag = NONE;
 	return to_ret;
   } else {
 	option_t(ref_t) to_ret;
-	self->borrow = self->borrow + 1;
+	cell_set(int)(&self->borrow, _temp + 1);
 	to_ret.maybe.parent = self;
 	return to_ret;
   }
 }
 
 option_t(ref_mut_t) ref_cell_try_mut_borrow(ref_cell_t *self) {
-  if(self->borrow == 0) {
+  int _temp = cell_get(int)(&self->borrow);
+  if(_temp == 0) {
 	option_t(ref_mut_t) to_ret;
 	to_ret.flag = SOME;
 	to_ret.maybe.parent = self;
-	self->borrow = -1;
+	cell_set(int)(&self->borrow,-1);
 	return to_ret;
   } else {
 	option_t(ref_mut_t) to_ret;
@@ -103,30 +123,30 @@ ref_t ref_cell_borrow(ref_cell_t *self) {
 }
 
 void ref_drop(ref_t *self) {
-  self->parent->borrow = self->parent->borrow - 1;
+  cell_set(int)(&self->parent->borrow, cell_get(int)(&self->parent->borrow) - 1);
 }
 
-const struct T *ref_deref(ref_t *self) {
-  return unsafe_cell_get(&self->parent->value);
+const T *ref_deref(ref_t *self) {
+  return unsafe_cell_get(T)(&self->parent->value);
 }
 
 void ref_mut_drop(ref_mut_t *self) {
-  self->parent->borrow = self->parent->borrow - 1;
+  cell_set(int)(&self->parent->borrow, 0);
 }
 
-struct T *ref_mut_deref_mut(ref_mut_t *self) {
-  return unsafe_cell_get(&self->parent->value);
+T *ref_mut_deref_mut(ref_mut_t *self) {
+  return unsafe_cell_get(T)(&self->parent->value);
 }
 
-const struct T *ref_mut_deref(ref_mut_t *self) {
-  return unsafe_cell_get(&self->parent->value);
+const T *ref_mut_deref(ref_mut_t *self) {
+  return unsafe_cell_get(T)(&self->parent->value);
 }
 
 short nondet_action();
 short nondet_target();
 
 int main(int argc, char **argv) {
-  struct T val = { 2 };
+  T val = { 2 };
   ref_cell_t m = ref_cell_new(val);
   int m_flags[6] = { 0, 0, 0, 0, 0, 0 };
   int im_flags[6] = { 0, 0, 0, 0, 0, 0 };
@@ -158,10 +178,15 @@ int main(int argc, char **argv) {
 	for(int j = 0; j < 6; j++) {
 	  for(int k = 0; k < 6; k++) {
 		if(j == k) { continue; }
-		assert(m_flags[j] == 0 || m_flags[k] == 0 || mut_refs[j].parent != mut_refs[k].parent);
-		assert(m_flags[j] == 0 || im_flags[k] == 0 || mut_refs[j].parent != refs[k].parent);
+		assert(m_flags[j] == 0 || m_flags[k] == 0 || mut_ref_mut_deref(&mut_refs[j]) != mut_ref_mut_deref(&mut_refs[k]));
+		assert(m_flags[j] == 0 || im_flags[k] == 0 || mut_ref_mut_deref(&mut_refs[j]) != ref_deref(&refs[k]));
 	  }
 	}
   }
   return 0;
 }
+
+/*
+ * infer mut borrow from lifetimes and whether the ARUGMENT reference type is mutable
+ * raise an error if lifetime arguments appear in some other context than rerference types
+ */
