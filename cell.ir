@@ -52,8 +52,6 @@ fn UnsafeCell_new<0><1: T>
 # Syntax:
 #   word: any sequence of letters, underscores, and/or digits
 #
-#   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def*
-#   field_def ::= name(field) type
 #   type ::= "var" name
 #          | name(struct) lifetime* type*
 #          | "ref" lifetime type
@@ -65,6 +63,12 @@ fn UnsafeCell_new<0><1: T>
 #   lifetime ::= name
 #   name ::= word
 #
+#   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def*
+#   field_def ::= name(field) type
+#
+#   enum_def ::= "enum" name variant_def*
+#   variant_def ::= name(variant) type*
+#
 #   fn_def ::= "fn" name(fn) name(lifetime_param)* name(type_param)*
 #                   "args" arg_decl*  "return" type  "body" expr
 #   arg_decl ::= name(arg) type
@@ -72,7 +76,7 @@ fn UnsafeCell_new<0><1: T>
 #   expr ::= var name
 #          | "simple_literal" type word
 #          | "struct_literal" type(struct) field*
-#          | "enum_literal" type(enum) name(variant) word(variant_index) value*
+#          | "enum_literal" type(enum) name(variant) word(variant_index) expr*
 #          | "match" expr match_arm*
 #          | "block" stmt* expr
 #          | "field" expr(struct) name(field)
