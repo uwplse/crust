@@ -63,10 +63,10 @@ fn UnsafeCell_new<0><1: T>
 #   lifetime ::= name
 #   name ::= word
 #
-#   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def*
+#   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def* name(drop_fn)?
 #   field_def ::= name(field) type
 #
-#   enum_def ::= "enum" name variant_def*
+#   enum_def ::= "enum" name variant_def* name(drop_fn)?
 #   variant_def ::= name(variant) type*
 #
 #   fn_def ::= "fn" name(fn) name(lifetime_param)* name(type_param)*
@@ -84,6 +84,7 @@ fn UnsafeCell_new<0><1: T>
 #          | "addr_of" expr
 #          | "call" name(fn) lifetime* type* expr(arg)*
 #          | "unsafe" stmt* expr
+#		   | "assign" expr expr
 #   match_arm ::= pattern expr
 #   pattern ::= "bind" type name(var)
 #             | "enum" type(enum) name(variant) word(variant_index) pattern*
