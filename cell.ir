@@ -53,7 +53,7 @@ fn UnsafeCell_new<0><1: T>
 #   word: any sequence of letters, underscores, and/or digits
 #
 #   type ::= "var" name
-#          | name(struct) lifetime* type*
+#          | "adt" name(struct_or_enum) lifetime* type*
 #          | "ref" lifetime type
 #          | "ref_mut" lifetime type
 #          | "int" word(bits)
