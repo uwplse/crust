@@ -73,18 +73,19 @@ fn UnsafeCell_new<0><1: T>
 #                   "args" arg_decl*  "return" type  "body" expr
 #   arg_decl ::= name(arg) type
 #
-#   expr ::= var name
-#          | "simple_literal" type word
-#          | "struct_literal" type(struct) field*
-#          | "enum_literal" type(enum) name(variant) word(variant_index) expr*
-#          | "match" expr match_arm*
-#          | "block" stmt* expr
-#          | "field" expr(struct) name(field)
-#          | "deref" expr
-#          | "addr_of" expr
-#          | "call" name(fn) lifetime* type* expr(arg)*
-#          | "unsafe" stmt* expr
-#		   | "assign" expr expr
+#   expr ::= type expr_variant
+#   expr_variant ::= "var" name
+#                  | "simple_literal" word
+#                  | "struct_literal" field*
+#                  | "enum_literal" name(variant) word(variant_index) expr*
+#                  | "match" expr match_arm*
+#                  | "block" stmt* expr
+#                  | "field" expr(struct) name(field)
+#                  | "deref" expr
+#                  | "addr_of" expr
+#                  | "call" name(fn) lifetime* type* expr(arg)*
+#                  | "unsafe" stmt* expr
+#                  | "assign" expr expr
 #   match_arm ::= pattern expr
 #   pattern ::= "bind" type name(var)
 #             | "enum" type(enum) name(variant) word(variant_index) pattern*
