@@ -56,6 +56,8 @@ fn UnsafeCell_new<0><1: T>
 #          | "adt" name(struct_or_enum) lifetime* type*
 #          | "ref" lifetime type
 #          | "ref_mut" lifetime type
+#          | "ptr" type
+#          | "ptr_mut" type
 #          | "int" word(bits)
 #          | "uint" word(bits)
 #          | "bool"
