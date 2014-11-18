@@ -4,29 +4,44 @@
 --crate-type lib
 input.rs
  *)
-
-(*
-let rec (adt_type_name : mono_type -> string) = function
-  | `Adt_type a -> mangle_adt_name a
-  | `Ref (_,t) -> (type_name t) ^ "_ptr"
-  | `Ref_Mut (_,t) -> "const_" ^ (type_name t) ^ "_ptr"
-  | `Int _ -> "int"
-  | `UInt _ -> "uint"
-  | `Bool -> "int"
-  | `Unit -> "void"
-and mangle_adt_name t = 
-  if t.type_param = [] then
-	t.type_name ^ "_t"
-  else
-	t.type_name ^ 
-	  (String.concat "_" (List.map adt_type_name t.type_param))
-	  ^ "_t"
-and mangle_fn_name fn_name mono_args = 
-  match mono_args with
-  | [] -> fn_name
-  | _ -> fn_name ^ (String.concat "_" (List.map adt_type_name mono_args))*)
-
 module Compilation = struct
+
+	let rec (adt_type_name : Types.mono_type -> string) = function
+	  | `Adt_type a -> mangle_adt_name a
+	  | `Ptr t | `Ref (_,t) -> (adt_type_name t) ^ "_ptr"
+	  | `Ptr_Mut t | `Ref_Mut (_,t) -> "const_" ^ (adt_type_name t) ^ "_ptr"
+	  | `Int _ -> "int"
+	  | `UInt _ -> "uint"
+	  | `Bool -> "int"
+	  | `Unit -> "void"
+	  | `Bottom -> failwith "No C representation"
+	  | `Tuple tl -> tuple_name tl
+	and mangle_adt_name t = 
+	  if t.Types.type_param = [] then
+		t.Types.type_name ^ "_t"
+	  else
+		t.Types.type_name ^ 
+		  (String.concat "_" (List.map adt_type_name t.Types.type_param))
+		  ^ "_t"
+	and tuple_name tl = 
+		 "tuple_" ^ (String.concat "_" (List.map adt_type_name tl))
+
+	let mangle_fn_name fn_name mono_args = 
+	  match mono_args with
+	  | [] -> fn_name
+	  | _ -> fn_name ^ (String.concat "_" (List.map adt_type_name mono_args))
+
+	let rec type_to_string = function
+	  | `Unit -> "void"
+	  | `Bool -> "int"
+	  | `UInt _ -> "unsigned integer"
+	  | `Int _ -> "int"
+	  | `Ptr t | `Ref (_,t) -> "const " ^ (type_to_string t) ^"*"
+	  | `Ptr_Mut t | `Ref_Mut (_,t) -> (type_to_string t) ^ "*"
+	  | `Bottom -> failwith "No C representation"
+	  | `Tuple l -> tuple_name l
+	  | `Adt_type a_type -> mangle_adt_name a_type
+
 	type r_type = Types.r_type
 	type simple_type = Types.simple_type
 	type lifetime = Types.lifetime
@@ -94,7 +109,8 @@ module Compilation = struct
 								) m_arms in
 		 (`Unit,`Match (e,m_arms'))
 	  | `Block (s,e) -> (`Unit,(`Block (s,(push_assignment lhs e))))
-	let (lift_complex : all_expr complex_expr -> (string * all_expr)) = fun expr ->
+
+	let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
 	  match expr with
 	  | `Block (s,e)  ->
 		 let out_var = fresh_temp () in
@@ -104,6 +120,7 @@ module Compilation = struct
 		 let out_var = fresh_temp () in
 		 let m_arms' = List.map (fun (patt,m_arm) -> (patt,(push_assignment (`Var out_var) m_arm))) m_arms in
 		 (out_var,(`Unit,`Match (e,m_arms')))
+
 	let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> 'a) -> 'a = 
 	  fun expr cb ->
 	  let expr' = simplify_ir expr in
