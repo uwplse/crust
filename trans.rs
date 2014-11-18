@@ -260,9 +260,21 @@ impl Trans for Expr {
             // ExprIndex
             // ExprSlice
             ExprPath(ref path) => {
-                // TODO: nullary enum variants, static constants
-                format!("var {}",
-                        path.segments[path.segments.len() - 1].identifier.as_str())
+                if let Some((var_name, var_idx)) = find_variant(tcx, self) {
+                    format!("enum_literal {} {} 0",
+                            var_name,
+                            var_idx)
+                } else {
+                    use rustc::middle::def::*;
+                    match tcx.def_map.borrow()[self.id] {
+                        DefLocal(..) =>
+                            format!("var {}",
+                                    path.segments[path.segments.len() - 1]
+                                        .identifier.as_str().into_string()),
+                        d => format!("const {}",
+                                     mangled_def_name(tcx, d.def_id())),
+                    }
+                }
             },
             ExprAddrOf(_mutbl, ref expr) =>
                 format!("addr_of {}", expr.trans(tcx)),

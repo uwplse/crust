@@ -80,6 +80,7 @@ fn UnsafeCell_new<0><1: T>
 #
 #   expr ::= type expr_variant
 #   expr_variant ::= "var" name
+#                  | "const" name
 #                  | "simple_literal" word
 #                  | "struct_literal" field*
 #                  | "enum_literal" name(variant) word(variant_index) expr*
