@@ -38,7 +38,7 @@ module Compilation = struct
 	  | `Return e -> `Return e
 	  | e -> `Return e
 	type simple_expr = [
-	  | `Struct_Field of t_simple_expr * string
+	  | `Struct_Field of simple_expr * string
 	  | `Var of string
 	  | `Literal of string
 	  | `Deref of t_simple_expr
@@ -52,7 +52,7 @@ module Compilation = struct
 	 and t_simple_expr = r_type * simple_expr
 	 and 'a complex_expr = [
 	   | `Block of ('a stmt list) * 'a
-	   | `Unsafe of ('a stmt list) * 'a
+(*	   | `Unsafe of ('a stmt list) * 'a*)
 	   | `Match of simple_expr * ('a match_arm list)
 	   ]
 	 and struct_fields = struct_field list
@@ -62,7 +62,7 @@ module Compilation = struct
 	   | `Let of string * r_type * t_simple_expr
 	   | `Declare of string * r_type
 	   ]
-	and 'a match_arm = (pattern * 'a)
+	and 'a match_arm = (simple_expr * 'a)
 	and pattern = [
 	  | `Bind of r_type * string
 	  | `Enum of string * Types.variant_name * int * (pattern list)
@@ -80,7 +80,7 @@ module Compilation = struct
 	  let new_id = !counter in
 	  counter := !counter + 1;
 	  Printf.sprintf "__temp_%d" new_id
-	let rec push_assignment (lhs : simple_expr) e = 
+	let rec push_assignment (lhs : simple_expr) (e : all_expr) = 
 	  match (snd e) with
 	  | #simple_expr as s -> 
 		 let assign = `Assignment (lhs,((fst e),s)) in
@@ -91,12 +91,12 @@ module Compilation = struct
 								) m_arms in
 		 (`Unit,`Match (e,m_arms'))
 	  | `Block (s,e) -> (`Unit,(`Block (s,(push_assignment lhs e))))
-	  | `Unsafe (s,e) ->
-		 (`Unit,(`Unsafe (s,(push_assignment lhs e))))
+(*	  | `Unsafe (s,e) ->
+		 (`Unit,(`Unsafe (s,(push_assignment lhs e))))*)
 	let (lift_complex : all_expr complex_expr -> (string * all_expr)) = fun expr ->
 	  match expr with
 	  | `Block (s,e) 
-	  | `Unsafe (s,e) ->
+(*	  | `Unsafe (s,e)*) ->
 		 let out_var = fresh_temp () in
 		 let e' = push_assignment (`Var out_var) e in
 		 (out_var,(`Unit,`Block (s,e')))
@@ -105,7 +105,7 @@ module Compilation = struct
 		 let m_arms' = List.map (fun (patt,m_arm) -> (patt,(push_assignment (`Var out_var) m_arm))) m_arms in
 		 (out_var,(`Unit,`Match (e,m_arms')))
 	let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> 'a) -> 'a = 
-	  fun expr 
+	  fun expr cb ->
 	  let expr' = simplify_ir expr in
 	  let e_type = fst expr' in
 	  match (snd expr') with
@@ -118,10 +118,10 @@ module Compilation = struct
 		 cb [declaration ; assign_block] replacement
 	and apply_lift e_type sub_expr cb =
 	  apply_lift_cb sub_expr (fun stmt out_var -> 
-								let op = cb out_var in
-								let block_e = (e_type,op) in
-								let block = `Block (stmt,block_e) in
-								(e_type,block)
+							  let op = cb out_var in
+							  let block_e = (e_type,op) in
+							  let block = `Block (stmt,block_e) in
+							  (e_type,block)
 							 )
 	and simplify_adt : 'a. r_type -> 'a list -> ?post:(t_simple_expr -> all_expr list) -> (t_simple_expr -> int -> 'a -> simple_expr) -> (int -> 'a -> Ir.expr) -> all_expr = fun e_type components ?(post=(fun _ -> [])) lhs rhs ->
 	  let out_var = fresh_temp () in
@@ -156,44 +156,57 @@ module Compilation = struct
 	  | `Var s -> (fst expr,(`Var s))
 	  | `Literal s -> (fst expr,`Literal s)
 	  | `Return r -> apply_lift (fst expr) r (fun e -> `Return e)
-	  | `Struct_Field (s,f) -> apply_lift (fst expr) s (fun e -> `Struct_Field (e,f))
+	  | `Struct_Field (s,f) -> apply_lift (fst expr) s (fun e -> `Struct_Field (snd e,f))
 	  | `Tuple t_fields ->
 		 let tuple_type = fst expr in
 		 let lhs = fun adt_var f_index _ ->
-		   `Struct_Field (adt_var,(Printf.sprintf "field%d" f_index))
+		   `Struct_Field ((snd adt_var),(Printf.sprintf "field%d" f_index))
 		 in
 		 let rhs = fun _ f -> f in
 		 simplify_adt tuple_type t_fields lhs rhs
 	  | `Struct_Literal s_fields ->
 		 let struct_type = fst expr in
 		 let lhs = fun adt_var _ (f,_) ->
-		   `Struct_Field (adt_var,f)
+		   `Struct_Field (snd adt_var,f)
 		 in
 		 let rhs = fun _ (_,e) -> e in
 		 simplify_adt struct_type s_fields lhs rhs
 	  | `Enum_Literal (_,tag,exprs) ->
 		 let lhs = fun adt_var f_index _ ->
-		   (* these bottom types are LIES. Is there any merit in knowing the type of the 
-			* struct whose field being accessed? Not really. 
-			* TODO: investigate changing t_simple_type to simple_type in Struct_Field
-			*)
-		   let data = `Bottom,`Struct_Field (adt_var,"data") in
-		   let tag_field = `Bottom,`Struct_Field (data,(Printf.sprintf "tag%d" tag)) in
+		   let data = `Struct_Field (snd adt_var,"data") in
+		   let tag_field = `Struct_Field (data,(Printf.sprintf "tag%d" tag)) in
 		   let e_field = `Struct_Field (tag_field,(Printf.sprintf "field%d" tag)) in
 		   e_field
 		 in
 		 let rhs = fun _ e -> e in
 		 let post = fun adt_var ->
 		   let tag_rhs = (`Int 4,(`Literal (string_of_int tag))) in
-		   let discriminant_field = `Struct_Field (adt_var,"discr") in
+		   let discriminant_field = `Struct_Field (snd adt_var,"discr") in
 		   let assignment = `Assignment (discriminant_field,tag_rhs) in
 		   [(`Unit,assignment)] in
 		 simplify_adt (fst expr) exprs ~post:post lhs rhs
+	  | `Unsafe (s,e) 
 	  | `Block (s,e) ->
 		 let b_type = fst e in
+		 let stmt_frag  = List.flatten (List.map simplify_stmt s) in
 		 apply_lift_cb e (fun stmt e' ->
-									 (b_type,`Block (stmt,(e' :> all_expr)))
-									)
+						  let all_stmt = stmt_frag @ stmt in
+						  let block = `Block (all_stmt,(e' :> all_expr)) in
+						  (b_type,block))
+	and simplify_stmt : Ir.stmt -> all_expr stmt list = function
+	  | `Let (v_name,v_type,expr) ->
+		 let expr' = simplify_ir expr in
+		 let e_type = fst expr' in
+		 begin
+		   match (snd expr') with
+		   | #simple_expr as s -> [`Let (v_name,v_type,(e_type,s))]
+		   | #complex_expr as c -> 
+			  let c' = push_assignment (`Var v_name) (e_type,c) in
+			  [`Declare (v_name,v_type); `Expr c']
+		 end
+	  | `Expr e ->
+		 let e' = simplify_ir e in
+		 [`Expr e']
 (*		 apply_lift (fst expr) e (fun e' -> `Block ([],(e' :> all_expr)))*)
 (*	let compile_fn_inst (f_name,mono_args) = 
 	  let fn_def = Hashtbl.find fn_env f_name in
