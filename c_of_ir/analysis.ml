@@ -26,7 +26,7 @@ let rec walk_type t_set t =
 		 a.type_param
   | `Ref (_,t') -> walk_type t_set t'
   | `Ref_Mut (_,t') -> walk_type t_set t'
-  | t -> t_set
+  | #simple_type -> t_set
 and walk_type_def t_set adt_def m_params =
   let gen_binding = fun t_names ->
 	List.map2 (fun t_name t_value -> (t_name,t_value)) t_names m_params

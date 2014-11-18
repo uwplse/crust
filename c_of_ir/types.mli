@@ -13,7 +13,10 @@ type 'a mono_r_type = [
   | `Adt_type of 'a adt_type
   | `Ref of lifetime * 'a
   | `Ref_Mut of lifetime * 'a
+  | `Ptr of 'a
+  | `Ptr_Mut of 'a
   | simple_type
+  | `Tuple of 'a list
   | `Bottom
   ]
  and 'a adt_type = {

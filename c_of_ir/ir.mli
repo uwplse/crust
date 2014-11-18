@@ -1,6 +1,8 @@
 type r_type = Types.r_type
 type bin_op = [
 	`Add
+  | `And
+  | `Eq
   ]
 type un_op = [
 	`Negate
