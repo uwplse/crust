@@ -51,8 +51,8 @@ module Compilation = struct
 	  ]
 	 and t_simple_expr = r_type * simple_expr
 	 and 'a complex_expr = [
-	   | `Block of ('a stmt list) * t_simple_expr
-	   | `Unsafe of ('a stmt list) * t_simple_expr
+	   | `Block of ('a stmt list) * 'a
+	   | `Unsafe of ('a stmt list) * 'a
 	   | `Match of simple_expr * ('a match_arm list)
 	   ]
 	 and struct_fields = struct_field list
@@ -71,6 +71,7 @@ module Compilation = struct
 	type all_expr = r_type * [ all_expr complex_expr | simple_expr ]
 	type all_complex = all_expr complex_expr
 	type r_all_expr = [ all_expr complex_expr | simple_expr ]
+	exception Break of all_expr
 	let is_complex (_,e) = match e with
 	  | #complex_expr -> true
 	  | _ -> false
@@ -104,7 +105,7 @@ module Compilation = struct
 		 let m_arms' = List.map (fun (patt,m_arm) -> (patt,(push_assignment (`Var out_var) m_arm))) m_arms in
 		 (out_var,(`Unit,`Match (e,m_arms')))
 	let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> 'a) -> 'a = 
-	  fun expr cb ->
+	  fun expr 
 	  let expr' = simplify_ir expr in
 	  let e_type = fst expr' in
 	  match (snd expr') with
@@ -173,7 +174,7 @@ module Compilation = struct
 	  | `Enum_Literal (_,tag,exprs) ->
 		 let lhs = fun adt_var f_index _ ->
 		   (* these bottom types are LIES. Is there any merit in knowing the type of the 
-			* field being accessed? Not really. 
+			* struct whose field being accessed? Not really. 
 			* TODO: investigate changing t_simple_type to simple_type in Struct_Field
 			*)
 		   let data = `Bottom,`Struct_Field (adt_var,"data") in
@@ -188,7 +189,12 @@ module Compilation = struct
 		   let assignment = `Assignment (discriminant_field,tag_rhs) in
 		   [(`Unit,assignment)] in
 		 simplify_adt (fst expr) exprs ~post:post lhs rhs
-	  | `Block (s,e) -> assert false
+	  | `Block (s,e) ->
+		 let b_type = fst e in
+		 apply_lift_cb e (fun stmt e' ->
+									 (b_type,`Block (stmt,(e' :> all_expr)))
+									)
+(*		 apply_lift (fst expr) e (fun e' -> `Block ([],(e' :> all_expr)))*)
 (*	let compile_fn_inst (f_name,mono_args) = 
 	  let fn_def = Hashtbl.find fn_env f_name in
 	  let bindings = List.map2 (fun t_name t_val -> (t_name,t_val)) fn_def.fn_tparams mono_args in
