@@ -31,9 +31,13 @@ impl<T: Trans> Trans for P<T> {
 
 impl Trans for FnDecl {
     fn trans(&self, tcx: &ty::ctxt) -> String {
+        let ret = match self.output {
+            Return(ref t) => t.trans(tcx),
+            NoReturn(_) => "bottom".into_string(),
+        };
         format!("(args {}) return {}",
                 self.inputs.trans(tcx),
-                self.output.trans(tcx))
+                ret)
     }
 }
 
@@ -61,10 +65,10 @@ impl Trans for Ty {
 
 impl Trans for ty::t {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        use rustc::middle::ty::*;
+        use rustc::middle::ty::sty::*;
         let s = match ty::get(*self).sty {
-            ty_nil => "unit".into_string(),
             ty_bool => "bool".into_string(),
+            // ty_char
             ty_int(ity) => format!("int {}",
                                    match ity {
                                        TyI64 => 64u,
@@ -80,7 +84,7 @@ impl Trans for ty::t {
                                         TyU8 => 8,
                                     }),
             // ty_float
-            ty_enum(did, ref substs) => "[ty_enum]".into_string(),
+            ty_enum(did, ref substs) => "[[ty_enum]]".into_string(),
             // ty_uniq
             // ty_str
             // ty_vec
@@ -100,10 +104,11 @@ impl Trans for ty::t {
             // ty_bare_fn
             // ty_closure
             // ty_trait
-            ty_struct(did, ref substs) => "[ty_struct]".into_string(),
+            ty_struct(did, ref substs) => "[[ty_struct]]".into_string(),
             // ty_unboxed_closure
+            ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(tcx)),
-            ty_param(ref param) => "[ty_param]".into_string(),
+            ty_param(ref param) => "[[ty_param]]".into_string(),
             // ty_open
             // ty_infer
             // ty_err
@@ -116,7 +121,7 @@ impl Trans for ty::t {
 
 impl Trans for ty::Region {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        "[Region]".into_string()
+        "[[Region]]".into_string()
     }
 }
 
@@ -178,16 +183,17 @@ impl Trans for Expr {
             ExprCall(ref func, ref args) =>
                 format!("call {} 0 0 {}", func.trans(tcx), args.trans(tcx)),
             ExprMethodCall(name, ref tys, ref args) =>
-                format!("[ExprMethodCall {} {} {}]",
+                format!("[[ExprMethodCall {} {} {}]]",
                         name.node.as_str(),
                         tys.trans(tcx),
                         args.trans(tcx)),
-            ExprTup(ref xs) => format!("tuple {}", xs.trans(tcx)),
+            ExprTup(ref xs) if xs.len() == 0 => "simple_literal _".into_string(),
+            ExprTup(ref xs) => format!("tuple_literal {}", xs.trans(tcx)),
             ExprBinary(op, ref a, ref b) => {
                 match tcx.method_map.borrow().get(&typeck::MethodCall::expr(self.id)) {
                     Some(callee) => match callee.origin {
                         typeck::MethodStatic(did) => {
-                            format!("[ExprBinary: overloaded binop]")
+                            format!("[[ExprBinary: overloaded binop]]")
                         },
                         _ => panic!("bad origin for callee in ExprBinary"),
                     },
@@ -200,7 +206,7 @@ impl Trans for Expr {
                 }
             },
             ExprUnary(op, ref a) =>
-                format!("[ExprUnary {} {}]",
+                format!("[[ExprUnary {} {}]]",
                         op,
                         a.trans(tcx)),
             ExprLit(ref lit) =>
@@ -210,7 +216,7 @@ impl Trans for Expr {
                         e.trans(tcx),
                         ty.trans(tcx)),
             ExprIf(ref cond, ref then, ref opt_else) =>
-                format!("[ExprIf {} {} {}]",
+                format!("[[ExprIf {} {} {}]]",
                         cond.trans(tcx),
                         then.trans(tcx),
                         opt_else.as_ref().map(|e| e.trans(tcx))),
@@ -254,7 +260,7 @@ impl Trans for Expr {
                                 .unwrap_or("unit simple_literal _".into_string())),
             // ExprInlineAsm
             // ExprMac
-            ExprStruct(ref name, ref fields, ref opt_base) => "[ExprStruct]".into_string(),
+            ExprStruct(ref name, ref fields, ref opt_base) => "[[ExprStruct]]".into_string(),
             // ExprRepeat
             ExprParen(ref expr) => expr.trans(tcx),
             _ => panic!("unrecognized Expr_ variant"),
@@ -276,7 +282,6 @@ impl Trans for Lit {
             LitInt(i, _) => format!("{}", i),
             // LitFloat
             // LitFloatUnsuffixed
-            LitNil => "_".into_string(),
             LitBool(b) => format!("{}", b),
             _ => panic!("unrecognized Lit_ variant"),
         }
@@ -295,7 +300,7 @@ impl Trans for Arm {
 
 impl Trans for Pat {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        "[Pat]".into_string()
+        "[[Pat]]".into_string()
     }
 }
 

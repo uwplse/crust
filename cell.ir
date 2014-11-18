@@ -54,6 +54,7 @@ fn UnsafeCell_new<0><1: T>
 #
 #   type ::= "var" name
 #          | "adt" name(struct_or_enum) lifetime* type*
+#          | "tuple" type*
 #          | "ref" lifetime type
 #          | "ref_mut" lifetime type
 #          | "ptr" type
@@ -62,6 +63,7 @@ fn UnsafeCell_new<0><1: T>
 #          | "uint" word(bits)
 #          | "bool"
 #          | "unit"
+#          | "bottom"
 #   lifetime ::= name
 #   name ::= word
 #
@@ -80,20 +82,27 @@ fn UnsafeCell_new<0><1: T>
 #                  | "simple_literal" word
 #                  | "struct_literal" field*
 #                  | "enum_literal" name(variant) word(variant_index) expr*
+#                  | "tuple_literal" expr*
 #                  | "match" expr match_arm*
 #                  | "block" stmt* expr
 #                  | "field" expr(struct) name(field)
 #                  | "deref" expr
 #                  | "addr_of" expr
+#                  | "cast" expr type
+#                  | "binop" op expr expr
+#                  | "unop" op expr expr
 #                  | "call" name(fn) lifetime* type* expr(arg)*
 #                  | "unsafe" stmt* expr
 #                  | "assign" expr expr
 #				   | "return" expr
+#	binop ::= BiAdd | ...
+#	unop ::= ...
 #   match_arm ::= pattern expr
+#   TODO: would like to have `pattern ::= type pattern_variant`, but need to check rustc tables
 #   pattern ::= "bind" type name(var)
 #             | "enum" type(enum) name(variant) word(variant_index) pattern*
 #             | "wild"
-			  | "simple_literal" type word
+#             | "simple_literal" type word
 #   field ::= name(field) expr
 #   stmt ::= "expr" expr
 #          | "let" name(var) type(var) expr
