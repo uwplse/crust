@@ -7,6 +7,8 @@ use syntax::visit::{FnKind, FkItemFn, FkMethod, FkFnBlock};
 use syntax::ast::*;
 use syntax::codemap::Span;
 use syntax::ptr::P;
+use syntax::ast_util::local_def;
+use rustc::metadata::csearch;
 
 trait Trans {
     fn trans(&self, tcx: &ty::ctxt) -> String;
@@ -84,7 +86,9 @@ impl Trans for ty::t {
                                         TyU8 => 8,
                                     }),
             // ty_float
-            ty_enum(did, ref substs) => "[[ty_enum]]".into_string(),
+            // TODO: handle substs
+            ty_enum(did, ref substs) => format!("adt {} 0 0",
+                                                mangled_def_name(tcx, did)),
             // ty_uniq
             // ty_str
             // ty_vec
@@ -101,10 +105,12 @@ impl Trans for ty::t {
                                           },
                                           r.trans(tcx),
                                           mt.ty.trans(tcx)),
-            // ty_bare_fn
+            ty_bare_fn(_) => "fn".into_string(),
             // ty_closure
             // ty_trait
-            ty_struct(did, ref substs) => "[[ty_struct]]".into_string(),
+            // TODO: handle substs
+            ty_struct(did, ref substs) => format!("adt {} 0 0",
+                                                  mangled_def_name(tcx, did)),
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(tcx)),
@@ -180,8 +186,16 @@ impl Trans for Expr {
         let variant = match self.node {
             // ExprBox
             // ExprVec
-            ExprCall(ref func, ref args) =>
-                format!("call {} 0 0 {}", func.trans(tcx), args.trans(tcx)),
+            ExprCall(ref func, ref args) => {
+                if let Some((var_name, var_idx)) = find_variant(tcx, &**func) {
+                    format!("enum_literal {} {} {}",
+                            var_name,
+                            var_idx,
+                            args.trans(tcx))
+                } else {
+                    format!("call {} 0 0 {}", func.trans(tcx), args.trans(tcx))
+                }
+            },
             ExprMethodCall(name, ref tys, ref args) =>
                 format!("[[ExprMethodCall {} {} {}]]",
                         name.node.as_str(),
@@ -272,6 +286,25 @@ impl Trans for Expr {
     }
 }
 
+fn find_variant(tcx: &ty::ctxt, expr: &Expr) -> Option<(String, uint)> {
+    use rustc::middle::def::*;
+
+    let def_map = tcx.def_map.borrow();
+
+    let def = match def_map.get(&expr.id) {
+        None => return None,
+        Some(d) => d,
+    };
+
+    match *def {
+        DefVariant(enum_did, variant_did, _is_structure) => {
+            let info = ty::enum_variant_with_id(tcx, enum_did, variant_did);
+            Some((mangled_def_name(tcx, variant_did), info.disr_val as uint))
+        },
+        _ => None,
+    }
+}
+
 impl Trans for Lit {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match self.node {
@@ -314,7 +347,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
             FkItemFn(name, generics, style, abi) => {
                 let raw_name = name.as_str();
                 println!("fn {} 0 0 {} body {} {{\n{}\t{}\n}}\n\n",
-                         name.as_str(),
+                         mangled_def_name(self.tcx, local_def(id)),
                          fd.trans(self.tcx),
                          match style {
                              UnsafeFn => "unsafe",
@@ -327,6 +360,26 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
             _ => {},
         }
     }
+}
+
+
+fn mangled_def_name(tcx: &ty::ctxt, did: DefId) -> String {
+    let mut name = String::new();
+    if did.krate == LOCAL_CRATE {
+        tcx.map.with_path(did.node, |mut elems| {
+            for elem in elems {
+                name.push_str(elem.name().as_str());
+                name.push_str("_");
+            }
+        })
+    } else {
+        for elem in csearch::get_item_path(tcx, did).into_iter() {
+            name.push_str(elem.name().as_str());
+            name.push_str("_");
+        }
+    }
+    name.pop();
+    name
 }
 
 

@@ -62,6 +62,7 @@ fn UnsafeCell_new<0><1: T>
 #          | "int" word(bits)
 #          | "uint" word(bits)
 #          | "bool"
+#          | "fn"
 #          | "unit"
 #          | "bottom"
 #   lifetime ::= name
