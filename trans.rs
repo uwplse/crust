@@ -31,15 +31,20 @@ impl<T: Trans> Trans for P<T> {
     }
 }
 
-impl Trans for FnDecl {
+impl Trans for FunctionRetTy {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        let ret = match self.output {
+        match *self {
             Return(ref t) => t.trans(tcx),
             NoReturn(_) => "bottom".into_string(),
-        };
+        }
+    }
+}
+
+impl Trans for FnDecl {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
         format!("(args {}) return {}",
                 self.inputs.trans(tcx),
-                ret)
+                self.output.trans(tcx))
     }
 }
 
@@ -358,9 +363,10 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
         match fk {
             FkItemFn(name, generics, style, abi) => {
                 let raw_name = name.as_str();
-                println!("fn {} 0 0 {} body {} {{\n{}\t{}\n}}\n\n",
+                println!("fn {} 0 0 {} body {} {} {{\n{}\t{}\n}}\n\n",
                          mangled_def_name(self.tcx, local_def(id)),
                          fd.trans(self.tcx),
+                         fd.output.trans(self.tcx),
                          match style {
                              UnsafeFn => "unsafe",
                              NormalFn => "block",
