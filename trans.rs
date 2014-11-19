@@ -354,6 +354,14 @@ impl Trans for Pat {
     }
 }
 
+impl Trans for StructField {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        format!("{} {}",
+                self.node.ident().unwrap().as_str().into_string(),
+                self.node.ty.trans(tcx))
+    }
+}
+
 struct TransVisitor<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
 }
@@ -377,6 +385,13 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
             },
             _ => {},
         }
+    }
+
+    fn visit_struct_def(&mut self, s: &'v StructDef, name: Ident, g: &'v Generics, id: NodeId) {
+        assert!(s.ctor_id.is_none());
+        println!("struct {} 0 0 {};",
+                 mangled_def_name(self.tcx, local_def(id)),
+                 s.fields.trans(self.tcx));
     }
 }
 
