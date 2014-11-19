@@ -199,7 +199,7 @@ impl Trans for Expr {
             // ExprBox
             // ExprVec
             ExprCall(ref func, ref args) => {
-                if let Some((var_name, var_idx)) = find_variant(tcx, &**func) {
+                if let Some((var_name, var_idx)) = find_variant(tcx, func.id) {
                     format!("enum_literal {} {} {}",
                             var_name,
                             var_idx,
@@ -272,7 +272,7 @@ impl Trans for Expr {
             // ExprIndex
             // ExprSlice
             ExprPath(ref path) => {
-                if let Some((var_name, var_idx)) = find_variant(tcx, self) {
+                if let Some((var_name, var_idx)) = find_variant(tcx, self.id) {
                     format!("enum_literal {} {} 0",
                             var_name,
                             var_idx)
@@ -310,12 +310,12 @@ impl Trans for Expr {
     }
 }
 
-fn find_variant(tcx: &ty::ctxt, expr: &Expr) -> Option<(String, uint)> {
+fn find_variant(tcx: &ty::ctxt, id: NodeId) -> Option<(String, uint)> {
     use rustc::middle::def::*;
 
     let def_map = tcx.def_map.borrow();
 
-    let def = match def_map.get(&expr.id) {
+    let def = match def_map.get(&id) {
         None => return None,
         Some(d) => d,
     };
@@ -349,7 +349,7 @@ impl Trans for Arm {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         assert!(self.pats.len() == 1);
         assert!(self.guard.is_none());
-        format!("{} : {}",
+        format!("{{ {} >> {} }}",
                 self.pats[0].trans(tcx),
                 self.body.trans(tcx))
     }
@@ -357,7 +357,38 @@ impl Trans for Arm {
 
 impl Trans for Pat {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        "[[Pat]]".into_string()
+        let variant = match self.node {
+            PatWild(PatWildSingle) => "wild".into_string(),
+            PatIdent(_mode, name, None) => {
+                if let Some((var_name, var_idx)) = find_variant(tcx, self.id) {
+                    format!("enum {} {} 0",
+                            var_name,
+                            var_idx)
+                } else {
+                    use rustc::middle::def::*;
+                    match tcx.def_map.borrow().get(&self.id) {
+                        None | Some(&DefLocal(_)) => format!("var {}",
+                                                             name.node.trans(tcx)),
+                        Some(ref d) => format!("const {}",
+                                               mangled_def_name(tcx, d.def_id())),
+                    }
+                }
+            },
+            PatEnum(ref path, Some(ref args)) => {
+                let (var_name, var_idx) = find_variant(tcx, self.id)
+                        .expect("couldn't find variant for enum pattern");
+                format!("enum {} {} {}",
+                        var_name,
+                        var_idx,
+                        args.trans(tcx))
+            },
+            PatTup(ref args) => format!("tuple {}", args.trans(tcx)),
+            PatLit(ref expr) => expr.trans(tcx),
+            _ => panic!("unhandled Pat_ variant"),
+        };
+        format!("({} {})",
+                tcx.node_types.borrow()[self.id].trans(tcx),
+                variant)
     }
 }
 
