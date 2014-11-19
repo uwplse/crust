@@ -31,6 +31,12 @@ impl<T: Trans> Trans for P<T> {
     }
 }
 
+impl Trans for Ident {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        self.as_str().into_string()
+    }
+}
+
 impl Trans for FunctionRetTy {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match *self {
@@ -39,6 +45,7 @@ impl Trans for FunctionRetTy {
         }
     }
 }
+
 
 impl Trans for FnDecl {
     fn trans(&self, tcx: &ty::ctxt) -> String {
@@ -362,6 +369,29 @@ impl Trans for StructField {
     }
 }
 
+impl Trans for Variant {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        format!("{} {}",
+                self.node.name.trans(tcx),
+                self.node.kind.trans(tcx))
+    }
+}
+
+impl Trans for VariantKind {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        match *self {
+            TupleVariantKind(ref args) => args.trans(tcx),
+            _ => panic!("unsupported VariantKind variant"),
+        }
+    }
+}
+
+impl Trans for VariantArg {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        self.ty.trans(tcx)
+    }
+}
+
 struct TransVisitor<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
 }
@@ -392,6 +422,19 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
         println!("struct {} 0 0 {};",
                  mangled_def_name(self.tcx, local_def(id)),
                  s.fields.trans(self.tcx));
+    }
+
+    fn visit_item(&mut self, i: &'v Item) {
+        match i.node {
+            ItemEnum(ref def, ref g) => {
+                println!("enum {} {}",
+                         i.ident.trans(self.tcx),
+                         def.variants.trans(self.tcx));
+            },
+            _ => {},
+        }
+
+        visit::walk_item(self, i);
     }
 }
 
