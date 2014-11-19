@@ -1,11 +1,10 @@
 (*
--L /opt/rust/lib/rustlib/x86_64-unknown-linux-gnu/lib/	
+-L /opt/rust/lib/rustlib/x86_64-unknown-linux-gnu/lib/
 -A warnings
 --crate-type lib
 input.rs
  *)
 module Compilation = struct
-
 	let rec (adt_type_name : Types.mono_type -> string) = function
 	  | `Adt_type a -> mangle_adt_name a
 	  | `Ptr t | `Ref (_,t) -> (adt_type_name t) ^ "_ptr"
@@ -30,6 +29,12 @@ module Compilation = struct
 	  match mono_args with
 	  | [] -> fn_name
 	  | _ -> fn_name ^ (String.concat "_" (List.map adt_type_name mono_args))
+
+	let tag_field = "discr";;
+	let arm_field = "tag%d";;
+	let field_label = "field%d";;
+	let tuple_field = field_label;;
+	let data_field = "data";;
 
 	let rec type_to_string = function
 	  | `Unit -> "void"
@@ -83,12 +88,12 @@ module Compilation = struct
 	type r_all_expr = [ all_expr complex_expr | simple_expr ]
 	exception Break of all_expr
 	let enum_field (enum : simple_expr) tag field = 
-	  let data = `Struct_Field (enum,"data") in
-	  let tag_field = `Struct_Field (data,(Printf.sprintf "tag%d" tag)) in
-	  let e_field = `Struct_Field (tag_field,(Printf.sprintf "field%d" field)) in
+	  let data = `Struct_Field (enum,data_field) in
+	  let tag_field = `Struct_Field (data,(Printf.sprintf arm_field tag)) in
+	  let e_field = `Struct_Field (tag_field,(Printf.sprintf field_label field)) in
 	  e_field
 	let tag_field (enum: simple_expr) =
-	  `Struct_Field (enum,"discr")
+	  `Struct_Field (enum,tag_field)
 	let is_complex (_,e) = match e with
 	  | #complex_expr -> true
 	  | _ -> false
@@ -180,7 +185,7 @@ module Compilation = struct
 	  | `Tuple t_fields ->
 		 let tuple_type = fst expr in
 		 let lhs = fun adt_var f_index _ ->
-		   `Struct_Field ((snd adt_var),(Printf.sprintf "field%d" f_index))
+		   `Struct_Field ((snd adt_var),(Printf.sprintf tuple_field f_index))
 		 in
 		 let rhs = fun _ f -> f in
 		 simplify_adt tuple_type t_fields lhs rhs

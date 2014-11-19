@@ -1,11 +1,27 @@
 type r_type = Types.r_type
 type bin_op = [
-	`Add
-  | `And
-  | `Eq
+	| `BiAdd
+	| `BiSub
+	| `BiMul
+	| `BiDiv
+	| `BiRem
+	| `BiAnd
+	| `BiOr
+	| `BiBitXor
+	| `BiBitAnd
+	| `BiBitOr
+	| `BiShl
+	| `BiShr
+	| `BiEq
+	| `BiLt
+	| `BiLe
+	| `BiNe
+	| `BiGe
+	| `BiGt
   ]
 type un_op = [
-	`Negate
+	| `UnNot
+	| `UnNeg
   ]
 type expr_variant = [
   | `Var of string
@@ -36,7 +52,7 @@ and stmt = [
 and match_arm = (pattern * expr)
 and pattern = [
   | `Bind of Types.r_type * string
-  | `Enum of string * Types.variant_name * int * (pattern list)
+  | `Enum of Types.poly_adt_type * Types.variant_name * int * (pattern list)
   | `Wild
   | `Literal of Types.simple_type * string
   ]
