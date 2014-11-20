@@ -596,53 +596,6 @@ object (self)
 	   self#dump_simple_expr e;
 	   self#dump_args_rest t
 end
-(*
-let int_type = `Int 4;;
-let dummy_enum = `Bottom;;
-let test_type = `Enum_def {
-				   Ir.enum_name = "option";
-				   Ir.e_lifetime_param = [];
-				   Ir.e_tparam = [];
-				   Ir.variants = [
-					   {
-						 Ir.variant_name = "foo";
-						 Ir.variant_fields = [ `Int 32; `Bool; `Adt_type { Types.type_name = "__rust_tuple"; Types.type_param = [ `Int 32; `Bool ]; Types.lifetime_param = [] } ];
-					   };
-					   {
-						 Ir.variant_name = "baz";
-						 Ir.variant_fields = []
-					   };
-					   {
-						 Ir.variant_name = "bar";
-						 Ir.variant_fields = [ `UInt 32 ];
-					   }
-					 ];
-				   Ir.drop_fn = None
-				 };;
-let _ = Hashtbl.add Env.adt_env "option" test_type;;
-let enum_type = { Types.type_name = "foo"; Types.lifetime_param = []; Types.type_param = [] };;
-let enum_type_2 = { Types.type_name = "foo"; Types.lifetime_param = []; Types.type_param = [] };;
-let test_match : Ir.expr = `Bottom,`Return (int_type,(`Match ((int_type,`Block ([],(int_type,`Var "foo"))),[
-																(`Enum (enum_type,"",3,[
-																						`Wild;
-																						`Literal (int_type,"3");
-																						`Enum (enum_type_2,"",2,[`Bind (int_type,"a");`Bind (int_type,"b")])
- 																])),(int_type,`BinOp (`BiAdd,(int_type,`Var "a"),(int_type,`Var "b")));
-																`Wild,((`Tuple [int_type;int_type]),`Tuple [(int_type,`Var "foo");(int_type,`Literal "44")])
-										   ])));;
-let test_ast = (`Bottom,`Return (`Ref ("f",`Int 3),`Address_of ((`Int 3,`Block ([],(`Int 3,`Var "foo"))))));;
-let do_test () = simplify_ir test_ast;;
-let do_test_2 () = 
-  let ir = simplify_ir test_match in
-  let buf = Buffer.create 1000 in
-  let emitter = new expr_emitter buf [] in
-  emitter#dump_expr ir;
-  print_endline (Buffer.contents buf);
-  Buffer.clear buf;
-  let t_dump = new typedef_emitter buf in
-  t_dump#dump_type_instantiation ("option",[]);
-  print_endline (Buffer.contents buf)
-  *)
 
 let simplified_ir = Hashtbl.create 10;;
 
