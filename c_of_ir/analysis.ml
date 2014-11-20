@@ -13,7 +13,7 @@ open Ir
 								 
 module FISet = Set.Make(FunctionInstantiation)
 module TISet = Set.Make(TypeInstantiation)
-let rec walk_type t_set t = 
+let rec walk_type : TISet.t -> Types.mono_type -> TISet.t = fun t_set t ->
   match t with
   | `Adt_type a ->
 	 let instantiation = a.type_name,a.type_param in
@@ -26,6 +26,16 @@ let rec walk_type t_set t =
 		 a.type_param
   | `Ref (_,t') -> walk_type t_set t'
   | `Ref_Mut (_,t') -> walk_type t_set t'
+  | `Tuple tl -> 
+	 let instantiation = "__rust_tuple",tl in
+	 if TISet.mem instantiation t_set then
+	   t_set
+	 else
+	   let t_set' = TISet.add instantiation t_set in
+	   List.fold_left walk_type t_set' tl
+  | `Bottom -> t_set
+  | `Ptr_Mut t' -> walk_type t_set t'
+  | `Ptr t' -> walk_type t_set t'
   | #simple_type -> t_set
 and walk_type_def t_set adt_def m_params =
   let gen_binding = fun t_names ->
