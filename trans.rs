@@ -9,19 +9,42 @@ use syntax::codemap::Span;
 use syntax::ptr::P;
 use syntax::ast_util::local_def;
 use rustc::metadata::csearch;
+use rustc::middle::subst::ParamSpace;
+use rustc::middle::subst::ParamSpace::*;
 
 trait Trans {
     fn trans(&self, tcx: &ty::ctxt) -> String;
 }
 
+trait TransExtra<E> {
+    fn trans_extra(&self, tcx: &ty::ctxt, extra: E) -> String;
+}
+
+/*
+impl<T: Trans, E> TransExtra<E> for T {
+    fn trans_extra(&self, tcx: &ty::ctxt, _: E) -> String {
+        self.trans(tcx)
+    }
+}
+*/
+
+/*
+impl<T: TransExtra<()>> Trans for T {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        self.trans_extra(tcx, ())
+    }
+}
+*/
+
 impl<T: Trans> Trans for Vec<T> {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        let mut result = format!("{}", self.len());
-        for item in self.iter() {
-            result.push_str(" ");
-            result.push_str(item.trans(tcx).as_slice());
-        }
-        result
+        self.as_slice().trans(tcx)
+    }
+}
+
+impl<T: TransExtra<E>, E: Copy> TransExtra<E> for Vec<T> {
+    fn trans_extra(&self, tcx: &ty::ctxt, extra: E) -> String {
+        self.as_slice().trans_extra(tcx, extra)
     }
 }
 
@@ -36,9 +59,26 @@ impl<'a, T: Trans> Trans for &'a [T] {
     }
 }
 
+impl<'a, T: TransExtra<E>, E: Copy> TransExtra<E> for &'a [T] {
+    fn trans_extra(&self, tcx: &ty::ctxt, extra: E) -> String {
+        let mut result = format!("{}", self.len());
+        for item in self.iter() {
+            result.push_str(" ");
+            result.push_str(item.trans_extra(tcx, extra).as_slice());
+        }
+        result
+    }
+}
+
 impl<T: Trans> Trans for P<T> {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         (**self).trans(tcx)
+    }
+}
+
+impl<T: TransExtra<E>, E> TransExtra<E> for P<T> {
+    fn trans_extra(&self, tcx: &ty::ctxt, extra: E) -> String {
+        (**self).trans_extra(tcx, extra)
     }
 }
 
@@ -53,6 +93,59 @@ impl Trans for Ident {
         self.as_str().into_string()
     }
 }
+
+impl Trans for Name {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        self.as_str().into_string()
+    }
+}
+
+impl Trans for ParamSpace {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        match *self {
+            TypeSpace => "t_".into_string(),
+            SelfSpace => "s_".into_string(),
+            AssocSpace => "a_".into_string(),
+            FnSpace => "f_".into_string(),
+        }
+    }
+}
+
+impl TransExtra<ParamSpace> for Generics {
+    fn trans_extra(&self, tcx: &ty::ctxt, space: ParamSpace) -> String {
+        let mut lifetimes = vec![];
+        for i in range(0, self.lifetimes.len()) {
+            lifetimes.push(format!("{}{}", space.trans(tcx), i));
+        }
+
+        let mut ty_params = vec![];
+        for i in range(0, self.ty_params.len()) {
+            ty_params.push(format!("{}{}", space.trans(tcx), i));
+        }
+
+        format!("{} {}",
+                lifetimes.trans(tcx),
+                ty_params.trans(tcx))
+    }
+}
+
+/*
+impl TransExtra<ParamSpace> for LifetimeDef {
+    fn trans_extra(&self, tcx: &ty::ctxt, space: ParamSpace) -> String {
+        format!("{}{}",
+                space.trans(tcx),
+                self.lifetime.name.trans(tcx))
+    }
+}
+
+impl TransExtra<ParamSpace> for TyParam {
+    fn trans_extra(&self, tcx: &ty::ctxt, space: ParamSpace) -> String {
+        format!("{}{}",
+                space.trans(tcx),
+                self.ident.trans(tcx))
+    }
+}
+*/
 
 impl Trans for FunctionRetTy {
     fn trans(&self, tcx: &ty::ctxt) -> String {
@@ -117,8 +210,9 @@ impl Trans for ty::t {
                                     }),
             // ty_float
             // TODO: handle substs
-            ty_enum(did, ref substs) => format!("adt {} 0 0",
-                                                mangled_def_name(tcx, did)),
+            ty_enum(did, ref substs) => format!("adt {} 0 {}",
+                                                mangled_def_name(tcx, did),
+                                                substs.types.as_slice().trans(tcx)),
             // ty_uniq
             // ty_str
             // ty_vec
@@ -139,12 +233,17 @@ impl Trans for ty::t {
             // ty_closure
             // ty_trait
             // TODO: handle substs
-            ty_struct(did, ref substs) => format!("adt {} 0 0",
-                                                  mangled_def_name(tcx, did)),
+            ty_struct(did, ref substs) => format!("adt {} 0 {}",
+                                                  mangled_def_name(tcx, did),
+                                                  substs.types.as_slice().trans(tcx)),
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(tcx)),
-            ty_param(ref param) => "[[ty_param]]".into_string(),
+            ty_param(ref param) => {
+                format!("{}{}",
+                        param.space.trans(tcx),
+                        param.idx)
+            },
             // ty_open
             // ty_infer
             // ty_err
@@ -450,18 +549,21 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
         match i.node {
             ItemStruct(ref def, ref g) => {
                 assert!(def.ctor_id.is_none());
-                println!("struct {} 0 0 {};",
+                println!("struct {} {} {};",
                          mangled_def_name(self.tcx, local_def(i.id)),
+                         g.trans_extra(self.tcx, TypeSpace),
                          def.fields.trans(self.tcx));
             },
             ItemEnum(ref def, ref g) => {
-                println!("enum {} {}",
+                println!("enum {} {} {}",
                          i.ident.trans(self.tcx),
+                         g.trans_extra(self.tcx, TypeSpace),
                          def.variants.trans(self.tcx));
             },
             ItemFn(ref decl, style, _, ref generics, ref body) => {
-                println!("fn {} 0 0 {} body {} {} {{\n{}\t{}\n}}\n\n",
+                println!("fn {} {} {} body {} {} {{\n{}\t{}\n}}\n\n",
                          mangled_def_name(self.tcx, local_def(i.id)),
+                         generics.trans_extra(self.tcx, FnSpace),
                          decl.trans(self.tcx),
                          decl.output.trans(self.tcx),
                          match style {
@@ -472,11 +574,11 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
                          body.expr.as_ref().map(|e| e.trans(self.tcx))
                              .unwrap_or("unit simple_literal _".into_string()));
             },
-            ItemImpl(ref g, ref trait_ref, ref self_ty, ref items) => {
+            ItemImpl(ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
                 for item in items.iter() {
                     match *item {
                         MethodImplItem(ref method) => {
-                            let (name, generics, _, exp_self, _, decl, body, _) = match method.node {
+                            let (name, generics, _, exp_self, style, decl, body, _) = match method.node {
                                 MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
                                 MethMac(_) => panic!("unexpected MethMac"),
                             };
@@ -510,11 +612,23 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
                                 None => 0,
                             };
 
-                            arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(self.tcx)));
-                            println!("method {} (args {})",
-                                     mangled_def_name(self.tcx, local_def(method.id)),
-                                     arg_strs.trans(self.tcx));
+                            let (lifetimes, ty_params) = combine_generics(self.tcx, impl_generics, generics);
 
+                            arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(self.tcx)));
+                            println!("fn {} {} {} (args {}) return {} body {} {} {{\n{}\t{}\n}}\n\n",
+                                     mangled_def_name(self.tcx, local_def(method.id)),
+                                     lifetimes.trans(self.tcx),
+                                     ty_params.trans(self.tcx),
+                                     arg_strs.trans(self.tcx),
+                                     decl.output.trans(self.tcx),
+                                     decl.output.trans(self.tcx),
+                                     match style {
+                                         UnsafeFn => "unsafe",
+                                         NormalFn => "block",
+                                     },
+                                     body.stmts.trans(self.tcx),
+                                     body.expr.as_ref().map(|e| e.trans(self.tcx))
+                                         .unwrap_or("unit simple_literal _".into_string()));
                         },
                         TypeImplItem(_) => panic!("unsupported TypeImplItem"),
                     }
@@ -527,19 +641,28 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
     }
 }
 
+fn combine_generics(tcx: &ty::ctxt, impl_g: &Generics, fn_g: &Generics) -> (Vec<String>, Vec<String>) {
+    let lifetimes =
+            range(0, impl_g.lifetimes.len()).map(|i| format!("t_{}", i)).chain(
+            range(0, fn_g.lifetimes.len()).map(|i| format!("f_{}", i))).collect();
+    let ty_params =
+            range(0, impl_g.ty_params.len()).map(|i| format!("t_{}", i)).chain(
+            range(0, fn_g.ty_params.len()).map(|i| format!("f_{}", i))).collect();
+    (lifetimes, ty_params)
+}
 
 fn mangled_def_name(tcx: &ty::ctxt, did: DefId) -> String {
     let mut name = String::new();
     if did.krate == LOCAL_CRATE {
         tcx.map.with_path(did.node, |mut elems| {
             for elem in elems {
-                name.push_str(elem.name().as_str());
+                name.push_str(elem.name().as_str().split('<').nth(0).unwrap());
                 name.push_str("_");
             }
         })
     } else {
         for elem in csearch::get_item_path(tcx, did).into_iter() {
-            name.push_str(elem.name().as_str());
+            name.push_str(elem.name().as_str().split('<').nth(0).unwrap());
             name.push_str("_");
         }
     }

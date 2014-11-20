@@ -1,7 +1,7 @@
 // Builds with rustc 336349c (Mon Nov 17 20:37:19 2014 +0000)
 
 #![crate_name = "rbmc"]
-#![feature(globs, if_let)]
+#![feature(globs, if_let, associated_types)]
 extern crate getopts;
 extern crate syntax;
 extern crate rustc;
