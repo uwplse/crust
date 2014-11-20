@@ -47,3 +47,7 @@ let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun 
   | `Bottom -> `Bottom
   | `Ptr t' -> `Ptr (to_monomorph t_binding t')
   | `Tuple tl -> `Tuple (List.map (to_monomorph t_binding) tl)
+
+
+let type_binding tv ty = 
+  List.map2 (fun t_name t -> (t_name, t)) tv ty

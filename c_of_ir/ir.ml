@@ -50,11 +50,14 @@ and stmt = [
   | `Let of string * Types.r_type * expr
   ]
 and match_arm = (pattern * expr)
-and pattern = [
-  | `Bind of Types.r_type * string
-  | `Enum of Types.poly_adt_type * Types.variant_name * int * (pattern list)
+and pattern = (r_type * pattern_variant)
+and pattern_variant = [
+  | `Bind of string
+  | `Enum of Types.variant_name * int * (pattern list)
   | `Wild
-  | `Literal of Types.simple_type * string
+  | `Literal of string
+  | `Const of string
+  | `Tuple of pattern list
   ]
 type fn_def = {
 	fn_name : string;
@@ -72,7 +75,7 @@ type struct_def = {
 	struct_fields : (string * Types.r_type) list;
 	drop_fn : string option;
   }
-					
+
 type enum_variant = {
 	variant_name : Types.variant_name;
 	variant_fields : Types.r_type list;

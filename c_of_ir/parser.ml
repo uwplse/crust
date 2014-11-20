@@ -37,9 +37,13 @@ let parse_n parse_fn l cb =
 	else
 	  parse_fn t (fun e rest -> parse_loop (succ i) n rest (e::accum))
   in
-  let n_items = (int_of_string (List.hd l)) in
+  let n_items = 
+	try
+	  (int_of_string (List.hd l)) 
+	with Failure _ -> raise (Parse_failure ("parse_n",l))
+  in
   parse_loop 0 n_items (List.tl l) []
-							   
+
 let parse_lifetimes tokens cb = 
   parse_n consume_lifetime tokens cb
 
@@ -67,7 +71,12 @@ let consume_name tokens cb =
 let consume_word = consume_name
 
 let consume_int tokens cb = match tokens with
-  | h::t -> cb (int_of_string h) t
+  | h::t -> 
+	 begin
+	   try 
+		 cb (int_of_string h) t
+	   with Failure _ -> raise @@ Parse_failure ("consume_int",tokens)
+	 end
   | _ -> raise (Unexpected_stream_end "consume_int")
 
 let parse_simple_type tokens cb = match tokens with
@@ -141,17 +150,26 @@ let parse_unop tokens cb = match tokens with
   | "UnNeg"::t -> cb `UnNeg t
   | l -> failwith "bad unop"
 
-let rec parse_patt tokens cb = 
+let rec parse_patt tokens cb = (parse_type >> parse_patt_variant) tokens cb
+and parse_patt_variant tokens cb = 
   match tokens with
-  | "bind"::t -> (consume_name >> parse_type) t (fun (t,e) rest -> cb (`Bind (e,t)) rest)
-  | "wild"::t -> cb `Wild t
-  | "simple_literal"::t -> (parse_simple_type >> consume_word) t (fun l rest -> cb (`Literal l) rest)
-  | "enum"::t ->
-	 let p_fun = (parse_adt_type >> consume_name >> consume_int >> (parse_n parse_patt)) in
-	 p_fun t (fun (((e_type,v_name),v_index),patts) rest ->
-			  cb (`Enum (e_type,v_name,v_index,patts)) rest
-			 )
-  | _ -> raise (Parse_failure ("parse_patt",tokens))
+  | "var"::name::t ->
+	 cb (`Bind name) t
+  | "const"::name::t ->
+	 cb (`Const name) t
+  | "wild"::t ->
+	 cb `Wild t
+  | "simple_literal"::w::t ->
+	 cb (`Literal w) t
+  | "tuple"::t ->
+	 (parse_n parse_patt) t (fun tl rest ->
+							 cb (`Tuple tl) rest
+							)
+  | "enum"::variant_name::variant_tag::t ->
+	 (parse_n parse_patt) t (fun patts rest ->
+							 cb (`Enum (variant_name,(int_of_string variant_tag),patts)) rest
+							)
+  | _ -> raise (Parse_failure ("parse_patt_variant",tokens))
 		   
 let rec parse_expr_var tokens cb = match tokens with
   | "var"::n::rest -> cb (`Var n) rest
@@ -229,7 +247,7 @@ let parse_fn =
   in
   let parse_body tokens cb = 
 	match tokens with
-	| "body"::rest -> parse_expr_var rest cb
+	| "body"::rest -> parse_expr rest cb
 	| _ -> (raise (Parse_failure ("parse_body",tokens)))
   in
   fun tokens cb ->
@@ -243,7 +261,7 @@ let parse_fn =
 						 Ir.fn_tparams = t_params;
 						 Ir.ret_type = ret_type;
 						 Ir.fn_args = args;
-						 Ir.fn_body = (ret_type,body)
+						 Ir.fn_body = body
 					   })
 					  )
   | _ -> raise (Parse_failure ("parse_fn", tokens))
@@ -258,14 +276,14 @@ let maybe_parse parse_fn tokens cb =
 
 let parse_struct_def tokens cb = match tokens with
   | "struct"::name::t ->
-	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n (consume_name >> parse_type)) >> (maybe_parse consume_name)) in
-	 p_fun t (fun (((lifetimes,t_params),struct_fields),drop_fn) rest ->
+	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n (consume_name >> parse_type))(* >> (maybe_parse consume_name)*)) in
+	 p_fun t (fun ((lifetimes,t_params),struct_fields)(*,drop_fn)*) rest ->
 			  cb (`Struct_def {
 				Ir.struct_name = name;
 				Ir.s_lifetime_param = lifetimes;
 				Ir.s_tparam = t_params;
 				Ir.struct_fields = struct_fields;
-				Ir.drop_fn = drop_fn
+				Ir.drop_fn = None
 			  }) rest
 			 )
   | _ -> (raise (Parse_failure ("struct_def",tokens)))
@@ -281,16 +299,27 @@ let parse_variant_def tokens cb =
 
 let parse_enum_def tokens cb = match tokens with
   | "enum"::name::t ->
-	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n parse_variant_def) >> (maybe_parse consume_name)) in
-	 p_fun t (fun (((lifetimes,t_params),v_def),drop_fn) rest ->
+	 (* this is what it should be? 
+	 let p_fun = ((*parse_lifetimes >> parse_type_params >> *)(parse_n parse_variant_def) >> (maybe_parse consume_name)) in
+	 p_fun t (fun (((*(lifetimes,t_params),*)v_def),drop_fn) rest ->
 			  cb (`Enum_def {
 				  Ir.enum_name = name;
-				  Ir.e_lifetime_param = lifetimes;
-				  Ir.e_tparam = t_params;
+				  Ir.e_lifetime_param = [] (*lifetimes*);
+				  Ir.e_tparam = [] (*t_params*);
 				  Ir.variants = v_def;
 				  Ir.drop_fn = drop_fn;
 				}) rest
 			 )
+	  *)
+	 (parse_n parse_variant_def) t (fun v_def rest ->
+									cb (`Enum_def {
+										   Ir.enum_name = name;
+										   Ir.e_lifetime_param = [];
+										   Ir.e_tparam = [];
+										   Ir.variants = v_def;
+										   Ir.drop_fn = None
+										 }) rest
+								   )
   | _ -> assert false
 
 let parse_module tokens cb = 
@@ -308,18 +337,3 @@ let parse_string s =
 let parse_channel c = 
   parse_string (slurp_file c)
 
-let do_test () = 
-  Printexc.record_backtrace true;
-  let file = open_in "../input" in
-  try
-	parse_channel file
-  with 
-  | Parse_failure (f,s) -> 
-	 (Printexc.print_backtrace stdout;
-	  failwith ("Parse failure in " ^ f ^ " at point " ^ (String.concat " " s)))
-  | Unexpected_stream_end f ->
-	 (Printexc.print_backtrace stdout;
-	  failwith ("Unexpected_stream_end in " ^ f)
-	 )
-
-let _ = do_test ()
