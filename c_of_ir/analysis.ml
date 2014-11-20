@@ -112,15 +112,16 @@ and walk_statement t_bindings ((t_set,f_set) as s) stmt =
 and walk_match_arm t_bindings s (patt,expr) = 
   let s' = walk_pattern t_bindings s patt in
   walk_expr t_bindings s' expr
-and walk_pattern t_bindings ((t_set,f_set) as s) patt = 
-  match patt with
-  | `Wild -> s
-  | `Literal _ -> s
-  | `Bind (t,_) -> 
-	 let t_set' = inst_walk_type t_bindings t_set t in
-	 (t_set',f_set)
-  | `Enum (_,_,_,p_list) ->
-	 List.fold_left (walk_pattern t_bindings) s p_list
+and walk_pattern t_bindings (t_set,f_set) patt = 
+  let t_set = inst_walk_type t_bindings t_set (fst patt) in
+  match (snd patt) with
+  | `Wild -> (t_set,f_set)
+  | `Literal _ -> (t_set,f_set)
+  | `Bind _ -> (t_set,f_set)
+  | `Const _ -> (t_set,f_set)
+  | `Tuple p_list
+  | `Enum (_,_,p_list) ->
+	 List.fold_left (walk_pattern t_bindings) (t_set,f_set) p_list
 					
 let inst_walk_fn t_bindings s f_name = 
   let fn_def = Hashtbl.find Env.fn_env f_name in

@@ -150,17 +150,26 @@ let parse_unop tokens cb = match tokens with
   | "UnNeg"::t -> cb `UnNeg t
   | l -> failwith "bad unop"
 
-let rec parse_patt tokens cb = 
+let rec parse_patt tokens cb = (parse_type >> parse_patt_variant) tokens cb
+and parse_patt_variant tokens cb = 
   match tokens with
-  | "bind"::t -> (consume_name >> parse_type) t (fun (t,e) rest -> cb (`Bind (e,t)) rest)
-  | "wild"::t -> cb `Wild t
-  | "simple_literal"::t -> (parse_simple_type >> consume_word) t (fun l rest -> cb (`Literal l) rest)
-  | "enum"::t ->
-	 let p_fun = (parse_adt_type >> consume_name >> consume_int >> (parse_n parse_patt)) in
-	 p_fun t (fun (((e_type,v_name),v_index),patts) rest ->
-			  cb (`Enum (e_type,v_name,v_index,patts)) rest
-			 )
-  | _ -> raise (Parse_failure ("parse_patt",tokens))
+  | "var"::name::t ->
+	 cb (`Bind name) t
+  | "const"::name::t ->
+	 cb (`Const name) t
+  | "wild"::t ->
+	 cb `Wild t
+  | "simple_literal"::w::t ->
+	 cb (`Literal w) t
+  | "tuple"::t ->
+	 (parse_n parse_patt) t (fun tl rest ->
+							 cb (`Tuple tl) rest
+							)
+  | "enum"::variant_name::variant_tag::t ->
+	 (parse_n parse_patt) t (fun patts rest ->
+							 cb (`Enum (variant_name,(int_of_string variant_tag),patts)) rest
+							)
+  | _ -> raise (Parse_failure ("parse_patt_variant",tokens))
 		   
 let rec parse_expr_var tokens cb = match tokens with
   | "var"::n::rest -> cb (`Var n) rest

@@ -273,11 +273,6 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 	 let stmt_frag  = List.flatten (List.map simplify_stmt s) in
 	 let e' = simplify_ir e in
 	 (b_type,`Block (stmt_frag,e'))
-(*	 apply_lift_cb e (fun stmt e' ->
-					  raise (Break (e' :> all_expr))
-(*					  let all_stmt = stmt_frag @ stmt in
-					  let block = `Block (all_stmt,(e' :> all_expr)) in
-					  (b_type,block)*))*)
   | `Match (e,m_arms) -> 
 	 let expr_type = (fst expr) in
 	 apply_lift_cb e (fun stmt e' ->
@@ -359,21 +354,27 @@ and simplify_match_arm matchee (patt,m_arm) =
 	  end
   in
   (predicate_expr,final_expr)
-and compile_pattern = fun (predicates,bindings) matchee patt ->
-  match patt with
+and compile_pattern : ((t_simple_expr * t_simple_expr) list * 'b) -> 'c -> Ir.pattern -> 'd = fun (predicates,bindings) matchee patt ->
+  let p_type = fst patt in
+  match (snd patt) with
   | `Wild -> predicates,bindings
-  | `Bind (b_type,b_name) ->
-	 (predicates,(b_type,b_name,matchee)::bindings)
-  | `Enum (e_type,_,tag,patts) -> 
+  | `Bind b_name ->
+	 (predicates,(p_type,b_name,matchee)::bindings)
+  | `Enum (_,tag,patts) -> 
 	 let fields = List.mapi (fun i _ -> enum_field matchee tag i) patts in
-	 let (predicates',bindings') = List.fold_left2 compile_pattern (predicates,bindings) fields patts in
-	 let tag_rhs = (`Int 4,tag_field matchee) in
-	 let tag_lhs = (`Int 4,`Literal (string_of_int tag)) in
-	 (tag_lhs,tag_rhs)::predicates',bindings'
-  | `Literal (l_type,l) ->
-	 let lhs = ((l_type :> Types.r_type),`Literal l) in
-	 let rhs = ((l_type :> Types.r_type),matchee) in
+let (predicates',bindings) = List.fold_left2 compile_pattern (predicates,bindings) fields patts in
+	 let tag_rhs = (`Int 32,tag_field matchee) in
+	 let tag_lhs = (`Int 32,`Literal (string_of_int tag)) in
+	 (tag_lhs,tag_rhs)::predicates',bindings
+  | `Const l
+  | `Literal l ->
+	 let lhs = (p_type,`Literal l) in
+	 let rhs = (p_type,matchee) in
 	 (lhs,rhs)::predicates,bindings
+  | `Tuple (patts) ->
+	 let fields = List.mapi (fun i _ -> `Struct_Field (matchee,(Printf.sprintf tuple_field i))) patts in
+	 List.fold_left2 compile_pattern (predicates,bindings) fields patts
+	 
 
 (* Code emission starts here... TODO: split into modules! *)  
 (* pretty print type TODO: implement me! *)
@@ -505,6 +506,11 @@ object (self)
 	| `Match (_,m_arm) ->
 	   self#dump_match m_arm
 	| #simple_expr as s -> self#dump_simple_expr s
+  method dump_stmt_expr = function
+	| (_,`Match _)
+	| (_,`Block _) as e -> self#dump_expr e
+	| e -> self#dump_expr e;
+		   self#newline ~post:";" ()
   method dump_simple_expr = function
 	| `Var s -> self#put_i s
 	| `Literal l -> self#put_i l
@@ -553,7 +559,7 @@ object (self)
 	   self#put_i "if(";
 	   self#dump_expr (match_condition :> all_expr);
 	   self#put_i ") ";
-	   self#dump_expr match_body;
+	   self#dump_stmt_expr match_body;
 	   self#dump_match_rest t
 	| _ -> assert false
   method dump_match_rest = function
@@ -562,7 +568,7 @@ object (self)
 	   self#put_i "else if(";
 	   self#dump_expr (match_condition :> all_expr);
 	   self#put ") ";
-	   self#dump_expr match_body;
+	   self#dump_stmt_expr match_body;
 	   self#dump_match_rest t
   method dump_stmt = function
 	| `Let (v_name,r_type,expr) ->
@@ -576,13 +582,8 @@ object (self)
 	   let type_string = type_to_string m_type in
 	   self#put_i @@ Printf.sprintf "%s %s" type_string v_name;
 	   self#newline ~post:";" ()
-	| `Expr ((_,`Block _) as e) ->
-	   self#dump_expr e;
-	| `Expr ((_,`Match _) as e)->
-	   self#dump_expr e;
 	| `Expr e ->
-	   self#dump_expr e;
-	   self#newline ~post:";" ()
+	   self#dump_stmt_expr e;
   method dump_args = function
 	| (_,e)::t -> 
 	   self#dump_simple_expr e;
@@ -686,6 +687,7 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
   let fn_def = Hashtbl.find Env.fn_env fn_name in
   let simple_ir = get_simple_ir fn_name fn_def in
   Buffer.add_string buf @@ sig_of_fdef fn_def mono_args;
+  Buffer.add_string buf " ";
   let expr_emitter = new expr_emitter buf @@ Types.type_binding fn_def.Ir.fn_tparams mono_args in
   expr_emitter#dump_expr simple_ir;
   Buffer.output_buffer out_channel buf;
