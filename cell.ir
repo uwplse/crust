@@ -99,14 +99,16 @@ fn UnsafeCell_new<0><1: T>
 #				   | "return" expr
 #	binop ::= BiAdd | ...
 #	unop ::= ...
-#   match_arm ::= pattern expr
-#   TODO: would like to have `pattern ::= type pattern_variant`, but need to check rustc tables
-#   pattern ::= "var" name
-#             | "const" name
-#             | "enum" name(variant) word(variant_index) pattern*
-#             | "wild"
-#             | "simple_literal" word
-#             | "tuple" pat*
 #   field ::= name(field) expr
+#
+#   match_arm ::= pattern expr
+#   pattern ::= type pattern_variant
+#   pattern_variant ::= "var" name
+#                     | "const" name
+#                     | "enum" name(variant) word(variant_index) pattern*
+#                     | "wild"
+#                     | "simple_literal" word
+#                     | "tuple" pat*
+#
 #   stmt ::= "expr" expr
 #          | "let" name(var) type(var) expr
