@@ -72,7 +72,7 @@ type struct_def = {
 	struct_fields : (string * Types.r_type) list;
 	drop_fn : string option;
   }
-					
+
 type enum_variant = {
 	variant_name : Types.variant_name;
 	variant_fields : Types.r_type list;

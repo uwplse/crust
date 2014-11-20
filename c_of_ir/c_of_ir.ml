@@ -5,6 +5,11 @@
 input.rs
  *)
 module Compilation = struct
+	let adt_of_tuple (tl : Types.mono_type list) = {
+		Types.type_name = "__rust_tuple";
+		Types.type_param = tl;
+		Types.lifetime_param = [];
+	  }
 	let rec (adt_type_name : Types.mono_type -> string) = function
 	  | `Adt_type a -> mangle_adt_name a
 	  | `Ptr t | `Ref (_,t) -> (adt_type_name t) ^ "_ptr"
@@ -14,23 +19,32 @@ module Compilation = struct
 	  | `Bool -> "int"
 	  | `Unit -> "void"
 	  | `Bottom -> failwith "No C representation"
-	  | `Tuple tl -> tuple_name tl
+	  | `Tuple tl -> mangle_adt_name @@ adt_of_tuple tl
 	and mangle_adt_name t = 
 	  if t.Types.type_param = [] then
 		t.Types.type_name ^ "_t"
 	  else
-		t.Types.type_name ^ 
+		t.Types.type_name ^ "_" ^
 		  (String.concat "_" (List.map adt_type_name t.Types.type_param))
 		  ^ "_t"
-	and tuple_name tl = 
-		 "tuple_" ^ (String.concat "_" (List.map adt_type_name tl))
+	and tuple_name tl = mangle_adt_name @@ adt_of_tuple tl
+
+	let adt_of_inst (t_name,m_args) = 
+	  {
+		Types.type_name = t_name;
+		Types.lifetime_param = [];
+		Types.type_param = m_args
+	  }
+
+	let c_struct_name t = 
+	  "__c_struct_" ^ (mangle_adt_name t)
 
 	let mangle_fn_name fn_name mono_args = 
 	  match mono_args with
 	  | [] -> fn_name
 	  | _ -> fn_name ^ (String.concat "_" (List.map adt_type_name mono_args))
 
-	let tag_field = "discr";;
+	let struct_tag_field = "discr";;
 	let arm_field = format_of_string "tag%d";;
 	let field_label = format_of_string "field%d";;
 	let tuple_field = field_label;;
@@ -39,7 +53,7 @@ module Compilation = struct
 	let rec type_to_string : Types.mono_type -> string = function
 	  | `Unit -> "void"
 	  | `Bool -> "int"
-	  | `UInt _ -> "unsigned integer"
+	  | `UInt _ -> "unsigned"
 	  | `Int _ -> "int"
 	  | `Ptr t | `Ref (_,t) -> "const " ^ (type_to_string t) ^"*"
 	  | `Ptr_Mut t | `Ref_Mut (_,t) -> (type_to_string t) ^ "*"
@@ -135,7 +149,7 @@ module Compilation = struct
 	  let e_field = `Struct_Field (tag_field,(Printf.sprintf field_label field)) in
 	  e_field
 	let tag_field (enum: simple_expr) =
-	  `Struct_Field (enum,tag_field)
+	  `Struct_Field (enum,struct_tag_field)
 	let is_complex (_,e) = match e with
 	  | #complex_expr -> true
 	  | _ -> false
@@ -388,12 +402,83 @@ module Compilation = struct
 	  Buffer.add_string buf "}\n";
 	  *)
 
+	let pp_t _ = ""
+
+	class emitter buf = 
+	object(self)
+	  val mutable indent_level = 0
+	  method private put s =
+		Buffer.add_string buf s
+	end
+	class typedef_emitter buf = 
+	  object (self)
+		inherit emitter buf
+		method private bindings t_vars bindings = 
+		  List.map2 (fun t_name m_type -> (t_name,m_type)) t_vars bindings
+		method dump_type_instantiation (type_name,mono_args) = 
+		  let c_name = c_struct_name @@ adt_of_inst (type_name,mono_args) in
+		  self#put @@ "struct " ^ c_name ^ " { // " ^ (pp_t (type_name,mono_args)) ^ "\n";
+		  if type_name = "__rust_tuple" then
+			self#dump_tuple mono_args
+		  else begin
+			  let t_def = Hashtbl.find Env.adt_env type_name in
+			  match t_def with
+			  | `Enum_def d -> 
+				 let t_binding = self#bindings d.Ir.e_tparam mono_args in
+				 self#dump_enum t_binding d
+			  | `Struct_def s ->
+				 let t_binding = self#bindings s.Ir.s_tparam mono_args in
+				 self#dump_struct t_binding s
+			end
+		method private dump_tuple mono_args = 
+		  let field_names = List.mapi (fun i _ -> Printf.sprintf tuple_field i) mono_args in
+		  let fields = List.map2 (fun f_name f_type -> 
+								  (f_name,f_type)
+								 ) field_names mono_args in
+		  self#dump_fields fields
+		method private dump_struct t_binding (s : Ir.struct_def) =
+		  self#dump_fields @@ self#monomorphize_fields t_binding s.Ir.struct_fields
+		method private dump_enum t_binding enum = 
+		  self#dump_field_def (struct_tag_field,`Int 32);
+		  let has_data = List.exists (fun v -> 
+									  v.Ir.variant_fields <> []) 
+									 enum.Ir.variants
+		  in
+		  if has_data then begin
+			  self#put "union {\n";
+			  List.iteri (self#dump_variant t_binding) enum.Ir.variants;
+			  self#put "} data;\n"
+			end
+		  else ();
+		  self#put "};"
+		method private dump_variant t_binding tag v = 
+		  if v.Ir.variant_fields = [] then ()
+		  else begin
+			  let m_args = List.map (Types.to_monomorph t_binding) v.Ir.variant_fields in
+			  self#put "struct {\n";
+			  self#dump_tuple m_args;
+			  self#put "} ";
+			  self#put @@ Printf.sprintf arm_field tag;
+			  self#put ";\n"
+			end
+			
+		method private dump_field_def ((field_name,field_type) : string * Types.mono_type) = 
+		  self#put (type_to_string field_type);
+		  self#put " ";
+		  self#put field_name;
+		  self#put ";\n"
+		method private monomorphize_fields t_binding f_def = 
+		  List.map (self#monomorph_field t_binding) f_def
+		method private monomorph_field t_binding (f_name,f_type) = 
+		  (f_name,(Types.to_monomorph t_binding f_type))
+		method private dump_fields : ((string * Types.mono_type) list) -> unit = List.iter self#dump_field_def
+	  end
+
 	class expr_emitter buf t_bindings = 
 	object (self)
+	  inherit emitter buf
 	  method private t_string (t : r_type) = 
 		type_to_string (Types.to_monomorph t_bindings t)
-	  method private put (s : string) = 
-		Buffer.add_string buf s
 	  method dump_expr (expr : all_expr) = 
 		match (snd expr) with
 		| `Block (s,e) ->
@@ -496,6 +581,27 @@ module Compilation = struct
 
 	let int_type = `Int 4;;
 	let dummy_enum = `Bottom;;
+	let test_type = `Enum_def {
+		Ir.enum_name = "option";
+		Ir.e_lifetime_param = [];
+		Ir.e_tparam = [];
+		Ir.variants = [
+			{
+			  Ir.variant_name = "foo";
+			  Ir.variant_fields = [ `Int 32; `Bool; `Adt_type { Types.type_name = "__rust_tuple"; Types.type_param = [ `Int 32; `Bool ]; Types.lifetime_param = [] } ];
+			};
+			{
+			  Ir.variant_name = "baz";
+			  Ir.variant_fields = []
+			};
+			{
+			  Ir.variant_name = "bar";
+			  Ir.variant_fields = [ `UInt 32 ];
+			}
+		  ];
+		Ir.drop_fn = None
+	  };;
+	let _ = Hashtbl.add Env.adt_env "option" test_type;;
 	let enum_type = { Types.type_name = "foo"; Types.lifetime_param = []; Types.type_param = [] };;
 	let enum_type_2 = { Types.type_name = "foo"; Types.lifetime_param = []; Types.type_param = [] };;
 	let test_match : Ir.expr = `Bottom,`Return (int_type,(`Match ((int_type,`Block ([],(int_type,`Var "foo"))),[
@@ -503,7 +609,7 @@ module Compilation = struct
 																`Wild;
 																`Literal (int_type,"3");
 																`Enum (enum_type_2,"",2,[`Bind (int_type,"a");`Bind (int_type,"b")])
-															  ])),(int_type,`BinOp (`BiAdd,(int_type,`Var "a"),(int_type,`Var "b")));
+ 															  ])),(int_type,`BinOp (`BiAdd,(int_type,`Var "a"),(int_type,`Var "b")));
 										 `Wild,((`Tuple [int_type;int_type]),`Tuple [(int_type,`Var "foo");(int_type,`Literal "44")])
 									   ])));;
 	let test_ast = (`Bottom,`Return (`Ref ("f",`Int 3),`Address_of ((`Int 3,`Block ([],(`Int 3,`Var "foo"))))));;
@@ -513,6 +619,10 @@ module Compilation = struct
 	  let buf = Buffer.create 1000 in
 	  let emitter = new expr_emitter buf [] in
 	  emitter#dump_expr ir;
+	  print_endline (Buffer.contents buf);
+	  Buffer.clear buf;
+	  let t_dump = new typedef_emitter buf in
+	  t_dump#dump_type_instantiation ("option",[]);
 	  print_endline (Buffer.contents buf)
 end
 
