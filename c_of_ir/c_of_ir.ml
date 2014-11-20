@@ -407,9 +407,40 @@ module Compilation = struct
 	class emitter buf = 
 	object(self)
 	  val mutable indent_level = 0
+	  val mutable indent_string = ""
+	  val mutable indented = false
+	  method private put_i s = 
+		if not indented then
+		  (self#put indent_string;
+		   indented <- true
+		  )
+		else ();
+		self#put s
+	  method private indent () = 
+		indent_level <- indent_level + 1;
+		indent_string <- indent_string ^ "    "
+	  method private dedent () = 
+		indent_level <- indent_level - 1;
+		indent_string <- String.sub indent_string 0 @@ (String.length indent_string) - 4
+	  method private newline ?post () = 
+		self#maybe_put post;
+		self#put "\n";
+		indented <- false
 	  method private put s =
 		Buffer.add_string buf s
+	  method private open_block () = 
+		self#put_i "{";
+		self#indent ();
+		self#newline ()
+	  method private maybe_put : string option -> unit = function 
+		| Some s -> self#put_i s
+		| None -> ()
+	  method private close_block ?post () = 
+		self#dedent ();
+		self#put_i "}";
+		self#maybe_put post
 	end
+
 	class typedef_emitter buf = 
 	  object (self)
 		inherit emitter buf
@@ -417,7 +448,9 @@ module Compilation = struct
 		  List.map2 (fun t_name m_type -> (t_name,m_type)) t_vars bindings
 		method dump_type_instantiation (type_name,mono_args) = 
 		  let c_name = c_struct_name @@ adt_of_inst (type_name,mono_args) in
-		  self#put @@ "struct " ^ c_name ^ " { // " ^ (pp_t (type_name,mono_args)) ^ "\n";
+		  self#put_i @@ "struct " ^ c_name ^ " { // " ^ (pp_t (type_name,mono_args));
+		  self#newline ();
+		  self#indent ();
 		  if type_name = "__rust_tuple" then
 			self#dump_tuple mono_args
 		  else begin
@@ -429,7 +462,9 @@ module Compilation = struct
 			  | `Struct_def s ->
 				 let t_binding = self#bindings s.Ir.s_tparam mono_args in
 				 self#dump_struct t_binding s
-			end
+			end;
+		  self#dedent();
+		  self#put_i "}"
 		method private dump_tuple mono_args = 
 		  let field_names = List.mapi (fun i _ -> Printf.sprintf tuple_field i) mono_args in
 		  let fields = List.map2 (fun f_name f_type -> 
@@ -445,28 +480,30 @@ module Compilation = struct
 									 enum.Ir.variants
 		  in
 		  if has_data then begin
-			  self#put "union {\n";
+			  self#put_i "union ";
+			  self#open_block ();
 			  List.iteri (self#dump_variant t_binding) enum.Ir.variants;
-			  self#put "} data;\n"
+			  self#close_block ~post:" data" ();
+			  self#newline ~post:";" ()
 			end
 		  else ();
-		  self#put "};"
 		method private dump_variant t_binding tag v = 
 		  if v.Ir.variant_fields = [] then ()
 		  else begin
 			  let m_args = List.map (Types.to_monomorph t_binding) v.Ir.variant_fields in
-			  self#put "struct {\n";
+			  self#put_i "struct ";
+			  self#open_block ();
 			  self#dump_tuple m_args;
-			  self#put "} ";
+			  self#close_block ~post:" " ();
 			  self#put @@ Printf.sprintf arm_field tag;
-			  self#put ";\n"
+			  self#newline ~post:";" ()
 			end
 			
 		method private dump_field_def ((field_name,field_type) : string * Types.mono_type) = 
-		  self#put (type_to_string field_type);
-		  self#put " ";
-		  self#put field_name;
-		  self#put ";\n"
+		  self#put_i (type_to_string field_type);
+		  self#put_i " ";
+		  self#put_i field_name;
+		  self#newline ~post:";" ()
 		method private monomorphize_fields t_binding f_def = 
 		  List.map (self#monomorph_field t_binding) f_def
 		method private monomorph_field t_binding (f_name,f_type) = 
@@ -482,45 +519,47 @@ module Compilation = struct
 	  method dump_expr (expr : all_expr) = 
 		match (snd expr) with
 		| `Block (s,e) ->
-		   Buffer.add_string buf "{\n";
+		   self#open_block ();
 		   List.iter self#dump_stmt s;
 		   self#dump_expr e;
-		   Buffer.add_string buf ";\n}\n";
+		   self#newline ~post:";" ();
+		   self#close_block ();
+		   self#newline ()
 		| `Match (_,m_arm) ->
 		   self#dump_match m_arm
 		| #simple_expr as s -> self#dump_simple_expr s
 	  method dump_simple_expr = function
-		| `Var s -> Buffer.add_string buf s
-		| `Literal l -> Buffer.add_string buf l
+		| `Var s -> self#put_i s
+		| `Literal l -> self#put_i l
 		| `Deref (_,e) -> 
-		   self#put "*";
+		   self#put_i "*";
 		   self#dump_simple_expr e
 		| `Address_of (_,e) ->
-		   self#put "&";
+		   self#put_i "&";
 		   self#dump_simple_expr e
 		| `Return (_,e) ->
-		   self#put "return ";
+		   self#put_i "return ";
 		   self#dump_simple_expr e
 		| `Assignment (lhs,(_,rhs)) ->
 		   self#dump_simple_expr lhs;
-		   self#put " = ";
+		   self#put_i " = ";
 		   self#dump_simple_expr rhs
 		| `Cast ((_,expr),t) ->
-		   self#put @@ Printf.sprintf "(%s)" @@ self#t_string t;
+		   self#put_i @@ Printf.sprintf "(%s)" @@ self#t_string t;
 		   self#dump_simple_expr expr
 		| `Struct_Field (s,f) ->
 		   self#dump_simple_expr s;
-		   self#put ".";
+		   self#put_i ".";
 		   self#put f
 		| `Call (fn_name,_,inst,args) ->
 		   let m_args = List.map (Types.to_monomorph t_bindings) inst in
 		   let mangled_fname = mangle_fn_name fn_name m_args in
-		   Buffer.add_string buf mangled_fname;
-		   Buffer.add_string buf "(";
-		   self#dump_args args;
-		   Buffer.add_string buf ")"
-		| `BinOp (op,(_,rhs),(_,lhs)) ->
+		   self#put_i mangled_fname;
 		   self#put "(";
+		   self#dump_args args;
+		   self#put ")"
+		| `BinOp (op,(_,rhs),(_,lhs)) ->
+		   self#put_i "(";
 		   self#dump_simple_expr rhs;
 		   self#put " ";
 		   self#put @@ string_of_binop op;
@@ -528,44 +567,45 @@ module Compilation = struct
 		   self#dump_simple_expr lhs;
 		   self#put ")"
 		| `UnOp (op,(_,e)) ->
-		   self#put "(";
+		   self#put_i "(";
 		   self#put @@ string_of_unop op;
 		   self#dump_simple_expr e;
 		   self#put ")"
 	  method dump_match = function
 		| (match_condition,match_body)::t -> 
-		   Buffer.add_string buf "if(";
+		   self#put_i "if(";
 		   self#dump_expr (match_condition :> all_expr);
-		   Buffer.add_string buf ")\n";
+		   self#put_i ") ";
 		   self#dump_expr match_body;
 		   self#dump_match_rest t
 		| _ -> assert false
 	  method dump_match_rest = function
 		| [] -> ()
 		| (match_condition,match_body)::t -> 
-		   Buffer.add_string buf "else if(";
+		   self#put_i "else if(";
 		   self#dump_expr (match_condition :> all_expr);
-		   Buffer.add_string buf ")";
+		   self#put ") ";
 		   self#dump_expr match_body;
 		   self#dump_match_rest t
 	  method dump_stmt = function
 		| `Let (v_name,r_type,expr) ->
 		   let m_type = Types.to_monomorph t_bindings r_type in
 		   let type_string = type_to_string m_type in
-		   Buffer.add_string buf (Printf.sprintf "%s %s = " type_string v_name);
+		   self#put_i @@ Printf.sprintf "%s %s = " type_string v_name;
 		   self#dump_expr (expr :> all_expr);
-		   Buffer.add_string buf ";\n"
+		   self#newline ~post:";" ()
 		| `Declare (v_name,r_type) ->
 		   let m_type = Types.to_monomorph t_bindings r_type in
 		   let type_string = type_to_string m_type in
-		   Buffer.add_string buf (Printf.sprintf "%s %s;\n" type_string v_name)
+		   self#put_i @@ Printf.sprintf "%s %s" type_string v_name;
+		   self#newline ~post:";" ()
 		| `Expr ((_,`Block _) as e) ->
 		   self#dump_expr e;
 		| `Expr ((_,`Match _) as e)->
 		   self#dump_expr e;
 		| `Expr e ->
 		   self#dump_expr e;
-		   self#put ";\n"
+		   self#newline ~post:";" ()
 	  method dump_args = function
 		| (_,e)::t -> 
 		   self#dump_simple_expr e;
@@ -577,7 +617,7 @@ module Compilation = struct
 		   self#put ", ";
 		   self#dump_simple_expr e;
 		   self#dump_args_rest t
-	end		 
+	end
 
 	let int_type = `Int 4;;
 	let dummy_enum = `Bottom;;
