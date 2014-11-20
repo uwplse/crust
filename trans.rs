@@ -25,9 +25,26 @@ impl<T: Trans> Trans for Vec<T> {
     }
 }
 
+impl<'a, T: Trans> Trans for &'a [T] {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        let mut result = format!("{}", self.len());
+        for item in self.iter() {
+            result.push_str(" ");
+            result.push_str(item.trans(tcx).as_slice());
+        }
+        result
+    }
+}
+
 impl<T: Trans> Trans for P<T> {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         (**self).trans(tcx)
+    }
+}
+
+impl Trans for String {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        self.clone()
     }
 }
 
@@ -72,7 +89,8 @@ impl Trans for Ty {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match tcx.ast_ty_to_ty_cache.borrow().find(&self.id) {
             Some(&ty::atttce_resolved(t)) => t.trans(tcx),
-            _ => panic!("no ast_ty_to_ty_cache entry for {}", self),
+            //_ => panic!("no ast_ty_to_ty_cache entry for {}", self),
+            _ => format!("[[no_ty_to_ty {}]]", self.repr(tcx)),
         }
     }
 }
@@ -428,39 +446,79 @@ struct TransVisitor<'a, 'tcx: 'a> {
 }
 
 impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
-    fn visit_fn(&mut self, fk: FnKind<'v>, fd: &'v FnDecl, b: &'v Block, s: Span, id: NodeId) {
-        match fk {
-            FkItemFn(name, generics, style, abi) => {
-                let raw_name = name.as_str();
-                println!("fn {} 0 0 {} body {} {} {{\n{}\t{}\n}}\n\n",
-                         mangled_def_name(self.tcx, local_def(id)),
-                         fd.trans(self.tcx),
-                         fd.output.trans(self.tcx),
-                         match style {
-                             UnsafeFn => "unsafe",
-                             NormalFn => "block",
-                         },
-                         b.stmts.trans(self.tcx),
-                         b.expr.as_ref().map(|e| e.trans(self.tcx))
-                          .unwrap_or("unit simple_literal _".into_string()));
-            },
-            _ => {},
-        }
-    }
-
-    fn visit_struct_def(&mut self, s: &'v StructDef, name: Ident, g: &'v Generics, id: NodeId) {
-        assert!(s.ctor_id.is_none());
-        println!("struct {} 0 0 {};",
-                 mangled_def_name(self.tcx, local_def(id)),
-                 s.fields.trans(self.tcx));
-    }
-
     fn visit_item(&mut self, i: &'v Item) {
         match i.node {
+            ItemStruct(ref def, ref g) => {
+                assert!(def.ctor_id.is_none());
+                println!("struct {} 0 0 {};",
+                         mangled_def_name(self.tcx, local_def(i.id)),
+                         def.fields.trans(self.tcx));
+            },
             ItemEnum(ref def, ref g) => {
                 println!("enum {} {}",
                          i.ident.trans(self.tcx),
                          def.variants.trans(self.tcx));
+            },
+            ItemFn(ref decl, style, _, ref generics, ref body) => {
+                println!("fn {} 0 0 {} body {} {} {{\n{}\t{}\n}}\n\n",
+                         mangled_def_name(self.tcx, local_def(i.id)),
+                         decl.trans(self.tcx),
+                         decl.output.trans(self.tcx),
+                         match style {
+                             UnsafeFn => "unsafe",
+                             NormalFn => "block",
+                         },
+                         body.stmts.trans(self.tcx),
+                         body.expr.as_ref().map(|e| e.trans(self.tcx))
+                             .unwrap_or("unit simple_literal _".into_string()));
+            },
+            ItemImpl(ref g, ref trait_ref, ref self_ty, ref items) => {
+                for item in items.iter() {
+                    match *item {
+                        MethodImplItem(ref method) => {
+                            let (name, generics, _, exp_self, _, decl, body, _) = match method.node {
+                                MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
+                                MethMac(_) => panic!("unexpected MethMac"),
+                            };
+                            let mut arg_strs = vec![];
+
+                            let self_arg = match exp_self.node {
+                                SelfStatic => None,
+                                SelfValue(ref name) =>
+                                    Some(format!("{} {}",
+                                                 name.trans(self.tcx),
+                                                 self_ty.trans(self.tcx))),
+                                SelfRegion(ref opt_lifetime, mutbl, ref name) =>
+                                    Some(format!("{} {} {} {}",
+                                                 name.trans(self.tcx),
+                                                 match mutbl {
+                                                     MutMutable => "ref_mut",
+                                                     MutImmutable => "ref",
+                                                 },
+                                                 "[[Option<Lifetime>]]".into_string(),
+                                                 self_ty.trans(self.tcx))),
+                                SelfExplicit(ref ty, ref name) =>
+                                    Some(format!("{} {}",
+                                                 name.trans(self.tcx),
+                                                 self_ty.trans(self.tcx))),
+                            };
+                            let offset = match self_arg {
+                                Some(arg) => {
+                                    arg_strs.push(arg);
+                                    1
+                                },
+                                None => 0,
+                            };
+
+                            arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(self.tcx)));
+                            println!("method {} (args {})",
+                                     mangled_def_name(self.tcx, local_def(method.id)),
+                                     arg_strs.trans(self.tcx));
+
+                        },
+                        TypeImplItem(_) => panic!("unsupported TypeImplItem"),
+                    }
+                }
             },
             _ => {},
         }
