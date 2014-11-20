@@ -8,11 +8,16 @@ let get_sets () =
   (t_set,f_set)
 
 let do_it f = 
-  let f_name = f in
-  let input = open_in f_name in
+  Printexc.record_backtrace true;
+  let (input,close) = 
+	if f = "-" then
+	  stdin,false
+	else
+	  (open_in f),true
+  in
   let ast =
   try
-	Parser.parse_channel input 
+	Parser.parse_channel ~close:close input 
   with Parser.Parse_failure (f_name,tokens) ->
 	failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in

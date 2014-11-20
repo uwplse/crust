@@ -71,7 +71,7 @@ fn UnsafeCell_new<0><1: T>
 #   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def* name(drop_fn)?
 #   field_def ::= name(field) type
 #
-#   enum_def ::= "enum" name variant_def* name(drop_fn)?
+#   enum_def ::= "enum" name name(lifetime_param)* name(type_params)* variant_def* name(drop_fn)?
 #   variant_def ::= name(variant) type*
 #
 #   fn_def ::= "fn" name(fn) name(lifetime_param)* name(type_param)*

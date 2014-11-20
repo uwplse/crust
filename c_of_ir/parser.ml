@@ -1,5 +1,5 @@
-let slurp_file f = 
-  let buf = Buffer.create (in_channel_length f) in
+let slurp_file close_chan f = 
+  let buf = Buffer.create 100 in
   let rec loop () = 
 	try
 	  let l = input_line f in
@@ -8,7 +8,10 @@ let slurp_file f =
 	  else if l.[0] = '#' then
 		loop ()
 	  else (Buffer.add_string buf l; loop ())
-	with End_of_file -> (close_in f; Buffer.contents buf)
+	with End_of_file -> (
+	  (if close_chan then close_in f else ()); 
+	  Buffer.contents buf
+	)
   in
   loop ();;
 
@@ -334,6 +337,6 @@ let parse_string s =
   let tokens = List.filter (fun s -> s <> "") (Str.split (Str.regexp split_regex) s) in
   consume_to_end tokens parse_module (fun s -> s)
 
-let parse_channel c = 
-  parse_string (slurp_file c)
+let parse_channel ?(close=true) c = 
+  parse_string (slurp_file close c)
 

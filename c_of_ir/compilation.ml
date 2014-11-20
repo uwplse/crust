@@ -385,6 +385,16 @@ object(self)
   val mutable indent_level = 0
   val mutable indent_string = ""
   val mutable indented = false
+  method private put_many : 'a.string -> ('a -> unit) -> 'a list -> unit =
+	let rec put_loop first separator put_fn items = 
+	  match items with
+	  | [] -> ()
+	  | h::t ->
+		 (if not first then self#put_i separator else ());
+		 put_fn h;
+		 put_loop false separator put_fn t
+	in
+	fun sep pf i -> put_loop true sep pf i
   method private put_i s = 
 	if not indented then
 	  (self#put indent_string;
@@ -504,7 +514,7 @@ object (self)
 	   self#close_block ();
 	   self#newline ()
 	| `Match (_,m_arm) ->
-	   self#dump_match m_arm
+	   self#put_many "else " self#dump_match m_arm
 	| #simple_expr as s -> self#dump_simple_expr s
   method dump_stmt_expr = function
 	| (_,`Match _)
@@ -539,7 +549,7 @@ object (self)
 	   let mangled_fname = mangle_fn_name fn_name m_args in
 	   self#put_i mangled_fname;
 	   self#put "(";
-	   self#dump_args args;
+	   self#put_many ", " self#dump_args args;
 	   self#put ")"
 	| `BinOp (op,(_,rhs),(_,lhs)) ->
 	   self#put_i "(";
@@ -554,22 +564,11 @@ object (self)
 	   self#put @@ string_of_unop op;
 	   self#dump_simple_expr e;
 	   self#put ")"
-  method dump_match = function
-	| (match_condition,match_body)::t -> 
+  method dump_match (match_condition,match_body) = 
 	   self#put_i "if(";
 	   self#dump_expr (match_condition :> all_expr);
 	   self#put_i ") ";
 	   self#dump_stmt_expr match_body;
-	   self#dump_match_rest t
-	| _ -> assert false
-  method dump_match_rest = function
-	| [] -> ()
-	| (match_condition,match_body)::t -> 
-	   self#put_i "else if(";
-	   self#dump_expr (match_condition :> all_expr);
-	   self#put ") ";
-	   self#dump_stmt_expr match_body;
-	   self#dump_match_rest t
   method dump_stmt = function
 	| `Let (v_name,r_type,expr) ->
 	   let m_type = Types.to_monomorph t_bindings r_type in
@@ -584,17 +583,7 @@ object (self)
 	   self#newline ~post:";" ()
 	| `Expr e ->
 	   self#dump_stmt_expr e;
-  method dump_args = function
-	| (_,e)::t -> 
-	   self#dump_simple_expr e;
-	   self#dump_args_rest t
-	| [] -> ()
-  method dump_args_rest = function
-	| [] -> ()
-	| (_,e)::t ->
-	   self#put ", ";
-	   self#dump_simple_expr e;
-	   self#dump_args_rest t
+  method dump_args (_,e) = self#dump_simple_expr e
 end
 
 let simplified_ir = Hashtbl.create 10;;
