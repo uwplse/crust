@@ -256,7 +256,24 @@ impl Trans for ty::t {
 
 impl Trans for ty::Region {
     fn trans(&self, tcx: &ty::ctxt) -> String {
-        "[[Region]]".into_string()
+        match *self {
+            ty::ReEarlyBound(_id, space, idx, _name) => {
+                format!("r{}{}", space.trans(tcx), idx)
+            },
+            ty::ReLateBound(binder_id, ref br) => br.trans(tcx),
+            ty::ReFree(ref fr) => fr.bound_region.trans(tcx),
+            ty::ReStatic => "static".into_string(),
+            _ => panic!("unsupported Region variant"),
+        }
+    }
+}
+
+impl Trans for ty::BoundRegion {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        match *self {
+            ty::BrAnon(idx) => format!("r_anon_{}", idx),
+            _ => panic!("unsupported BoundRegion variant"),
+        }
     }
 }
 
@@ -421,9 +438,55 @@ impl Trans for Expr {
             _ => panic!("unrecognized Expr_ variant"),
         };
 
-        format!("({} {})",
-                tcx.node_types.borrow()[self.id].trans(tcx),
-                variant)
+        let expr_ty = tcx.node_types.borrow()[self.id];
+        let unadjusted = format!("({} {})",
+                                 expr_ty.trans(tcx),
+                                 variant);
+
+        match tcx.adjustments.borrow().get(&self.id) {
+            None => unadjusted,
+            Some(adj) => adjust_expr(tcx, adj, self, unadjusted),
+        }
+    }
+}
+
+fn adjust_expr(tcx: &ty::ctxt,
+               adj: &ty::AutoAdjustment,
+               expr: &Expr,
+               unadjusted: String) -> String {
+    let mut result = unadjusted;
+    let mut result_ty = tcx.node_types.borrow()[expr.id];
+
+    match *adj {
+        ty::AdjustDerefRef(ref adr) => {
+            for i in range(0, adr.autoderefs) {
+                let (new_result, new_result_ty) = deref_once(tcx, expr, i, result, result_ty);
+                result = new_result;
+                result_ty = new_result_ty;
+            }
+
+            assert!(adr.autoref.is_none());
+        },
+        ty::AdjustAddEnv(_) => panic!("unsupported AdjustAddEnv"),
+    }
+
+    result
+}
+
+fn deref_once(tcx: &ty::ctxt,
+              expr: &Expr,
+              level: uint,
+              expr_str: String,
+              expr_ty: ty::t) -> (String, ty::t) {
+    match ty::get(expr_ty).sty {
+        ty::ty_ptr(ty::mt { ty, .. }) |
+        ty::ty_rptr(_, ty::mt { ty, .. }) => {
+            let new_expr_str = format!("({} deref {})",
+                                       ty.trans(tcx),
+                                       expr_str);
+            (new_expr_str, ty)
+        },
+        _ => panic!("unexpected ty variant"),
     }
 }
 
