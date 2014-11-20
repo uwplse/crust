@@ -6,3 +6,6 @@
 *.blg
 *.log
 *.pdf
+/c_of_ir/_build
+/c_of_ir/*.byte
+/c_of_ir/*.native
