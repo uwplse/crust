@@ -38,9 +38,7 @@ let rec walk_type : TISet.t -> Types.mono_type -> TISet.t = fun t_set t ->
   | `Ptr t' -> walk_type t_set t'
   | #simple_type -> t_set
 and walk_type_def t_set adt_def m_params =
-  let gen_binding = fun t_names ->
-	List.map2 (fun t_name t_value -> (t_name,t_value)) t_names m_params
-  in
+  let gen_binding = fun t_names -> Types.type_binding t_names m_params in
   match adt_def with
   | `Struct_def sd -> 
 	 let new_bindings = gen_binding sd.s_tparam in
@@ -58,7 +56,7 @@ let inst_walk_type t_bindings t_set t =
 			
 let rec walk_fn (t_set,f_set) fn_name m_params = 
   let fn_def = Hashtbl.find Env.fn_env fn_name in
-  let bindings = List.map2 (fun t_name m_param -> (t_name,m_param)) fn_def.fn_tparams m_params in
+  let bindings = Types.type_binding fn_def.fn_tparams m_params in
   let arg_types = List.map snd fn_def.fn_args in
   let fn_types = fn_def.ret_type::arg_types in
   let t_set' = List.fold_left (inst_walk_type bindings) t_set fn_types in

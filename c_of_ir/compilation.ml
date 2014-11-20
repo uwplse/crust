@@ -376,39 +376,6 @@ and compile_pattern = fun (predicates,bindings) matchee patt ->
 	 (lhs,rhs)::predicates,bindings
 
 (* Code emission starts here... TODO: split into modules! *)  
-
-(*	let compile_fn_inst (f_name,mono_args) = 
-	  let fn_def = Hashtbl.find fn_env f_name in
-	  let bindings = List.map2 (fun t_name t_val -> (t_name,t_val)) fn_def.fn_tparams mono_args in
-	  let f_name = mangle_fn_name fn_def.fn_name mono_args in
-	  let buf = Buffer.create 100 in
-	  let ret_type = to_monomorph bindings fn_def.ref_type in
-	  Buffer.add_string buf (string_of_type (ret_type));
-	  Buffer.add_string buf " ";
-	  Buffer.add_string buf f_name;
-	  Buffer.add_string buf "(";
-	  let dump_arg (arg_name, arg_type) = 
-		Buffer.add_string buf (string_of_type (to_monomorph bindings arg_type));
-		Buffer.add_string buf " ";
-		Buffer.add_string buf arg_name
-	  in
-	  let rec arg_dump_loop = function ->
-									 | [] -> ()
-									 | a::[] -> dump_arg a
-									 | h::t -> dump_arg h; Buffer.add_string buf ","; arg_dump_loop t
-	  in
-	  arg_dump_loop fn_def.fn_args;
-	  Buffer.add_string buf "{\n";
-	  let to_compile = 
-		if ret_type = `Unit then 
-		  fn_def.fn_body 
-		else 
-		  instrument_return fn_def.fn_body
-	  in
-	  compile_expr buf bindings 1 to_compile;
-	  Buffer.add_string buf "}\n";
- *)
-
 (* pretty print type TODO: implement me! *)
 let pp_t _ = ""
 
@@ -452,8 +419,7 @@ end
 class typedef_emitter buf = 
 object (self)
   inherit emitter buf
-  method private bindings t_vars bindings = 
-	List.map2 (fun t_name m_type -> (t_name,m_type)) t_vars bindings
+  method private bindings = Types.type_binding
   method emit_type_instantiation (type_name,mono_args) = 
 	let c_name = c_struct_name @@ adt_of_inst (type_name,mono_args) in
 	self#put_i @@ "struct " ^ c_name ^ " { // " ^ (pp_t (type_name,mono_args));
@@ -697,7 +663,7 @@ let emit_typedefs out_channel inst =
 
 let sig_of_fdef fn_def mono_args = 
   let buf = Buffer.create 100 in
-  let bindings = List.map2 (fun t_param m -> (t_param,m)) fn_def.Ir.fn_tparams mono_args in
+  let bindings = Types.type_binding fn_def.Ir.fn_tparams mono_args in
   Buffer.add_string buf @@ type_to_string @@ Types.to_monomorph bindings fn_def.Ir.ret_type;
   Buffer.add_string buf " ";
   Buffer.add_string buf @@ mangle_fn_name fn_def.Ir.fn_name mono_args;
