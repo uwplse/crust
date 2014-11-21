@@ -9,6 +9,7 @@ use syntax::codemap::Span;
 use syntax::ptr::P;
 use syntax::ast_util::local_def;
 use rustc::metadata::csearch;
+use rustc::middle::subst;
 use rustc::middle::subst::ParamSpace;
 use rustc::middle::subst::ParamSpace::*;
 
@@ -147,6 +148,15 @@ impl TransExtra<ParamSpace> for TyParam {
 }
 */
 
+impl Trans for subst::RegionSubsts {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        match *self {
+            subst::ErasedRegions => panic!("unsupported ErasedRegions"),
+            subst::NonerasedRegions(ref regions) => regions.as_slice().trans(tcx),
+        }
+    }
+}
+
 impl Trans for FunctionRetTy {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match *self {
@@ -210,8 +220,9 @@ impl Trans for ty::t {
                                     }),
             // ty_float
             // TODO: handle substs
-            ty_enum(did, ref substs) => format!("adt {} 0 {}",
+            ty_enum(did, ref substs) => format!("adt {} {} {}",
                                                 mangled_def_name(tcx, did),
+                                                substs.regions.trans(tcx),
                                                 substs.types.as_slice().trans(tcx)),
             // ty_uniq
             // ty_str
@@ -233,8 +244,9 @@ impl Trans for ty::t {
             // ty_closure
             // ty_trait
             // TODO: handle substs
-            ty_struct(did, ref substs) => format!("adt {} 0 {}",
+            ty_struct(did, ref substs) => format!("adt {} {} {}",
                                                   mangled_def_name(tcx, did),
+                                                  substs.regions.trans(tcx),
                                                   substs.types.as_slice().trans(tcx)),
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
