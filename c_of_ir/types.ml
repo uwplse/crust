@@ -51,3 +51,20 @@ let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun 
 
 let type_binding tv ty = 
   List.map2 (fun t_name t -> (t_name, t)) tv ty
+
+let rec pp_t (to_pp : r_type) = match to_pp with
+  | `Bottom -> "!"
+  | `T_Var t -> "var " ^ t
+  | `Int _ -> "int"
+  | `UInt _ -> "uint"
+  | `Unit -> "()"
+  | `Bool -> "bool"
+  | `Ptr t
+  | `Ref (_,t) -> "const " ^ (pp_t t) ^ "*"
+  | `Ref_Mut (_,t)
+  | `Ptr_Mut t -> (pp_t t) ^ "*"
+  | `Tuple tl -> "(" ^ (String.concat ", " @@ List.map pp_t tl) ^ ")"
+  | `Adt_type p -> 
+	 if p.type_param = [] then p.type_name 
+	 else p.type_name ^ "<" ^ (String.concat "," @@ List.map pp_t p.type_param) ^ ">"
+

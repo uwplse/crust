@@ -37,3 +37,4 @@ type poly_adt_type = r_type adt_type
 val to_monomorph : (string * mono_type) list -> r_type -> mono_type
 val type_binding : type_param list -> 'a list -> (type_param * 'a) list
 
+val pp_t :  r_type -> string
