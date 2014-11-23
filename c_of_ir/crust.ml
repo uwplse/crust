@@ -22,9 +22,22 @@ let do_it f =
 	failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in
   Env.set_env ast;
-  (* for now, let's optimistically assume all methods and types
-  all already monomorphic *)
-  let (t_set,f_set) = get_sets () in
+  let w_state = Analysis.run_analysis () in
+(*
+  print_endline "public types:";
+  Analysis.MTSet.iter (fun s -> print_endline @@ Types.pp_t (s : Types.mono_type :> Types.r_type))  w_state.Analysis.public_type;
+  print_endline "function instantiations:";
+  Analysis.FISet.iter (fun (f_name,t) ->
+					   print_endline @@ "function name:  " ^ f_name;
+					   print_endline @@ "type params: [" ^ (String.concat ", " @@ List.map Types.pp_t (t : Types.mono_type list :> Types.r_type list)) ^ "]"
+					  ) w_state.Analysis.fn_inst;
+  print_endline "public functions:";
+  Analysis.FISet.iter (fun (f_name,t) ->
+					   print_endline @@ "function name:  " ^ f_name;
+					   print_endline @@ "type params: [" ^ (String.concat ", " @@ List.map Types.pp_t (t : Types.mono_type list :> Types.r_type list)) ^ "]"
+					  ) w_state.Analysis.public_fn
+ *)
+  let (t_set,f_set) = w_state.Analysis.type_inst,w_state.Analysis.fn_inst in
   Compilation.emit stdout t_set f_set
 
 let _ = do_it Sys.argv.(1)

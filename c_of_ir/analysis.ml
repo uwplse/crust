@@ -449,18 +449,27 @@ let get_inst =
 			  ) t_bindings)
   | `Mismatch -> None
 
-let rec find_fn w_state = 
+let has_inst w_state f_name = 
+  FISet.exists (fun (f_name',_) -> 
+				f_name = f_name') w_state.fn_inst
+
+let rec find_fn constructor_fn w_state = 
   let old_size = state_size w_state in
   let w_state = Hashtbl.fold (fun fn_name fn_def w_state ->
-							  match get_inst w_state.public_type fn_def with
-							  | None -> w_state
-							  | Some inst_list ->
-								 List.fold_left (walk_public_fn fn_def) w_state inst_list
+							  if (SSet.mem fn_name constructor_fn) &&
+								   has_inst w_state fn_name then
+								w_state
+							  else begin
+								  match get_inst w_state.public_type fn_def with
+								  | None -> w_state
+								  | Some inst_list ->
+									 List.fold_left (walk_public_fn fn_def) w_state inst_list
+								end
 							 ) Env.fn_env w_state in
   if old_size = (state_size w_state) then
 	w_state
   else
-	find_fn w_state
+	find_fn constructor_fn w_state
 
 let do_test m_types to_unify = 
   let t_match = new type_matcher in
@@ -471,3 +480,28 @@ let do_test m_types to_unify =
   
 let debug_get_constructors () = 
   SSet.elements @@ find_constructors ()
+
+let run_analysis () = 
+  let constructor_fn = find_constructors () |> SSet.add "crust_init" in
+  let crust_init_def = Hashtbl.find Env.fn_env "crust_init" in
+  let init_state = {
+	  type_inst = TISet.empty;
+	  fn_inst = FISet.empty;
+	  public_type = MTSet.empty;
+	  public_fn = FISet.empty
+	}
+  in
+  (match crust_init_def.Ir.fn_tparams with
+  | [] -> ()
+  | _ -> failwith "crust_init cannot be polymorphic");
+  let seed_types = 
+	match crust_init_def.Ir.ret_type with
+	| `Tuple tl -> List.map (Types.to_monomorph []) tl
+	| t -> failwith @@ "crust_init must return a tuple, found: " ^ (Types.pp_t t)
+  in
+  let w_state = {
+	  init_state with public_type = List.fold_right MTSet.add seed_types init_state.public_type
+	}
+  in
+  let with_init_state = walk_fn_def w_state crust_init_def [] in
+  find_fn constructor_fn with_init_state
