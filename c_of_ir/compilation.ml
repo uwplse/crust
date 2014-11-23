@@ -432,8 +432,10 @@ object (self)
   inherit emitter buf
   method private bindings = Types.type_binding
   method emit_type_instantiation (type_name,mono_args) = 
-	let c_name = c_struct_name @@ adt_of_inst (type_name,mono_args) in
-	self#put_i @@ "struct " ^ c_name ^ " { // " ^ (pp_t (type_name,mono_args));
+	let type_rep = adt_of_inst (type_name,mono_args) in
+	let c_name = c_struct_name type_rep in
+	let r_type_rep = (`Adt_type (type_rep : Types.mono_adt_type :> Types.poly_adt_type)) in
+	self#put_i @@ "struct " ^ c_name ^ " { // " ^ (Types.pp_t r_type_rep);
 	self#newline ();
 	self#indent ();
 	if type_name = "__rust_tuple" then
@@ -525,8 +527,10 @@ object (self)
 	| `Var s -> self#put_i s
 	| `Literal l -> self#put_i l
 	| `Deref (_,e) -> 
+	   self#put_i "(";
 	   self#put_i "*";
-	   self#dump_simple_expr e
+	   self#dump_simple_expr e;
+	   self#put_i ")"
 	| `Address_of (_,e) ->
 	   self#put_i "&";
 	   self#dump_simple_expr e
