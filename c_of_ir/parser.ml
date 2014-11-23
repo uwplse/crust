@@ -7,7 +7,9 @@ let slurp_file close_chan f =
 		loop ()
 	  else if l.[0] = '#' then
 		loop ()
-	  else (Buffer.add_string buf l; loop ())
+	  else (Buffer.add_string buf l; 
+			Buffer.add_string buf " "; 
+			loop ())
 	with End_of_file -> (
 	  (if close_chan then close_in f else ()); 
 	  Buffer.contents buf
@@ -52,7 +54,8 @@ let parse_lifetimes tokens cb =
 
 let consume_type_param l cb = 
   match l with
-  | h::t -> cb (h : Types.type_param) t
+  | h::t -> 
+	 cb (h : Types.type_param) t
   | _ -> raise (Unexpected_stream_end "consume_type_param")
 
 let parse_type_params tokens cb = 
@@ -87,7 +90,8 @@ let parse_simple_type tokens cb = match tokens with
   | "int"::w::t -> cb (`Int (int_of_string w)) t
   | "uint"::w::t -> cb (`UInt (int_of_string w)) t
   | "bool"::t -> cb `Bool t
-  | _ -> (raise (Parse_failure ("parse_simple_type",tokens)))
+  | t_var::t -> cb (`T_Var t_var) t
+  | [] -> raise (Unexpected_stream_end "parse_simple_type")
 
 let rec parse_adt_type tokens cb = match tokens with
   | "adt"::name::t -> 
@@ -186,7 +190,7 @@ let rec parse_expr_var tokens cb = match tokens with
 	 parse_n parse_expr t (fun e rest ->
 						   cb (`Enum_Literal (v_name,i_v_index,e)) rest
 						  )
-  | "tuple"::t ->
+  | "tuple_literal"::t ->
 	 parse_n parse_expr t (fun el rest ->
 						   cb (`Tuple el) rest
 						  )
@@ -302,19 +306,18 @@ let parse_variant_def tokens cb =
 
 let parse_enum_def tokens cb = match tokens with
   | "enum"::name::t ->
-	 (* this is what it should be? 
-	 let p_fun = ((*parse_lifetimes >> parse_type_params >> *)(parse_n parse_variant_def) >> (maybe_parse consume_name)) in
-	 p_fun t (fun (((*(lifetimes,t_params),*)v_def),drop_fn) rest ->
+	 (* this is what it should be? *)
+	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n parse_variant_def) (*>> (maybe_parse consume_name) *)) in
+	 p_fun t (fun (((lifetimes,t_params),v_def)(*,drop_fn*)) rest ->
 			  cb (`Enum_def {
 				  Ir.enum_name = name;
-				  Ir.e_lifetime_param = [] (*lifetimes*);
-				  Ir.e_tparam = [] (*t_params*);
+				  Ir.e_lifetime_param = lifetimes;
+				  Ir.e_tparam = t_params;
 				  Ir.variants = v_def;
-				  Ir.drop_fn = drop_fn;
+				  Ir.drop_fn = None;
 				}) rest
 			 )
-	  *)
-	 (parse_n parse_variant_def) t (fun v_def rest ->
+(*	 (parse_n parse_variant_def) t (fun v_def rest ->
 									cb (`Enum_def {
 										   Ir.enum_name = name;
 										   Ir.e_lifetime_param = [];
@@ -322,7 +325,7 @@ let parse_enum_def tokens cb = match tokens with
 										   Ir.variants = v_def;
 										   Ir.drop_fn = None
 										 }) rest
-								   )
+								   )*)
   | _ -> assert false
 
 let parse_module tokens cb = 
