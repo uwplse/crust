@@ -7,11 +7,11 @@ let rec (adt_type_name : Types.mono_type -> string) = function
   | `Adt_type a -> mangle_adt_name a
   | `Ptr t | `Ref (_,t) -> (adt_type_name t) ^ "_ptr"
   | `Ptr_Mut t | `Ref_Mut (_,t) -> "const_" ^ (adt_type_name t) ^ "_ptr"
-  | `Int _ -> "int"
-  | `UInt _ -> "uint"
-  | `Bool -> "int"
-  | `Unit -> "void"
-  | `Bottom -> failwith "No C representation"
+  | `Int n -> "i" ^ string_of_int n
+  | `UInt n -> "u" ^ string_of_int n
+  | `Bool -> "bool"
+  | `Unit -> "unit"
+  | `Bottom -> "bottom"
   | `Tuple tl -> mangle_adt_name @@ adt_of_tuple tl
 and mangle_adt_name t = 
   if t.Types.type_param = [] then
@@ -44,13 +44,13 @@ let tuple_field = field_label;;
 let data_field = "data";;
 
 let rec type_to_string : Types.mono_type -> string = function
-  | `Unit -> "void"
-  | `Bool -> "int"
-  | `UInt _ -> "unsigned"
-  | `Int _ -> "int"
+  | `Int n -> "rs_i" ^ string_of_int n
+  | `UInt n -> "rs_u" ^ string_of_int n
+  | `Bool -> "rs_bool"
+  | `Unit -> "rs_unit"
   | `Ptr t | `Ref (_,t) -> "const " ^ (type_to_string t) ^"*"
   | `Ptr_Mut t | `Ref_Mut (_,t) -> (type_to_string t) ^ "*"
-  | `Bottom -> failwith "No C representation"
+  | `Bottom -> "rs_bottom"
   | `Tuple l -> tuple_name l
   | `Adt_type a_type -> mangle_adt_name a_type
 
@@ -600,6 +600,17 @@ let get_simple_ir fn_name f_def =
 	end
  
 
+let emit_common_typedefs out_channel =
+  Printf.fprintf out_channel "#include <stdint.h>\n";
+  Printf.fprintf out_channel "typedef void rs_bottom;\n";
+  Printf.fprintf out_channel "typedef char rs_unit;\n";
+  Printf.fprintf out_channel "typedef uint8_t rs_bool;\n";
+  let int_sizes = [ 8; 16; 32; 64 ] in
+  List.iter (fun size ->
+             Printf.fprintf out_channel "typedef uint%d_t rs_u%d;\n" size @@ size;
+             Printf.fprintf out_channel "typedef int%d_t rs_i%d;\n" size @@ size
+            ) int_sizes
+
 let emit_typedefs out_channel inst = 
   let adt = adt_of_inst inst in
   let struct_name = c_struct_name adt in
@@ -644,6 +655,7 @@ let emit_fsigs out_channel f_set =
 			 ) f_set
 
 let emit out_channel t_set f_set = 
+  emit_common_typedefs out_channel;
   Analysis.TISet.iter (emit_typedefs out_channel) t_set;
   emit_fsigs out_channel f_set;
   let type_buffer = Buffer.create 1000 in
