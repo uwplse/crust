@@ -232,7 +232,20 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
   | `Deref t -> 
 	 apply_lift (fst expr) t (fun e -> `Deref e)
   | `Var s -> (fst expr,(`Var s))
-  | `Literal s -> (fst expr,`Literal s)
+  | `Literal s -> 
+	 begin
+	   let lit_rep = 
+		 match (fst expr) with
+		 | `Bool -> begin match s with
+						  | "true" -> "1"
+						  | "false" -> "0"
+						  | _ -> failwith @@ "Unknown boolean representation: " ^ s
+					end
+		 | `Unit -> "0"
+		 | _ -> s
+	   in
+	   (fst expr,`Literal lit_rep)
+	 end
   | `Return r ->
 	 apply_lift_cb r (fun stmt r ->
 					  if stmt = [] then
@@ -598,7 +611,6 @@ let get_simple_ir fn_name f_def =
 	  Hashtbl.add simplified_ir fn_name ir;
 	  ir
 	end
- 
 
 let emit_common_typedefs out_channel =
   Printf.fprintf out_channel "#include <stdint.h>\n";
@@ -607,8 +619,8 @@ let emit_common_typedefs out_channel =
   Printf.fprintf out_channel "typedef uint8_t rs_bool;\n";
   let int_sizes = [ 8; 16; 32; 64 ] in
   List.iter (fun size ->
-             Printf.fprintf out_channel "typedef uint%d_t rs_u%d;\n" size @@ size;
-             Printf.fprintf out_channel "typedef int%d_t rs_i%d;\n" size @@ size
+             Printf.fprintf out_channel "typedef uint%d_t rs_u%d;\n" size size;
+             Printf.fprintf out_channel "typedef int%d_t rs_i%d;\n" size size
             ) int_sizes
 
 let emit_typedefs out_channel inst = 
