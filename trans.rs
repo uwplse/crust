@@ -346,6 +346,14 @@ impl Trans for Local {
     }
 }
 
+impl Trans for Field {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        format!("{} {}",
+                self.ident.node.trans(tcx),
+                self.expr.trans(tcx))
+    }
+}
+
 impl Trans for Expr {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         let variant = match self.node {
@@ -360,9 +368,13 @@ impl Trans for Expr {
                 } else {
                     let did = tcx.def_map.borrow()[func.id].def_id();
                     let name = mangled_def_name(tcx, did);
+                    let substs = match tcx.item_substs.borrow().get(&func.id) {
+                        Some(item_substs) => item_substs.substs.trans(tcx),
+                        None => "0 0".into_string(),
+                    };
                     format!("call {} {} {}",
                             name,
-                            tcx.item_substs.borrow()[func.id].substs.trans(tcx),
+                            substs,
                             args.trans(tcx))
                 }
             },
@@ -478,7 +490,10 @@ impl Trans for Expr {
                                 .unwrap_or("unit simple_literal _".into_string())),
             // ExprInlineAsm
             // ExprMac
-            ExprStruct(ref name, ref fields, ref opt_base) => "[[ExprStruct]]".into_string(),
+            ExprStruct(ref name, ref fields, ref opt_base) => {
+                assert!(opt_base.is_none());
+                format!("struct_literal {}", fields.trans(tcx))
+            },
             // ExprRepeat
             ExprParen(ref expr) => expr.trans(tcx),
             _ => panic!("unrecognized Expr_ variant"),
