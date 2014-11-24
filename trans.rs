@@ -149,6 +149,14 @@ impl TransExtra<ParamSpace> for TyParam {
 }
 */
 
+impl Trans for subst::Substs {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        format!("{} {}",
+                self.regions.trans(tcx),
+                self.types.as_slice().trans(tcx))
+    }
+}
+
 impl Trans for subst::RegionSubsts {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match *self {
@@ -221,10 +229,9 @@ impl Trans for ty::t {
                                     }),
             // ty_float
             // TODO: handle substs
-            ty_enum(did, ref substs) => format!("adt {} {} {}",
+            ty_enum(did, ref substs) => format!("adt {} {}",
                                                 mangled_def_name(tcx, did),
-                                                substs.regions.trans(tcx),
-                                                substs.types.as_slice().trans(tcx)),
+                                                substs.trans(tcx)),
             // ty_uniq
             // ty_str
             // ty_vec
@@ -245,10 +252,9 @@ impl Trans for ty::t {
             // ty_closure
             // ty_trait
             // TODO: handle substs
-            ty_struct(did, ref substs) => format!("adt {} {} {}",
+            ty_struct(did, ref substs) => format!("adt {} {}",
                                                   mangled_def_name(tcx, did),
-                                                  substs.regions.trans(tcx),
-                                                  substs.types.as_slice().trans(tcx)),
+                                                  substs.trans(tcx)),
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(tcx)),
@@ -354,20 +360,26 @@ impl Trans for Expr {
                 } else {
                     let did = tcx.def_map.borrow()[func.id].def_id();
                     let name = mangled_def_name(tcx, did);
-                    format!("call {} 0 0 {}", name, args.trans(tcx))
+                    format!("call {} {} {}",
+                            name,
+                            tcx.item_substs.borrow()[func.id].substs.trans(tcx),
+                            args.trans(tcx))
                 }
             },
             ExprMethodCall(name, ref tys, ref args) => {
                 let call = typeck::MethodCall::expr(self.id);
-                let name = match tcx.method_map.borrow()[call].origin {
+                let map = tcx.method_map.borrow();
+                let callee = &map[call];
+                let name = match callee.origin {
                     MethodOrigin::MethodStatic(did) => {
                         mangled_def_name(tcx, did)
                     },
                     _ => panic!("unsupported MethodOrigin variant"),
                 };
                 assert!(tys.len() == 0);
-                format!("call {} 0 0 {}",
+                format!("call {} {} {}",
                         name,
+                        callee.substs.trans(tcx),
                         args.trans(tcx))
             },
             ExprTup(ref xs) if xs.len() == 0 => "simple_literal _".into_string(),
