@@ -7,3 +7,5 @@ fn f(x: uint) -> uint {
 fn g(x: uint) -> uint {
     f(x + 1)
 }
+
+fn crust_init() -> (uint,) { (0, ) }

@@ -9,3 +9,5 @@ impl S {
         self.x + y
     }
 }
+
+fn crust_init() -> (S, uint) { (S { x: 0 }, 0) }

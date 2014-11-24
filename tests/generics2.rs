@@ -9,3 +9,5 @@ impl<T> S<T> {
         self.x
     }
 }
+
+fn crust_init() -> (S<uint>,) { (S { x: 0 }, ) }

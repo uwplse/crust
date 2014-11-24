@@ -7,3 +7,5 @@ fn foo(x: uint) -> Option<uint> {
 fn bar(y: uint) -> Option<uint> {
     None
 }
+
+fn crust_init() -> (uint,) { (0, ) }

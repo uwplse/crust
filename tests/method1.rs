@@ -13,3 +13,5 @@ impl S {
 fn get_x(s: S) -> uint {
     s.get()
 }
+
+fn crust_init() -> (S,) { (S { x: 0 },) }

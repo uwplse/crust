@@ -11,3 +11,5 @@ fn unwrap_e(e: E) -> uint {
         E::V2(x, y) => x + y,
     }
 }
+
+fn crust_init() -> (E,) { (E::V1(0),) }

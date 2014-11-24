@@ -13,3 +13,5 @@ impl<T> S<T> {
 fn get_x(s: S<uint>) -> uint {
     s.get()
 }
+
+fn crust_init() -> (S<uint>,) { (S { x: 0 },) }

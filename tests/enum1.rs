@@ -8,3 +8,5 @@ enum E {
 fn mk_e(x: uint) -> E {
     E::V2(x, x)
 }
+
+fn crust_init() -> (uint,) { (0, ) }
