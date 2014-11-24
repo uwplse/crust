@@ -1,17 +1,18 @@
+use rustc::metadata::csearch;
+use rustc::middle::subst::ParamSpace::*;
+use rustc::middle::subst::ParamSpace;
+use rustc::middle::subst;
 use rustc::middle::ty;
+use rustc::middle::typeck::{MethodCall, MethodCallee, MethodOrigin};
 use rustc::middle::typeck;
 use rustc::util::ppaux::Repr;
-use syntax::visit;
-use syntax::visit::Visitor;
-use syntax::visit::{FnKind, FkItemFn, FkMethod, FkFnBlock};
 use syntax::ast::*;
+use syntax::ast_util::local_def;
 use syntax::codemap::Span;
 use syntax::ptr::P;
-use syntax::ast_util::local_def;
-use rustc::metadata::csearch;
-use rustc::middle::subst;
-use rustc::middle::subst::ParamSpace;
-use rustc::middle::subst::ParamSpace::*;
+use syntax::visit::Visitor;
+use syntax::visit::{FnKind, FkItemFn, FkMethod, FkFnBlock};
+use syntax::visit;
 
 trait Trans {
     fn trans(&self, tcx: &ty::ctxt) -> String;
@@ -351,14 +352,24 @@ impl Trans for Expr {
                             var_idx,
                             args.trans(tcx))
                 } else {
-                    format!("call {} 0 0 {}", func.trans(tcx), args.trans(tcx))
+                    let did = tcx.def_map.borrow()[func.id].def_id();
+                    let name = mangled_def_name(tcx, did);
+                    format!("call {} 0 0 {}", name, args.trans(tcx))
                 }
             },
-            ExprMethodCall(name, ref tys, ref args) =>
-                format!("[[ExprMethodCall {} {} {}]]",
-                        name.node.as_str(),
-                        tys.trans(tcx),
-                        args.trans(tcx)),
+            ExprMethodCall(name, ref tys, ref args) => {
+                let call = typeck::MethodCall::expr(self.id);
+                let name = match tcx.method_map.borrow()[call].origin {
+                    MethodOrigin::MethodStatic(did) => {
+                        mangled_def_name(tcx, did)
+                    },
+                    _ => panic!("unsupported MethodOrigin variant"),
+                };
+                assert!(tys.len() == 0);
+                format!("call {} 0 0 {}",
+                        name,
+                        args.trans(tcx))
+            },
             ExprTup(ref xs) if xs.len() == 0 => "simple_literal _".into_string(),
             ExprTup(ref xs) => format!("tuple_literal {}", xs.trans(tcx)),
             ExprBinary(op, ref a, ref b) => {
@@ -377,10 +388,21 @@ impl Trans for Expr {
                     },
                 }
             },
-            ExprUnary(op, ref a) =>
-                format!("[[ExprUnary {} {}]]",
-                        op,
-                        a.trans(tcx)),
+            ExprUnary(op, ref a) => {
+                match tcx.method_map.borrow().get(&typeck::MethodCall::expr(self.id)) {
+                    Some(callee) => match callee.origin {
+                        typeck::MethodStatic(did) => {
+                            format!("[[ExprUnary: overloaded binop]]")
+                        },
+                        _ => panic!("bad origin for callee in ExprUnary"),
+                    },
+                    None => {
+                        format!("unop {} {}",
+                                op,
+                                a.trans(tcx))
+                    },
+                }
+            },
             ExprLit(ref lit) =>
                 format!("simple_literal {}", lit.trans(tcx)),
             ExprCast(ref e, ref ty) =>
