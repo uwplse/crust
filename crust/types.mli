@@ -38,3 +38,8 @@ val to_monomorph : (string * mono_type) list -> r_type -> mono_type
 val type_binding : type_param list -> 'a list -> (type_param * 'a) list
 
 val pp_t :  r_type -> string
+(*
+val primitive_types : simple_type list
+ *)
+val rust_tuple_name : string
+

@@ -68,3 +68,5 @@ let rec pp_t (to_pp : r_type) = match to_pp with
 	 if p.type_param = [] then p.type_name 
 	 else p.type_name ^ "<" ^ (String.concat "," @@ List.map pp_t p.type_param) ^ ">"
 
+
+let rust_tuple_name = "__rust_tuple"

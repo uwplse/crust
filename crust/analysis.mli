@@ -2,11 +2,10 @@ module FISet : Set.S with type elt = string * (Types.mono_type list)
 module TISet : Set.S with type elt = string * (Types.mono_type list)
 module MTSet : Set.S with type elt = Types.mono_type
 
-val do_test : Types.mono_type list -> Types.r_type list -> [
-  | `Mismatch
-  | `Inst of (string * Types.mono_type) list list
-  ]
-val debug_get_constructors : unit -> string list
+type borrow_info = 
+  | ImmutableBorrow of int
+  | MutableBorrow of int
+  | NoBorrow
 
 type walk_state = {
 	type_inst : TISet.t;
@@ -16,3 +15,4 @@ type walk_state = {
   }
 
 val run_analysis : unit -> walk_state
+val borrow_analysis : Ir.fn_def -> borrow_info

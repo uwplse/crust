@@ -70,7 +70,7 @@ let rec walk_type : walk_state -> Types.mono_type -> walk_state = fun w_state t 
   | `Ref (_,t') -> walk_type w_state t'
   | `Ref_Mut (_,t') -> walk_type w_state t'
   | `Tuple tl -> 
-	 let instantiation = "__rust_tuple",tl in
+	 let instantiation = Types.rust_tuple_name,tl in
 	 if TISet.mem instantiation w_state.type_inst then
 	   w_state
 	 else
@@ -505,3 +505,11 @@ let run_analysis () =
   in
   let with_init_state = walk_fn_def w_state crust_init_def [] in
   find_fn constructor_fn with_init_state
+
+type borrow_info = 
+  | ImmutableBorrow of int
+  | MutableBorrow of int
+  | NoBorrow
+
+
+let borrow_analysis _ = NoBorrow
