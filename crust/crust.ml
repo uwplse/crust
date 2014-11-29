@@ -37,7 +37,10 @@ let do_it f =
 					   print_endline @@ "type params: [" ^ (String.concat ", " @@ List.map Types.pp_t (t : Types.mono_type list :> Types.r_type list)) ^ "]"
 					  ) w_state.Analysis.public_fn
  *)
-  let (t_set,f_set) = w_state.Analysis.type_inst,w_state.Analysis.fn_inst in
-  Compilation.emit stdout t_set f_set
+  Compilation.emit stdout 
+    w_state.Analysis.public_type
+    w_state.Analysis.public_fn
+    w_state.Analysis.type_inst
+    w_state.Analysis.fn_inst
 
 let _ = do_it Sys.argv.(1)
