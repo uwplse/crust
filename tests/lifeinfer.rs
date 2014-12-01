@@ -9,3 +9,5 @@ impl S {
         &self.x
     }
 }
+
+fn crust_init() -> (S,) { (S { x: 0 },) }

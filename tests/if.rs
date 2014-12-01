@@ -12,3 +12,5 @@ fn g() -> uint {
     let x = true;
     if x { 1 } else { 2 }
 }
+
+fn crust_init() -> (uint,) { (0,) }

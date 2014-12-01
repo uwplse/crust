@@ -471,8 +471,8 @@ impl Trans for Expr {
 
                 // NB: `then` is a Block, but opt_else is `Option<Expr>`.
                 format!("match {} 2 \
-                        {{ ([bool] ([bool] simple_literal true)) >> ({} {}) }} \
-                        {{ ([bool] ([bool] simple_literal false)) >> {} }}",
+                        {{ ([bool] simple_literal true) >> ({} {}) }} \
+                        {{ ([bool] simple_literal false) >> {} }}",
                         cond.trans(tcx),
                         ty.trans(tcx),
                         then.trans(tcx),
@@ -574,6 +574,19 @@ fn adjust_expr(tcx: &ty::ctxt,
                 result_ty = new_result_ty;
             }
 
+            match adr.autoref {
+                None => {},
+                Some(ty::AutoPtr(region, mutbl, ref autoref)) => {
+                    assert!(autoref.is_none());
+                    let mt = ty::mt { ty: result_ty, mutbl: mutbl };
+                    result_ty = ty::mk_t(tcx, ty::ty_rptr(region, mt));
+                    result = format!("({} addr_of {})",
+                                     result_ty.trans(tcx),
+                                     result);
+                },
+                _ => panic!("unsupported AutoRef variant"),
+            }
+
             //assert!(adr.autoref.is_none());
         },
         ty::AdjustAddEnv(_) => panic!("unsupported AdjustAddEnv"),
@@ -672,7 +685,8 @@ impl Trans for Pat {
                         args.trans(tcx))
             },
             PatTup(ref args) => format!("tuple {}", args.trans(tcx)),
-            PatLit(ref expr) => expr.trans(tcx),
+            // NB: For PatLit, we skip the code below that adds the pattern type.
+            PatLit(ref expr) => return expr.trans(tcx),
             _ => panic!("unhandled Pat_ variant"),
         };
         format!("({} {})",
