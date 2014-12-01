@@ -348,7 +348,7 @@ class type_matcher = object(self)
 	in
 	let bindings = 
 	  if state#synth_types then
-		let set_match_state = new set_match_state false (MTSet.union primitive_types t_set) in
+		let set_match_state = new set_match_state false t_set in
 		match self#match_type set_match_state t_binding t with
 		| `Mismatch -> bindings
 		| `Match -> [] :: bindings
@@ -471,16 +471,6 @@ let rec find_fn constructor_fn w_state =
   else
 	find_fn constructor_fn w_state
 
-let do_test m_types to_unify = 
-  let t_match = new type_matcher in
-  let m_set = List.fold_right MTSet.add m_types MTSet.empty in
-  let set_match = new set_match_state true m_set in
-  t_match#match_types set_match [] to_unify
-
-  
-let debug_get_constructors () = 
-  SSet.elements @@ find_constructors ()
-
 let run_analysis () = 
   let constructor_fn = find_constructors () |> SSet.add "crust_init" in
   let crust_init_def = Hashtbl.find Env.fn_env "crust_init" in
@@ -506,10 +496,150 @@ let run_analysis () =
   let with_init_state = walk_fn_def w_state crust_init_def [] in
   find_fn constructor_fn with_init_state
 
-type borrow_info = 
-  | ImmutableBorrow of int
-  | MutableBorrow of int
-  | NoBorrow
+(*
 
+type borrow_nested = [
+  | `Tuple of int  * borrow_nested
+  | `MutableBorrow of int
+  | `ImmutableBorrow of int
+]
+
+type borrow_info = [
+  | borrow_nested
+  | `NoBorrow
+]
+
+(* To make modelling the borrow checker in C tractable the analysis
+   imposes the following constraints:
+   - Lifetimes cannot be nested (no &'a &'b T OR &'a &'a T)
+   - Lifetimes cannot be on multiple arguments
+   - Return types must have one or zero lifetimes
+
+   Here are some allowed lifetime usages:
+   - &(int,int)
+   - Foo<'a, T>
+   - &int
+   Here are some disallowed lifetime usages:
+   - &(int,&int)
+   - Foo<'a,Bar<'b,T>>
+   - & &int
+*)
+
+let rec find_nested_lifetimes nested (ty : Types.r_type) = 
+  match ty with
+  | `Ptr _
+  | `Ptr_Mut _
+  | `T_Var _
+  | #Types.simple_type -> false
+  | `Bottom -> false
+  | `Adt_type p when p.Types.lifetime_param <> [] && nested = true ->
+    true
+  | `Adt_type p when p.Types.lifetime_param <> [] ->
+    List.exists (find_nested_lifetimes true) p.Types.type_param
+  | `Adt_type p ->
+    List.exists (find_nested_lifetimes nested) p.Types.type_param
+  | `Tuple tl -> 
+    List.exists (find_nested_lifetimes nested) tl
+  | `Ref (_,t) 
+  | `Ref_Mut (_,t) when nested -> 
+    true
+  | `Ref (_,t)
+  | `Ref_Mut (_,t) ->
+    find_nested_lifetimes true t
+
+let rec find_lifetime_ref accum ty = 
+  match ty with
+  | #Types.simple_type -> accum
+  | `Bottom -> accum
+  | `Tuple tl ->
+    List.fold_left find_lifetime_ref accum tl
+  | `Adt_type p ->
+    let accum' = p.Types.lifetime_param @ accum in
+    List.fold_left find_lifetime_ref accum' p.Types.type_param
+  | `Ref_Mut (l,t)
+  | `Ref (l,t) ->
+    find_lifetime_ref (l::accum) t
+  | `Ptr t
+  | `Ptr_Mut t ->
+    find_lifetime_ref accum t
+  | `T_Var _ -> accum
+
+let check_multi_borrow l_list =
+  let u_len = List.length @@ sort_uniq @@ List.map fst l_list in
+  if (u_len) <> (List.length l_list) then
+    failwith "Cannot handle borrow on multiple arugments"
+  else
+    ()
+
+let rec find_lifetime mut_refs refs =
+  let do_ret l = 
+    if List.mem_assoc l mut_refs then
+      (MutableBorrow (List.assoc l mut_refs))
+    else
+      (ImmutableBorrow (List.assoc l refs))
+  in
+  let recurse = find_lifetime mut_refs refs in
+  let is_borrow t = t = NoBorrow in
+  function 
+    | `Ref_Mut (l,_)
+    | `Ref (l,_) ->
+      do_ret l
+    | `Adt_type { Types.lifetime_param = [l]; _ } ->
+      do_ret l
+    | `Adt_type p when p.Types.type_param = [] ->
+      List.find is_borrow @@ List.map recurse p.Types.type_param
+    | `Adt_type _ -> 
+      assert false
+    | `Ptr t
+    | `Ptr_Mut t ->
+      recurse t
+    | `Tuple tl ->
+      List.find is_borrow @@ List.map recurse tl
+    | `Bottom -> NoBorrow
+    | #Types.simple_type -> NoBorrow
+    | `T_Var _ -> NoBorrow
+
+let rec extract_lifetime exit_cb mk_immutable mk_mutable = 
+  
+  
+
+let borrow_analysis fn_def = 
+  let ret_lifetimes = List.length @@ sort_uniq @@ find_lifetime_ref [] fn_def.Ir.ret_type in
+  if ret_lifetimes = 0 then
+    `NoBorrow
+  else if ret_lifetimes <> 1 then
+    failwith "Cannot handle mutliple lifetimes in return type"
+  else if List.exists (find_nested_lifetimes false) @@ List.map snd fn_def.Ir.fn_args then
+    failwith "Cannot handle nested lifetime params in args"
+  else if find_nested_lifetimes false fn_def.Ir.ret_type then
+    failwith "Cannot handle nested lifetime params in return type"
+  else begin
+    let (_,mut_ref_lifetime) = List.fold_left (fun (ind,l_accum) (_,arg) ->
+      match arg with
+      | `Ref_Mut (lifetime,_) -> (succ ind),((lifetime,ind)::l_accum)
+      | _ -> (succ ind),l_accum
+    ) (0,[]) fn_def.Ir.fn_args
+    in
+    let (_,ref_lifetime) = List.fold_left (fun (ind,l_accum) (_,arg) ->
+      match arg with
+      | `Ref (lifetime,_) -> 
+        let l_accum' = (lifetime,ind)::l_accum in
+        let ind' = succ ind in
+        ind',l_accum'
+      | _ -> 
+        let ind' = succ ind in
+        ind',l_accum
+    ) (0,[]) fn_def.Ir.fn_args
+  in
+  check_multi_borrow mut_ref_lifetime;
+  check_multi_borrow ref_lifetime;
+  find_lifetime mut_ref_lifetime ref_lifetime fn_def.Ir.ret_type
+  end
+*)
+
+type borrow_info = 
+  | MutableBorrow of int
+  | ImmutableBorrow of int
+  | NoBorrow
 
 let borrow_analysis _ = NoBorrow
