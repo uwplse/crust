@@ -117,7 +117,8 @@ impl TransExtra<ParamSpace> for Generics {
     fn trans_extra(&self, tcx: &ty::ctxt, space: ParamSpace) -> String {
         let mut lifetimes = vec![];
         for i in range(0, self.lifetimes.len()) {
-            lifetimes.push(format!("{}{}", space.trans(tcx), i));
+            //lifetimes.push(format!("{}{}", space.trans(tcx), i));
+            lifetimes.push(format!("r_named_0_{}", self.lifetimes[i].lifetime.id));
         }
 
         let mut ty_params = vec![];
@@ -233,7 +234,7 @@ impl Trans for ty::t {
                                                 mangled_def_name(tcx, did),
                                                 substs.trans(tcx)),
             // ty_uniq
-            // ty_str
+            ty_str => "str".into_string(),
             // ty_vec
             ty_ptr(mt) => format!("{} {}",
                                   match mt.mutbl {
@@ -276,22 +277,39 @@ impl Trans for ty::t {
 impl Trans for ty::Region {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match *self {
-            ty::ReEarlyBound(_id, space, idx, _name) => {
-                format!("r{}{}", space.trans(tcx), idx)
+            ty::ReEarlyBound(id, _space, _idx, _name) => {
+                format!("r_named_0_{}", id)
+                //format!("r{}{}", space.trans(tcx), idx)
             },
-            ty::ReLateBound(binder_id, ref br) => br.trans(tcx),
-            ty::ReFree(ref fr) => fr.bound_region.trans(tcx),
-            ty::ReStatic => "static".into_string(),
+            ty::ReLateBound(binder_id, ref br) => br.trans_extra(tcx, Some(binder_id)),
+            ty::ReFree(ref fr) => fr.bound_region.trans_extra(tcx, None),
+            ty::ReStatic => "r_static".into_string(),
+            ty::ReScope(id) => format!("r_scope_{}", id),
             _ => panic!("unsupported Region variant"),
         }
     }
 }
 
-impl Trans for ty::BoundRegion {
-    fn trans(&self, tcx: &ty::ctxt) -> String {
+impl TransExtra<Option<NodeId>> for ty::BoundRegion {
+    fn trans_extra(&self, tcx: &ty::ctxt, binder_id: Option<NodeId>) -> String {
         match *self {
             ty::BrAnon(idx) => format!("r_anon_{}", idx),
-            _ => panic!("unsupported BoundRegion variant"),
+            ty::BrNamed(did, _) =>
+                format!("r_named_{}_{}", did.krate, did.node),
+            /*
+            ty::BrNamed(did, _) => {
+                use syntax::ast_map::Node::*;
+                // We know the region is in the function space.  We just need to find the index.
+                match tcx.map.get(binder_id.expect("missing binder_id for BrNamed")) {
+                    NodeItem(item) => println!("got item"),
+                    NodeTraitItem(item) => println!("got trait item"),
+                    NodeImplItem(item) => println!("got impl item"),
+                    _ => println!("got other item!!"),
+                }
+                "[[BrNamed]]".into_string()
+            },
+            */
+            _ => "[[bad BoundRegion]]".into_string(), //panic!("unsupported BoundRegion variant"),
         }
     }
 }
@@ -324,7 +342,8 @@ impl Trans for Decl {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         match self.node {
             DeclLocal(ref local) => local.trans(tcx),
-            DeclItem(_) => panic!("unexpected DeclItem"),
+            // TODO: handle inner items
+            DeclItem(_) => "unit simple_literal _".into_string(),
         }
     }
 }
@@ -351,6 +370,20 @@ impl Trans for Field {
         format!("{} {}",
                 self.ident.node.trans(tcx),
                 self.expr.trans(tcx))
+    }
+}
+
+impl Trans for Lifetime {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        use rustc::middle::resolve_lifetime::DefRegion::*;
+        match *tcx.named_region_map.get(&self.id)
+                  .expect("missing DefRegion") {
+            DefStaticRegion => "r_static".into_string(),
+            DefEarlyBoundRegion(_, _, id) |
+            DefLateBoundRegion(_, _, id) =>
+                format!("r_named_{}_{}", LOCAL_CRATE, id),
+            DefFreeRegion(..) => panic!("unsupported DefFreeRegion"),
+        }
     }
 }
 
@@ -526,7 +559,7 @@ fn adjust_expr(tcx: &ty::ctxt,
                 result_ty = new_result_ty;
             }
 
-            assert!(adr.autoref.is_none());
+            //assert!(adr.autoref.is_none());
         },
         ty::AdjustAddEnv(_) => panic!("unsupported AdjustAddEnv"),
     }
@@ -708,6 +741,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
                             };
                             let mut arg_strs = vec![];
 
+
+
                             let self_arg = match exp_self.node {
                                 SelfStatic => None,
                                 SelfValue(ref name) =>
@@ -721,7 +756,11 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
                                                      MutMutable => "ref_mut",
                                                      MutImmutable => "ref",
                                                  },
-                                                 "[[Option<Lifetime>]]".into_string(),
+                                                 match *opt_lifetime {
+                                                     Some(ref lifetime) =>
+                                                         lifetime.trans(self.tcx),
+                                                     None => "r_anon_00".into_string(),
+                                                 },
                                                  self_ty.trans(self.tcx))),
                                 SelfExplicit(ref ty, ref name) =>
                                     Some(format!("{} {}",
@@ -767,8 +806,8 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
 
 fn combine_generics(tcx: &ty::ctxt, impl_g: &Generics, fn_g: &Generics) -> (Vec<String>, Vec<String>) {
     let lifetimes =
-            range(0, impl_g.lifetimes.len()).map(|i| format!("t_{}", i)).chain(
-            range(0, fn_g.lifetimes.len()).map(|i| format!("f_{}", i))).collect();
+            impl_g.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)).chain(
+            fn_g.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id))).collect();
     let ty_params =
             range(0, impl_g.ty_params.len()).map(|i| format!("t_{}", i)).chain(
             range(0, fn_g.ty_params.len()).map(|i| format!("f_{}", i))).collect();
