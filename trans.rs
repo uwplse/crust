@@ -466,11 +466,26 @@ impl Trans for Expr {
                 format!("cast {} {}",
                         e.trans(tcx),
                         ty.trans(tcx)),
-            ExprIf(ref cond, ref then, ref opt_else) =>
+            ExprIf(ref cond, ref then, ref opt_else) => {
+                let ty = tcx.node_types.borrow()[then.id];
+
+                // NB: `then` is a Block, but opt_else is `Option<Expr>`.
+                format!("match {} 2 \
+                        {{ ([bool] ([bool] simple_literal true)) >> ({} {}) }} \
+                        {{ ([bool] ([bool] simple_literal false)) >> {} }}",
+                        cond.trans(tcx),
+                        ty.trans(tcx),
+                        then.trans(tcx),
+                        opt_else.as_ref().map_or("[unit] simple_literal _".into_string(),
+                                                 |e| e.trans(tcx)))
+            },
+                
+                        /*
                 format!("[[ExprIf {} {} {}]]",
                         cond.trans(tcx),
                         then.trans(tcx),
                         opt_else.as_ref().map(|e| e.trans(tcx))),
+                        */
             // ExprIfLet
             // ExprWhile
             // ExprWhileLet
