@@ -381,7 +381,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
     self#put_all [ type_to_string seed_tuple; " __init = crust_init();"];
     self#newline ();
     let _ = 
-      List.fold_left (fun (ind,i_map) (t : c_types) ->
+      List.fold_right (fun (t : c_types) (ind,i_map) ->
           let val_ind = 
             if List.mem_assoc t i_map then
               List.assoc t i_map
@@ -395,7 +395,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
           self#emit_array_assign val_array val_ind_s t_value;
           self#emit_array_assign live_state t_index "1";
           (succ ind),((t,(succ val_ind))::i_map)
-        ) (0,[]) seed_types
+        ) seed_types (0,[])
     in
     ()
 
