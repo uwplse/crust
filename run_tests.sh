@@ -5,7 +5,7 @@ PROJECT_DIR=$(dirname $0);
 make -C $PROJECT_DIR all > /dev/null
 
 # find the rust libraries
-RUSTC_LOC=$(whereis rustc | awk '{print $2}')
+RUSTC_LOC=$(which rustc)
 if [ "$RUSTC_LOC" = "" ]; then
 	echo "Could not find rustc";
 	exit -1
