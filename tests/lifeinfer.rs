@@ -10,4 +10,4 @@ impl S {
     }
 }
 
-fn crust_init() -> (S,) { (S { x: 0 },) }
+fn crust_init() -> (S, uint) { (S { x: 0 }, 0) }
