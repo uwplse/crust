@@ -133,6 +133,7 @@ data Item =
     | IEnum EnumDef
     | IConst ConstDef
     | IFn FnDef
+    | IMeta String
   deriving (Eq, Show, Data, Typeable)
 
 tagged = choice . map (\(x, y) -> exactWord x >> y)
@@ -349,4 +350,5 @@ instance Pp Item where
                     IEnum a -> pp a
                     IConst a -> pp a
                     IFn a -> pp a
+                    IMeta s -> s
         in [pp a, "\n"]

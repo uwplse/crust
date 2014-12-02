@@ -18,22 +18,32 @@ main = do
     let items' =
             constElim $
             ifFix $
+            fixAbort $
+            fixBottom $
             items
     putStrLn $ concatMap pp items'
 
 
-constElim items = everywhere (mkT fixItem `extT` fixExpr) items
+constElim items = filter (not . isConst) $ everywhere (mkT fixExpr `extT` fixPat) items
   where
     consts :: M.Map Name Expr_
     consts = everything M.union (M.empty `mkQ` collectItem) items
-    collectItem (IConst (ConstDef name _ (Expr _ expr))) = M.singleton name expr
+    collectItem (IConst (ConstDef name _ (Expr _ expr))) = M.singleton name (cleanup expr)
     collectItem _ = M.empty
 
-    fixItem (IConst _ : xs) = xs
-    fixItem xs = xs
+    cleanup (EUnOp "UnNeg" (Expr _ (ESimpleLiteral s)))
+      | head s == '-' = ESimpleLiteral $ tail s
+      | otherwise = ESimpleLiteral s
+    cleanup e = e
+
+    isConst (IConst _) = True
+    isConst _ = False
 
     fixExpr (EConst n) = consts M.! n
     fixExpr e = e
+
+    fixPat (PConst n) = exprToPat $ consts M.! n
+    fixPat e = e
 
 
 ifFix = everywhere (mkT fixIf)
@@ -47,7 +57,22 @@ ifFix = everywhere (mkT fixIf)
                  MatchArm (Pattern (TInt 32) (PWild)) e1]
     fixIf x = x
 
+fixAbort = everywhere (mkT go)
+  where
+    go (Expr _ (ECall "core_intrinsics_abort" _ _ _)) = Expr TUnit (ESimpleLiteral "_")
+    go x = x
+
+fixBottom = everywhere (mkT go)
+  where
+    go TBottom = TUnit
+    go t = t
+
+
 mkCast e t = Expr t (ECast e t)
+
+exprToPat (ESimpleLiteral s) = PSimpleLiteral s
+exprToPat e = error $ "exprToPat: can't convert: " ++ show e
+
 
 parseContents p = parseInput p <$> getContents
 

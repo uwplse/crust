@@ -92,8 +92,7 @@ impl<T> RefCell<T> {
     pub fn new(value: T) -> RefCell<T> {
         RefCell {
             value: UnsafeCell::new(value),
-            //borrow: Cell::new(UNUSED),
-            borrow: Cell::new(0),
+            borrow: Cell::new(UNUSED),
             nocopy: marker::NoCopy,
             noshare: marker::NoSync,
         }
@@ -119,10 +118,8 @@ impl<T> RefCell<T> {
 
     pub fn try_borrow_mut<'a>(&'a self) -> Option<RefMut<'a, T>> {
         match self.borrow.get() {
-            //UNUSED => {
-            0 => {
-                //self.borrow.set(WRITING);
-                self.borrow.set(-1);
+            UNUSED => {
+                self.borrow.set(WRITING);
                 Some(RefMut { _parent: self })
             },
             _ => None
@@ -170,8 +167,7 @@ impl<'b, T> Drop for RefMut<'b, T> {
         let borrow = self._parent.borrow.get();
         //debug_assert!(borrow == WRITING);
         //debug_assert!(borrow == -1);
-        //self._parent.borrow.set(UNUSED);
-        self._parent.borrow.set(0);
+        self._parent.borrow.set(UNUSED);
     }
 }
 
