@@ -38,6 +38,12 @@ impl<T: TransExtra<()>> Trans for T {
 }
 */
 
+impl<T: Trans> Trans for Option<T> {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        self.as_slice().trans(tcx)
+    }
+}
+
 impl<T: Trans> Trans for Vec<T> {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         self.as_slice().trans(tcx)
@@ -733,6 +739,16 @@ impl Trans for VariantKind {
     }
 }
 
+impl Trans for ty::DtorKind {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        let opt = match *self {
+            ty::NoDtor => None,
+            ty::TraitDtor(did, _) => Some(mangled_def_name(tcx, did)),
+        };
+        opt.trans(tcx)
+    }
+}
+
 impl Trans for VariantArg {
     fn trans(&self, tcx: &ty::ctxt) -> String {
         self.ty.trans(tcx)
@@ -755,16 +771,18 @@ impl Trans for Item {
         match self.node {
             ItemStruct(ref def, ref g) => {
                 //assert!(def.ctor_id.is_none());
-                format!("struct {} {} {};",
+                format!("struct {} {} {} {};",
                         mangled_def_name(tcx, local_def(self.id)),
                         g.trans_extra(tcx, TypeSpace),
-                        def.fields.trans(tcx))
+                        def.fields.trans(tcx),
+                        ty::ty_dtor(tcx, local_def(self.id)).trans(tcx))
             },
             ItemEnum(ref def, ref g) => {
-                format!("enum {} {} {}",
+                format!("enum {} {} {} {};",
                         self.ident.trans(tcx),
                         g.trans_extra(tcx, TypeSpace),
-                        def.variants.trans(tcx))
+                        def.variants.trans(tcx),
+                        ty::ty_dtor(tcx, local_def(self.id)).trans(tcx))
             },
             ItemFn(ref decl, style, _, ref generics, ref body) => {
                 format!("fn {} {} {} body {} {} {{\n{}\t{}\n}}\n\n",

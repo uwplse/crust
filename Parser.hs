@@ -11,7 +11,7 @@ import Data.Data
 import Data.Generics
 import Data.List (isSuffixOf, intercalate)
 import Data.Maybe
-import Text.Parsec hiding (label, State, string, space)
+import Text.Parsec hiding (label, State, string, space, optional)
 import Text.Parsec.Pos (newPos)
 
 import Lexer
@@ -62,13 +62,13 @@ type Name = String
 type LifetimeParam = Name
 type TyParam = Name
 
-data StructDef = StructDef Name [LifetimeParam] [TyParam] [FieldDef]
+data StructDef = StructDef Name [LifetimeParam] [TyParam] [FieldDef] (Maybe Name)
   deriving (Eq, Show, Data, Typeable)
 
 data FieldDef = FieldDef Name Ty
   deriving (Eq, Show, Data, Typeable)
 
-data EnumDef = EnumDef Name [LifetimeParam] [TyParam] [VariantDef]
+data EnumDef = EnumDef Name [LifetimeParam] [TyParam] [VariantDef] (Maybe Name)
   deriving (Eq, Show, Data, Typeable)
 
 data VariantDef = VariantDef Name [Ty]
@@ -142,6 +142,13 @@ counted p = do
     n <- int
     replicateM n p
 
+optional p = do
+    n <- int
+    case n of
+        0 -> return Nothing
+        1 -> Just <$> p
+        _ -> fail $ "'optional' expected 0 or 1, not " ++ show n
+
 ty = tagged
     [ ("var", TVar <$> name)
     , ("adt", TAdt <$> name <*> counted lifetime <*> counted ty)
@@ -164,11 +171,11 @@ lifetimeParam = name
 tyParam = name
 
 structDef = exactWord "struct" >>
-    StructDef <$> name <*> counted lifetimeParam <*> counted tyParam <*> counted fieldDef
+    StructDef <$> name <*> counted lifetimeParam <*> counted tyParam <*> counted fieldDef <*> optional name
 fieldDef = FieldDef <$> name <*> ty
 
 enumDef = exactWord "enum" >>
-    EnumDef <$> name <*> counted lifetimeParam <*> counted tyParam <*> counted variantDef
+    EnumDef <$> name <*> counted lifetimeParam <*> counted tyParam <*> counted variantDef <*> optional name
 variantDef = VariantDef <$> name <*> counted ty
 
 fnDef = do
@@ -250,6 +257,10 @@ instance Pp String where
 instance Pp a => Pp [a] where
     pp' xs = show (length xs) : map pp xs
 
+instance Pp a => Pp (Maybe a) where
+    pp' Nothing  = ["0"]
+    pp' (Just x) = ["1", pp x]
+
 ppGo x xs = x : xs
 
 instance Pp Ty where
@@ -270,13 +281,13 @@ instance Pp Ty where
     pp x = "[" ++ intercalate " " (pp' x) ++ "]"
 
 instance Pp StructDef where
-    pp' (StructDef a b c d) = ppGo "struct" [pp a, pp b, pp c, pp d]
+    pp' (StructDef a b c d e) = ppGo "struct" [pp a, pp b, pp c, pp d, pp e]
 
 instance Pp FieldDef where
     pp' (FieldDef a b) = map pp [pp a, pp b]
 
 instance Pp EnumDef where
-    pp' (EnumDef a b c d) = ppGo "enum" [pp a, pp b, pp c, pp d]
+    pp' (EnumDef a b c d e) = ppGo "enum" [pp a, pp b, pp c, pp d, pp e]
 
 instance Pp VariantDef where
     pp' (VariantDef a b) = map pp [pp a, pp b]
