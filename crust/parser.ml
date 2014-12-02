@@ -287,14 +287,14 @@ let maybe_parse parse_fn tokens cb =
 
 let parse_struct_def tokens cb = match tokens with
   | "struct"::name::t ->
-	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n (consume_name >> parse_type))(* >> (maybe_parse consume_name)*)) in
-	 p_fun t (fun ((lifetimes,t_params),struct_fields)(*,drop_fn)*) rest ->
+	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n (consume_name >> parse_type)) >> (maybe_parse consume_name)) in
+	 p_fun t (fun (((lifetimes,t_params),struct_fields),drop_fn) rest ->
 			  cb (`Struct_def {
 				Ir.struct_name = name;
 				Ir.s_lifetime_param = lifetimes;
 				Ir.s_tparam = t_params;
 				Ir.struct_fields = struct_fields;
-				Ir.drop_fn = None
+				Ir.drop_fn = drop_fn
 			  }) rest
 			 )
   | _ -> (raise (Parse_failure ("struct_def",tokens)))
@@ -311,25 +311,16 @@ let parse_variant_def tokens cb =
 let parse_enum_def tokens cb = match tokens with
   | "enum"::name::t ->
 	 (* this is what it should be? *)
-	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n parse_variant_def) (*>> (maybe_parse consume_name) *)) in
-	 p_fun t (fun (((lifetimes,t_params),v_def)(*,drop_fn*)) rest ->
+	 let p_fun = (parse_lifetimes >> parse_type_params >> (parse_n parse_variant_def) >> (maybe_parse consume_name)) in
+	 p_fun t (fun (((lifetimes,t_params),v_def),drop_fn) rest ->
 			  cb (`Enum_def {
 				  Ir.enum_name = name;
 				  Ir.e_lifetime_param = lifetimes;
 				  Ir.e_tparam = t_params;
 				  Ir.variants = v_def;
-				  Ir.drop_fn = None;
+				  Ir.drop_fn = drop_fn
 				}) rest
 			 )
-(*	 (parse_n parse_variant_def) t (fun v_def rest ->
-									cb (`Enum_def {
-										   Ir.enum_name = name;
-										   Ir.e_lifetime_param = [];
-										   Ir.e_tparam = [];
-										   Ir.variants = v_def;
-										   Ir.drop_fn = None
-										 }) rest
-								   )*)
   | _ -> assert false
 
 let parse_module tokens cb = 
