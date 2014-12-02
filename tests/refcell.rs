@@ -41,8 +41,6 @@ pub struct Abstract {
     x: uint,
 }
 
-pub fn crust_init() -> (Abstract,) { (Abstract { x: 0, },) }
-
 pub fn crust_abort() -> ! {
     unsafe { core::intrinsics::abort() }
 }
@@ -182,3 +180,6 @@ impl<'b, T> DerefMut<T> for RefMut<'b, T> {
         unsafe { &mut *self._parent.value.get() }
     }
 }
+
+
+pub fn crust_init() -> (RefCell<Abstract>,) { (RefCell::new(Abstract { x: 0, }),) }
