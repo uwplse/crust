@@ -1,3 +1,4 @@
+{-# LANGUAGE NoMonomorphismRestriction #-}
 import Control.Applicative ((<$>))
 import Control.Exception (evaluate)
 import Control.Monad
@@ -16,6 +17,7 @@ main = do
     items <- parseContents item
     let items' =
             constElim $
+            ifFix $
             items
     putStrLn $ concatMap pp items'
 
@@ -32,8 +34,20 @@ constElim items = everywhere (mkT fixItem `extT` fixExpr) items
 
     fixExpr (EConst n) = consts M.! n
     fixExpr e = e
-    
 
+
+ifFix = everywhere (mkT fixIf)
+  where
+    fixIf
+        (EMatch e
+                [MatchArm (Pattern TBool (PSimpleLiteral "true")) e1,
+                 MatchArm (Pattern TBool (PSimpleLiteral "false")) e2]) =
+         EMatch (mkCast e (TInt 32))
+                [MatchArm (Pattern (TInt 32) (PSimpleLiteral "0")) e2,
+                 MatchArm (Pattern (TInt 32) (PWild)) e1]
+    fixIf x = x
+
+mkCast e t = Expr t (ECast e t)
 
 parseContents p = parseInput p <$> getContents
 
