@@ -457,28 +457,38 @@ let get_inst =
 
 let has_inst w_state f_name = 
   FISet.exists (fun (f_name',_) -> 
-				f_name = f_name') w_state.fn_inst
-
-let rec find_fn constructor_fn w_state = 
+	  f_name = f_name') w_state.fn_inst
+    
+let rec find_fn restrict_fn constructor_fn w_state = 
   let old_size = state_size w_state in
   let w_state = Hashtbl.fold (fun fn_name fn_def w_state ->
-							  if (SSet.mem fn_name constructor_fn) &&
-								   has_inst w_state fn_name then
-								w_state
-							  else begin
-								  match get_inst w_state.public_type fn_def with
-								  | None -> w_state
-								  | Some inst_list ->
-									 List.fold_left (walk_public_fn fn_def) w_state inst_list
-								end
-							 ) Env.fn_env w_state in
+      if (SSet.mem fn_name constructor_fn) && has_inst w_state fn_name then
+	    w_state
+      else if SSet.mem fn_name restrict_fn then
+        w_state
+      else begin
+        match get_inst w_state.public_type fn_def with
+        | None -> w_state
+        | Some inst_list ->
+	      List.fold_left (walk_public_fn fn_def) w_state inst_list
+      end
+    ) Env.fn_env w_state in
   if old_size = (state_size w_state) then
-	w_state
+    w_state
   else
-	find_fn constructor_fn w_state
-
+    find_fn restrict_fn constructor_fn w_state
+    
 let run_analysis () = 
   let constructor_fn = find_constructors () |> SSet.add "crust_init" in
+  let restrict_fn = Hashtbl.fold (fun type_name type_def accum ->
+      match type_def with
+      | `Enum_def ({ drop_fn = Some df; _ } : Ir.enum_def) ->
+        SSet.add df accum
+      | `Struct_def ({ drop_fn = Some df; _ } : Ir.struct_def)->
+        SSet.add df accum
+      | _ -> accum
+    ) Env.adt_env @@ SSet.singleton "crust_abort"
+  in
   let crust_init_def = Hashtbl.find Env.fn_env "crust_init" in
   let init_state = {
 	  type_inst = TISet.empty;
@@ -500,7 +510,7 @@ let run_analysis () =
 	}
   in
   let with_init_state = walk_fn_def w_state crust_init_def [] in
-  find_fn constructor_fn with_init_state
+  find_fn restrict_fn constructor_fn with_init_state
 
 let indexed_fold_left f accum l = 
   let rec fold_loop i accum l = 
