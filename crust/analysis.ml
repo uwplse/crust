@@ -290,10 +290,16 @@ let sort_uniq l =
 let primitive_types = 
   MTSet.(
 	empty
-	|> add (`Int 32)
-	|> add (`UInt 32)
-	|> add `Bool
-	|> add `Unit
+ |> add (`Int 64)
+ |> add (`Int 32)
+ |> add (`Int 16)
+ |> add (`Int 8)
+ |> add (`UInt 64)
+ |> add (`UInt 32)
+ |> add (`UInt 16)
+ |> add (`UInt 8)
+ |> add `Bool
+ |> add `Unit
   );;
 
 (* I originally wrote this class because I had this idea that

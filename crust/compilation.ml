@@ -371,6 +371,7 @@ let emit_fsigs out_channel f_list =
    indistinguishable, and instead work at the level raw pointers.
 *)
 
+(* XXX: COPY PASTE *)
 let rec uniq_list = function
   | [] -> []
   | h::h'::t when h = h' ->
