@@ -152,11 +152,14 @@ let parse_binop tokens cb = match tokens with
 	| "BiNe"::t -> cb `BiNe t
 	| "BiGe"::t -> cb `BiGe t
 	| "BiGt"::t -> cb `BiGt t
-	| l -> failwith "bad biop"
+	| [] -> raise (Unexpected_stream_end "parse_binop")
+	| b::_ -> failwith @@ "bad biop " ^ b
 let parse_unop tokens cb = match tokens with
   | "UnNot"::t -> cb `UnNot t
   | "UnNeg"::t -> cb `UnNeg t
-  | l -> failwith "bad unop"
+  | "UnDeref"::t -> cb `UnDeref t
+  | [] -> raise (Unexpected_stream_end "parse_unop")
+  | u::_ -> failwith @@ "bad unop " ^ u
 
 let rec parse_patt tokens cb = (parse_type >> parse_patt_variant) tokens cb
 and parse_patt_variant tokens cb = 

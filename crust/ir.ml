@@ -22,6 +22,7 @@ type bin_op = [
 type un_op = [
 	| `UnNot
 	| `UnNeg
+	| `UnDeref
   ]
 type expr_variant = [
   | `Var of string

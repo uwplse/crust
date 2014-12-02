@@ -80,6 +80,7 @@ let string_of_binop : Ir.bin_op -> string = function
 let string_of_unop : Ir.un_op -> string = function
   | `UnNot -> "!"
   | `UnNeg -> "-"
+  | `UnDeref -> "*"
 
 let rec c_type_of_monomorph (ct : Types.mono_type) = 
   match ct with
