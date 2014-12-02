@@ -269,8 +269,12 @@ class expr_emitter buf t_bindings =
 
 type arg_result = 
   | Primitive of string
+  (* an "a priori" value, could be a reference *)
   | Complex of string * c_types
+  (* a SYNTHESIZED reference *)
   | ComplexRef of string * c_types
+  (* represents a SYNTHESIZED tuple *)
+  | Tuple of string * (arg_result list)
 
 let simple_type_repr t = 
   match t with
@@ -671,6 +675,34 @@ class driver_emission buf (public_types : c_types list) = object(self)
       handle_ref t true `Mutable
     | (`Ptr_Mut _) as t -> 
       handle_ref t false `Mutable
+    | `Tuple tl when not (List.mem ty public_types) ->
+      let t_name = type_to_string ty in
+      let temp_name = Printf.sprintf "temp_tuple_%d" var_counter in
+      var_counter <- var_counter + 1;
+      self#put_all [ t_name; " "; temp_name; ";" ];
+      self#newline ();
+      let sub_vars = 
+        List.mapi (fun i sub_ty ->
+            let ret_type = self#resolve_arg sub_ty in
+            self#put_all [ temp_name; "."; Printf.sprintf CRep.tuple_field i; " = " ];
+            (match ret_type with
+            | Tuple (rhs,_)
+            | Primitive rhs -> 
+              self#put rhs;
+            | Complex (ind,t) ->
+              let val_array = Hashtbl.find tvalue_array_cache t in
+              let rhs = self#array_ref val_array ind in
+              self#put rhs
+            | ComplexRef (ind,t) ->
+              let val_array = Hashtbl.find tvalue_array_cache t in
+              let rhs = self#array_ref val_array ind in
+              self#put @@ "&" ^ rhs
+            );
+            self#newline ~post:";" ();
+            ret_type
+          ) tl
+      in
+      Tuple (temp_name,sub_vars)
     | a -> 
       let size_const = Hashtbl.find tsize_const_cache a in
       let src_var = self#emit_fresh_bounded_int size_const in
@@ -701,6 +733,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
           let arr_name = Hashtbl.find tvalue_array_cache t in
           let v = self#array_ref arr_name src_var in
           "&" ^ v
+        | Tuple (t_name,_) -> t_name
         | Primitive s -> s
       ) arg_results in
     let arg_string = String.concat ", " arg_strings in
@@ -709,7 +742,6 @@ class driver_emission buf (public_types : c_types list) = object(self)
         self#put_all [ f_name; "("; arg_string ; ");" ];
         self#newline ()
       end else begin
-        print_endline @@ Types.pp_t (ret_type : c_types :> Types.r_type);
         let target_size = Hashtbl.find tsize_const_cache ret_type in
         let target_var = self#emit_fresh_bounded_int target_size in
         self#emit_live_constraint target_var ret_type `Dead;
@@ -735,11 +767,67 @@ class driver_emission buf (public_types : c_types list) = object(self)
       end
     end;
     self#close_block ()
+
   method private emit_stack = 
     let stack_ref = self#array_ref stack_name stack_ptr_symbol in
     fun (s_field,s_value) ->
-      self#put_all [ stack_ref; "."; s_value; " = "; s_value; ";"];
+      self#put_all [ stack_ref; "."; s_field; " = "; s_value; ";"];
       self#newline ()
+
+  val analysis_cache = Hashtbl.create 20;
+  method private emit_user_update fn_name args = 
+    let borrow_info = 
+      if Hashtbl.mem analysis_cache fn_name then
+        Hashtbl.find analysis_cache fn_name
+      else
+        let b_info = Analysis.borrow_analysis @@ self#get_fn_def fn_name in
+        Hashtbl.add analysis_cache fn_name b_info;
+        b_info;
+    in
+    let borrow_from_index arg_list index = 
+      let m = List.nth arg_list index in
+      match m with
+      | Primitive _ -> failwith "Attempt to borrow from primitive value!"
+      | Complex (src_var,t)
+      | ComplexRef (src_var,t) ->
+        self#slot_call src_var t
+      | Tuple _ -> failwith "Attempt to borrow from a tuple!!?!?!"
+    in
+    let do_immutable_borrow index = 
+      self#put_all [ self#array_ref user_state index; "++;" ];
+      self#newline ();
+      (immutable_borrow_symbol,index)
+    in
+    let do_mutable_borrow index = 
+      self#emit_array_assign user_state index "-1";
+      (mutable_borrow_symbol,index)
+    in
+    match borrow_info with
+    | `NoBorrow -> (no_borrow_symbol,no_borrow_symbol)
+    | `ImmutableBorrow i ->
+      let borrow_index = borrow_from_index args i in
+      do_immutable_borrow borrow_index
+    | `MutableBorrow i ->
+      let borrow_index = borrow_from_index args i in
+      do_mutable_borrow borrow_index
+    | `Tuple (i,b) -> 
+      let rec unfold_tuple arg_list = function
+        | `MutableBorrow i -> 
+          do_mutable_borrow @@ borrow_from_index arg_list i
+        | `ImmutableBorrow i ->
+          do_immutable_borrow @@ borrow_from_index arg_list i
+        | `Tuple (ind,borrow_info') ->
+          let arg = List.nth arg_list ind in
+          begin
+            match arg with
+            | Tuple (_,tl) -> unfold_tuple tl borrow_info'
+            | _ -> failwith "Attempt to traverse tuple but non-tuple arg found!"
+          end
+      in
+      unfold_tuple args @@ `Tuple (i,b)
+      
+  
+      
 
   method private find_aliasing_types () = 
     let pointer_types = List.fold_left (fun accum s ->
@@ -808,35 +896,6 @@ class driver_emission buf (public_types : c_types list) = object(self)
   method private emit_assertions () = 
     List.iter (self#emit_alias_check_loop) @@ self#find_aliasing_types ()
 
-  val analysis_cache = Hashtbl.create 20;
-  method private emit_user_update fn_name args = 
-    let borrow_info = 
-      if Hashtbl.mem analysis_cache fn_name then
-        Hashtbl.find analysis_cache fn_name
-      else
-        let b_info = Analysis.borrow_analysis @@ self#get_fn_def fn_name in
-        Hashtbl.add analysis_cache fn_name b_info;
-        b_info;
-    in
-    let borrow_from_index index = 
-      let m = List.nth args index in
-      match m with
-      | Primitive _ -> failwith "Attempt to borrow from primitive value!"
-      | Complex (src_var,t)
-      | ComplexRef (src_var,t) ->
-        self#slot_call src_var t
-    in
-    match borrow_info with
-    | Analysis.NoBorrow -> (no_borrow_symbol,no_borrow_symbol)
-    | Analysis.ImmutableBorrow i ->
-      let borrow_index = borrow_from_index i in
-      self#put_all [ self#array_ref user_state borrow_index; "++;" ];
-      self#newline ();
-      (immutable_borrow_symbol,borrow_index)
-    | Analysis.MutableBorrow i ->
-      let borrow_index = borrow_from_index i in
-      self#emit_array_assign user_state borrow_index "-1";
-      (mutable_borrow_symbol,borrow_index)
 end
 
 let simplified_ir = Hashtbl.create 10;;

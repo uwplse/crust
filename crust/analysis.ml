@@ -496,7 +496,16 @@ let run_analysis () =
   let with_init_state = walk_fn_def w_state crust_init_def [] in
   find_fn constructor_fn with_init_state
 
-(*
+let indexed_fold_left f accum l = 
+  let rec fold_loop i accum l = 
+    match l with
+    | [] -> accum
+    | h::t -> 
+      let new_accum = f i accum h in
+      fold_loop (succ i) new_accum t
+  in
+  fold_loop 0 accum l
+
 
 type borrow_nested = [
   | `Tuple of int  * borrow_nested
@@ -508,6 +517,82 @@ type borrow_info = [
   | borrow_nested
   | `NoBorrow
 ]
+
+let find_lifetime ty =
+  let rec find_lifetime_loop path nested = function
+    | `Ref_Mut (l,t) ->
+      (l,nested,true,path)::(find_lifetime_loop path true t)
+    | `Ref (l,t) -> 
+      (l,nested,false,path)::(find_lifetime_loop path true t)
+    | `Ptr_Mut t
+    | `Ptr t ->
+      find_lifetime_loop path nested t
+    | #Types.simple_type -> []
+    | `Bottom -> []
+    | `T_Var _ -> []
+    | `Adt_type p ->
+      let new_nested = nested || (p.Types.lifetime_param <> []) in
+      let new_accum = List.flatten @@ List.map (find_lifetime_loop path new_nested) p.Types.type_param in
+      let l = List.map (fun a_lifetime -> (a_lifetime,nested,false,path)) p.Types.lifetime_param in
+      l @ new_accum
+    | `Tuple tl ->
+      indexed_fold_left (fun i accum t ->
+          (find_lifetime_loop (i::path) nested t) @ accum
+        ) [] tl
+  in
+  find_lifetime_loop [] false ty
+
+let arg_borrow_info = 
+  let make_borrow mut ind = 
+    if mut then
+      `MutableBorrow ind
+    else
+      `ImmutableBorrow ind
+  in
+  fun i accum ty ->
+    let extracted_lifetimes = find_lifetime ty in
+    match extracted_lifetimes with
+    | [] -> accum
+    | l -> 
+      accum @ (List.map (fun (lifetime,nested,mut,path) ->
+          match path with
+          | [] -> 
+            (lifetime,(nested,(make_borrow mut i)))
+          | root::rest ->
+            let lifetime_info = List.fold_left (fun accum ind ->
+                `Tuple (ind,accum)
+              ) (make_borrow mut root) rest
+            in
+            (lifetime,(nested,(`Tuple (i,lifetime_info))))
+        ) l)
+
+let assoc_all a l = 
+  List.fold_left (fun accum (key,v) ->
+      if key = a then
+        v::accum
+      else
+        accum
+    ) [] l
+
+let borrow_analysis fn_def = 
+  let lifetime_mapping = indexed_fold_left arg_borrow_info [] @@ List.map snd fn_def.Ir.fn_args in
+  let return_lifetimes = find_lifetime fn_def.Ir.ret_type in
+  if (List.length return_lifetimes) > 1 then
+    failwith "Unsupported shape of return type!"
+  else if (List.length return_lifetimes) = 0 then
+    `NoBorrow
+  else begin
+    let (l_param,_,_,_) = List.hd return_lifetimes in
+    let mapped_args = assoc_all l_param lifetime_mapping in
+    if (List.length mapped_args) > 1 then
+      failwith "Multiple borrows not supported"
+    else if (List.length mapped_args) = 0 then
+      failwith "No lifetime found!"
+    else if (fst @@ List.hd mapped_args) then
+      failwith "Borrowing of nested params not supported"
+    else
+      snd @@ List.hd mapped_args
+  end
 
 (* To make modelling the borrow checker in C tractable the analysis
    imposes the following constraints:
@@ -524,7 +609,7 @@ type borrow_info = [
    - Foo<'a,Bar<'b,T>>
    - & &int
 *)
-
+(*
 let rec find_nested_lifetimes nested (ty : Types.r_type) = 
   match ty with
   | `Ptr _
@@ -599,10 +684,6 @@ let rec find_lifetime mut_refs refs =
     | #Types.simple_type -> NoBorrow
     | `T_Var _ -> NoBorrow
 
-let rec extract_lifetime exit_cb mk_immutable mk_mutable = 
-  
-  
-
 let borrow_analysis fn_def = 
   let ret_lifetimes = List.length @@ sort_uniq @@ find_lifetime_ref [] fn_def.Ir.ret_type in
   if ret_lifetimes = 0 then
@@ -636,10 +717,3 @@ let borrow_analysis fn_def =
   find_lifetime mut_ref_lifetime ref_lifetime fn_def.Ir.ret_type
   end
 *)
-
-type borrow_info = 
-  | MutableBorrow of int
-  | ImmutableBorrow of int
-  | NoBorrow
-
-let borrow_analysis _ = NoBorrow
