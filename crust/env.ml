@@ -17,3 +17,5 @@ let rec set_env = function
   | (`Fn f)::t -> 
 	 Hashtbl.add fn_env f.Ir.fn_name f;
 	 set_env t
+
+let gcc_mode = ref false;;

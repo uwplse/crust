@@ -24,11 +24,10 @@ let rec (adt_type_name : c_types -> string) = function
   | `Tuple tl -> mangle_adt_name @@ adt_of_tuple tl
 and mangle_adt_name t = 
   if t.Types.type_param = [] then
-    t.Types.type_name ^ "_t"
+    t.Types.type_name
   else
     t.Types.type_name ^ "_" ^
     (String.concat "_" (List.map adt_type_name t.Types.type_param))
-    ^ "_t"
 and tuple_name tl = mangle_adt_name @@ adt_of_tuple tl
 
 let adt_of_inst (t_name,m_args) = 

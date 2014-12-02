@@ -167,7 +167,14 @@ module DriverF(COMP : Compilation) = struct
         ) tsize_const_cache [] in
       let n_object_const = "(" ^ (String.concat " + " all_types) ^ ")" in
       self#emit_define n_object_symbol n_object_const;
-      self#emit_define stack_depth_symbol "12"
+      self#emit_define stack_depth_symbol "12";
+      (if !Env.gcc_mode then begin
+         self#put_all [ "#define __CPROVER_assume(x)" ];
+         self#newline ();
+         self#put_all [ "#define assert(x)" ];
+         self#newline ()
+       end else ()
+      )
 
     method private emit_nondets () = 
       let emit_nondet t_const = 
