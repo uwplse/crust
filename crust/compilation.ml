@@ -386,7 +386,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
     self#put_all [ type_to_string seed_tuple; " __init = crust_init();"];
     self#newline ();
     let _ = 
-      List.fold_right (fun (t : c_types) (ind,i_map) ->
+      List.fold_left (fun (ind,i_map) (t : c_types) ->
           let val_ind = 
             if List.mem_assoc t i_map then
               List.assoc t i_map
@@ -400,7 +400,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
           self#emit_array_assign val_array val_ind_s t_value;
           self#emit_array_assign live_state t_index "1";
           (succ ind),((t,(succ val_ind))::i_map)
-        ) seed_types (0,[])
+        ) (0,[]) seed_types
     in
     ()
 
@@ -473,7 +473,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
     self#emit_array_def stack_type stack_name stack_depth_symbol;
     List.iter (fun t ->
         let arr_type = (type_to_string t) in
-        let arr_name = "state_" ^ arr_type in
+        let arr_name = "state_" ^ (adt_type_name t) in
         Hashtbl.add tvalue_array_cache t arr_name;
         self#emit_array_def arr_type arr_name @@ Hashtbl.find tsize_const_cache t
       ) public_types;
@@ -497,7 +497,7 @@ class driver_emission buf (public_types : c_types list) = object(self)
     self#put_all [ " "; stack_type ];
     self#newline ~post:";" ()
   method private emit_constraint var upper_bound = 
-    self#emit_assume @@ Printf.sprintf "%s > 0 && %s < %s" var var upper_bound
+    self#emit_assume @@ Printf.sprintf "%s >= 0 && %s < %s" var var upper_bound
   method private emit_bounded_int v_name upper_bound = 
     self#put_all [ "int " ; v_name ; " = " ; nondet_int_symbol ];
     self#newline ~post:";" ();
@@ -923,7 +923,7 @@ let emit_common_typedefs out_channel =
   emit_type `Bool;
   List.iter (fun size ->
       emit_type (`UInt size);
-      emit_type (`UInt size)
+      emit_type (`Int size)
     ) int_sizes
 
 let emit_typedefs out_channel inst = 
