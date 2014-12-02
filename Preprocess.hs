@@ -33,7 +33,7 @@ constElim items = filter (not . isConst) $ everywhere (mkT fixExpr `extT` fixPat
 
     cleanup (EUnOp "UnNeg" (Expr _ (ESimpleLiteral s)))
       | head s == '-' = ESimpleLiteral $ tail s
-      | otherwise = ESimpleLiteral s
+      | otherwise = ESimpleLiteral ('-' : s)
     cleanup e = e
 
     isConst (IConst _) = True

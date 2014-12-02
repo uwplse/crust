@@ -809,7 +809,7 @@ impl Trans for Item {
                                                  match *opt_lifetime {
                                                      Some(ref lifetime) =>
                                                          lifetime.trans(tcx),
-                                                     None => "r_anon_00".into_string(),
+                                                     None => "r_anon_0".into_string(),
                                                  },
                                                  self_ty.trans(tcx))),
                                 SelfExplicit(ref ty, ref name) =>
