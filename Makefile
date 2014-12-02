@@ -8,7 +8,7 @@ MAKE=make
 all: rbmc crust Preprocess
 
 rbmc: main.rs trans.rs
-	$(RUSTC) $(RUST_FLAGS) -C rpath main.rs
+	$(RUSTC) $(RUST_FLAGS) main.rs
 
 crust:
 	$(MAKE) -C crust
@@ -21,5 +21,5 @@ Lexer.hs: Lexer.x
 
 clean:
 	rm -f rbmc
-	rm -f Lexer.hs {Lexer,Parser,Preprocess}.{o,hi} Preprocess
+	bash -c "rm -f Lexer.hs {Lexer,Parser,Preprocess}.{o,hi} Preprocess"
 	$(MAKE) -C crust clean
