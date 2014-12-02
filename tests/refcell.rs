@@ -4,12 +4,25 @@
 
 #[phase(plugin, link)] extern crate core;
 use core::prelude::{Copy, Drop, Deref, DerefMut};
-use core::prelude::{Option, Some, None};
-use core::kinds::marker;
+//use core::prelude::{Option, Some, None};
+//use core::kinds::marker;
+//use core::cell::UnsafeCell;
 
 
+use Option::{None, Some};
 
-/*
+pub enum Option<T> {
+    None,
+    Some(T),
+}
+
+
+pub mod marker {
+    pub struct NoCopy;
+    pub struct NoSync;
+}
+
+
 pub struct UnsafeCell<T> {
     value: T,
 }
@@ -21,9 +34,18 @@ impl<T> UnsafeCell<T> {
 
     pub unsafe fn get(&self) -> *mut T { &self.value as *const T as *mut T }
 }
-*/
 
-use core::cell::UnsafeCell;
+
+
+pub struct Abstract {
+    x: uint,
+}
+
+pub fn crust_init() -> (Abstract,) { (Abstract { x: 0, },) }
+
+pub fn crust_abort() -> ! {
+    unsafe { core::intrinsics::abort() }
+}
 
 
 
@@ -70,7 +92,8 @@ impl<T> RefCell<T> {
     pub fn new(value: T) -> RefCell<T> {
         RefCell {
             value: UnsafeCell::new(value),
-            borrow: Cell::new(UNUSED),
+            //borrow: Cell::new(UNUSED),
+            borrow: Cell::new(0),
             nocopy: marker::NoCopy,
             noshare: marker::NoSync,
         }
@@ -89,14 +112,17 @@ impl<T> RefCell<T> {
     pub fn borrow<'a>(&'a self) -> Ref<'a, T> {
         match self.try_borrow() {
             Some(ptr) => ptr,
-            None => panic!("RefCell<T> already mutably borrowed")
+            //None => panic!("RefCell<T> already mutably borrowed")
+            None => crust_abort(),
         }
     }
 
     pub fn try_borrow_mut<'a>(&'a self) -> Option<RefMut<'a, T>> {
         match self.borrow.get() {
-            UNUSED => {
-                self.borrow.set(WRITING);
+            //UNUSED => {
+            0 => {
+                //self.borrow.set(WRITING);
+                self.borrow.set(-1);
                 Some(RefMut { _parent: self })
             },
             _ => None
@@ -106,7 +132,8 @@ impl<T> RefCell<T> {
     pub fn borrow_mut<'a>(&'a self) -> RefMut<'a, T> {
         match self.try_borrow_mut() {
             Some(ptr) => ptr,
-            None => panic!("RefCell<T> already borrowed")
+            //None => panic!("RefCell<T> already borrowed")
+            None => crust_abort(),
         }
     }
 }
@@ -120,7 +147,8 @@ pub struct Ref<'b, T:'b> {
 impl<'b, T> Drop for Ref<'b, T> {
     fn drop(&mut self) {
         let borrow = self._parent.borrow.get();
-        debug_assert!(borrow != WRITING && borrow != UNUSED);
+        //debug_assert!(borrow != WRITING && borrow != UNUSED);
+        //debug_assert!(borrow != -1 && borrow != 0);
         self._parent.borrow.set(borrow - 1);
     }
 }
@@ -140,8 +168,10 @@ pub struct RefMut<'b, T:'b> {
 impl<'b, T> Drop for RefMut<'b, T> {
     fn drop(&mut self) {
         let borrow = self._parent.borrow.get();
-        debug_assert!(borrow == WRITING);
-        self._parent.borrow.set(UNUSED);
+        //debug_assert!(borrow == WRITING);
+        //debug_assert!(borrow == -1);
+        //self._parent.borrow.set(UNUSED);
+        self._parent.borrow.set(0);
     }
 }
 

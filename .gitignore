@@ -1,5 +1,10 @@
 /rbmc
 
+*.o
+*.hi
+/Lexer.hs
+/Preprocess
+
 *.aux
 *.bbl
 *.bib

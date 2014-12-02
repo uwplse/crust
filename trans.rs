@@ -260,7 +260,7 @@ impl Trans for ty::t {
             ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(tcx)),
             ty_param(ref param) => {
-                format!("{}{}",
+                format!("var {}{}",
                         param.space.trans(tcx),
                         param.idx)
             },
@@ -323,7 +323,7 @@ impl Trans for Block {
                 },
                 self.stmts.trans(tcx),
                 self.expr.as_ref().map(|e| e.trans(tcx))
-                    .unwrap_or("unit simple_literal _".into_string()))
+                    .unwrap_or("[unit] simple_literal _Block".into_string()))
     }
 }
 
@@ -343,7 +343,7 @@ impl Trans for Decl {
         match self.node {
             DeclLocal(ref local) => local.trans(tcx),
             // TODO: handle inner items
-            DeclItem(_) => "unit simple_literal _".into_string(),
+            DeclItem(_) => "expr ([unit] simple_literal _DeclItem)".into_string(),
         }
     }
 }
@@ -454,9 +454,12 @@ impl Trans for Expr {
                         _ => panic!("bad origin for callee in ExprUnary"),
                     },
                     None => {
-                        format!("unop {} {}",
-                                op,
-                                a.trans(tcx))
+                        match op {
+                            UnDeref => format!("deref {}", a.trans(tcx)),
+                            _ => format!("unop {} {}",
+                                         op,
+                                         a.trans(tcx)),
+                        }
                     },
                 }
             },
@@ -476,7 +479,7 @@ impl Trans for Expr {
                         cond.trans(tcx),
                         ty.trans(tcx),
                         then.trans(tcx),
-                        opt_else.as_ref().map_or("[unit] simple_literal _".into_string(),
+                        opt_else.as_ref().map_or("[unit] simple_literal _ExprIf".into_string(),
                                                  |e| e.trans(tcx)))
             },
                 
@@ -523,6 +526,8 @@ impl Trans for Expr {
                             format!("var {}",
                                     path.segments[path.segments.len() - 1]
                                         .identifier.as_str().into_string()),
+                        DefStruct(did) =>
+                            format!("struct_literal 0"),
                         d => format!("const {}",
                                      mangled_def_name(tcx, d.def_id())),
                     }
@@ -535,7 +540,7 @@ impl Trans for Expr {
             ExprRet(ref opt_expr) =>
                 format!("return {}",
                         opt_expr.as_ref().map(|e| e.trans(tcx))
-                                .unwrap_or("unit simple_literal _".into_string())),
+                                .unwrap_or("[unit] simple_literal _ExprRet".into_string())),
             // ExprInlineAsm
             // ExprMac
             ExprStruct(ref name, ref fields, ref opt_base) => {
@@ -580,6 +585,14 @@ fn adjust_expr(tcx: &ty::ctxt,
                     assert!(autoref.is_none());
                     let mt = ty::mt { ty: result_ty, mutbl: mutbl };
                     result_ty = ty::mk_t(tcx, ty::ty_rptr(region, mt));
+                    result = format!("({} addr_of {})",
+                                     result_ty.trans(tcx),
+                                     result);
+                },
+                Some(ty::AutoUnsafe(mutbl, ref autoref)) => {
+                    assert!(autoref.is_none());
+                    let mt = ty::mt { ty: result_ty, mutbl: mutbl };
+                    result_ty = ty::mk_t(tcx, ty::ty_ptr(mt));
                     result = format!("({} addr_of {})",
                                      result_ty.trans(tcx),
                                      result);
@@ -732,37 +745,45 @@ struct TransVisitor<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
     fn visit_item(&mut self, i: &'v Item) {
-        match i.node {
+        println!("{}", i.trans(self.tcx));
+        visit::walk_item(self, i);
+    }
+}
+
+impl Trans for Item {
+    fn trans(&self, tcx: &ty::ctxt) -> String {
+        match self.node {
             ItemStruct(ref def, ref g) => {
-                assert!(def.ctor_id.is_none());
-                println!("struct {} {} {};",
-                         mangled_def_name(self.tcx, local_def(i.id)),
-                         g.trans_extra(self.tcx, TypeSpace),
-                         def.fields.trans(self.tcx));
+                //assert!(def.ctor_id.is_none());
+                format!("struct {} {} {};",
+                        mangled_def_name(tcx, local_def(self.id)),
+                        g.trans_extra(tcx, TypeSpace),
+                        def.fields.trans(tcx))
             },
             ItemEnum(ref def, ref g) => {
-                println!("enum {} {} {}",
-                         i.ident.trans(self.tcx),
-                         g.trans_extra(self.tcx, TypeSpace),
-                         def.variants.trans(self.tcx));
+                format!("enum {} {} {}",
+                        self.ident.trans(tcx),
+                        g.trans_extra(tcx, TypeSpace),
+                        def.variants.trans(tcx))
             },
             ItemFn(ref decl, style, _, ref generics, ref body) => {
-                println!("fn {} {} {} body {} {} {{\n{}\t{}\n}}\n\n",
-                         mangled_def_name(self.tcx, local_def(i.id)),
-                         generics.trans_extra(self.tcx, FnSpace),
-                         decl.trans(self.tcx),
-                         decl.output.trans(self.tcx),
-                         match style {
-                             UnsafeFn => "unsafe",
-                             NormalFn => "block",
-                         },
-                         body.stmts.trans(self.tcx),
-                         body.expr.as_ref().map(|e| e.trans(self.tcx))
-                             .unwrap_or("unit simple_literal _".into_string()));
+                format!("fn {} {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+                        mangled_def_name(tcx, local_def(self.id)),
+                        generics.trans_extra(tcx, FnSpace),
+                        decl.trans(tcx),
+                        decl.output.trans(tcx),
+                        match style {
+                            UnsafeFn => "unsafe",
+                            NormalFn => "block",
+                        },
+                        body.stmts.trans(tcx),
+                        body.expr.as_ref().map(|e| e.trans(tcx))
+                            .unwrap_or("[unit] simple_literal _ItemFn".into_string()))
             },
             ItemImpl(ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
+                let mut result = String::new();
                 for item in items.iter() {
-                    match *item {
+                    let part = match *item {
                         MethodImplItem(ref method) => {
                             let (name, generics, _, exp_self, style, decl, body, _) = match method.node {
                                 MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
@@ -776,25 +797,25 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
                                 SelfStatic => None,
                                 SelfValue(ref name) =>
                                     Some(format!("{} {}",
-                                                 name.trans(self.tcx),
-                                                 self_ty.trans(self.tcx))),
+                                                 name.trans(tcx),
+                                                 self_ty.trans(tcx))),
                                 SelfRegion(ref opt_lifetime, mutbl, ref name) =>
                                     Some(format!("{} {} {} {}",
-                                                 name.trans(self.tcx),
+                                                 name.trans(tcx),
                                                  match mutbl {
                                                      MutMutable => "ref_mut",
                                                      MutImmutable => "ref",
                                                  },
                                                  match *opt_lifetime {
                                                      Some(ref lifetime) =>
-                                                         lifetime.trans(self.tcx),
+                                                         lifetime.trans(tcx),
                                                      None => "r_anon_00".into_string(),
                                                  },
-                                                 self_ty.trans(self.tcx))),
+                                                 self_ty.trans(tcx))),
                                 SelfExplicit(ref ty, ref name) =>
                                     Some(format!("{} {}",
-                                                 name.trans(self.tcx),
-                                                 self_ty.trans(self.tcx))),
+                                                 name.trans(tcx),
+                                                 self_ty.trans(tcx))),
                             };
                             let offset = match self_arg {
                                 Some(arg) => {
@@ -804,32 +825,39 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
                                 None => 0,
                             };
 
-                            let (lifetimes, ty_params) = combine_generics(self.tcx, impl_generics, generics);
+                            let (lifetimes, ty_params) = combine_generics(tcx, impl_generics, generics);
 
-                            arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(self.tcx)));
-                            println!("fn {} {} {} (args {}) return {} body {} {} {{\n{}\t{}\n}}\n\n",
-                                     mangled_def_name(self.tcx, local_def(method.id)),
-                                     lifetimes.trans(self.tcx),
-                                     ty_params.trans(self.tcx),
-                                     arg_strs.trans(self.tcx),
-                                     decl.output.trans(self.tcx),
-                                     decl.output.trans(self.tcx),
-                                     match style {
-                                         UnsafeFn => "unsafe",
-                                         NormalFn => "block",
-                                     },
-                                     body.stmts.trans(self.tcx),
-                                     body.expr.as_ref().map(|e| e.trans(self.tcx))
-                                         .unwrap_or("unit simple_literal _".into_string()));
+                            arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(tcx)));
+                            format!("fn {} {} {} (args {}) return {} body {} {} {{\n{}\t{}\n}}\n\n",
+                                    mangled_def_name(tcx, local_def(method.id)),
+                                    lifetimes.trans(tcx),
+                                    ty_params.trans(tcx),
+                                    arg_strs.trans(tcx),
+                                    decl.output.trans(tcx),
+                                    decl.output.trans(tcx),
+                                    match style {
+                                        UnsafeFn => "unsafe",
+                                        NormalFn => "block",
+                                    },
+                                    body.stmts.trans(tcx),
+                                    body.expr.as_ref().map(|e| e.trans(tcx))
+                                        .unwrap_or("[unit] simple_literal _method".into_string()))
                         },
                         TypeImplItem(_) => panic!("unsupported TypeImplItem"),
-                    }
+                    };
+                    result.push_str(part.as_slice());
+                    result.push_str("\n");
                 }
+                result
             },
-            _ => {},
+            ItemConst(ref ty, ref expr) => {
+                format!("const {} {} {}",
+                        self.ident.trans(tcx),
+                        ty.trans(tcx),
+                        expr.trans(tcx))
+            },
+            _ => "".into_string(),
         }
-
-        visit::walk_item(self, i);
     }
 }
 

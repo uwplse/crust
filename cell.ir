@@ -112,3 +112,5 @@ fn UnsafeCell_new<0><1: T>
 #
 #   stmt ::= "expr" expr
 #          | "let" name(var) type(var) expr
+#
+#   const_def ::= "const" name ty expr

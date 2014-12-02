@@ -18,7 +18,9 @@ RBMC_FLAGS="-A warnings -L $RUST_LIB"
 
 for i in $(find $PROJECT_DIR/tests -type f -name '*.rs' | sort); do
 	OUT_FILE=$(mktemp);
-	$PROJECT_DIR/rbmc $RBMC_FLAGS $i 2> /dev/null | $PROJECT_DIR/crust/crust.byte - 2> /dev/null > $OUT_FILE;
+	$PROJECT_DIR/rbmc $RBMC_FLAGS $i 2> /dev/null | \
+        $PROJECT_DIR/Preprocess 2> /dev/null | \
+        $PROJECT_DIR/crust/crust.byte - 2> /dev/null > $OUT_FILE;
 	if [ \! $? -eq 0 ]; then
 		echo $(basename $i) FAILED;
 		rm $OUT_FILE;
