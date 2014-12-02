@@ -15,5 +15,5 @@ RBMC_FLAGS="-A warnings -L $RUST_LIB"
 
 ./rbmc $RBMC_FLAGS "$1" >out.ir
 <out.ir ./Preprocess >out2.ir
-<out2.ir crust/crust.byte - >out.c
+<out2.ir crust/crust.byte -gcc - >out.c
 gcc -c out.c -std=c99
