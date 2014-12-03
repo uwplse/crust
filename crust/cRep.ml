@@ -362,10 +362,59 @@ let rec simplify_addr_op (expr : Ir.expr) =
     e_type,`Unsafe (s',simplify_addr_op e)
   | `Assignment (lhs,rhs) ->
     e_type,`Assignment (simplify_addr_op lhs,simplify_addr_op rhs)
-    
+
+let rec clean_abort_expr (expr : t_simple_expr) = 
+  let e_type = fst expr in
+  match (snd expr) with
+  | `Cast (e,t) ->
+    e_type,`Cast (clean_abort_expr e,t)
+  | `Struct_Field (e,f) ->
+    (* XXX: hack *)
+    let e = snd (clean_abort_expr (`Bottom,e)) in
+    e_type,`Struct_Field (e,f)
+  | `Return e ->
+    e_type,`Return (clean_abort_expr e)
+  | `BinOp (o,e1,e2) ->
+    e_type,`BinOp (o,clean_abort_expr e1,clean_abort_expr e2)
+  | `UnOp (o,e1) ->
+    e_type,`UnOp (o,clean_abort_expr e1)
+  | `Address_of e ->
+    e_type,`Address_of (clean_abort_expr e)
+  | `Deref e ->
+    e_type,`Deref (clean_abort_expr e)
+  | `Var _ -> expr
+  | `Literal _ -> expr
+  | `Assignment (_,((_,`Call ("crust_abort",_,_,_)) as r)) ->
+    r
+  | `Assignment (e1,e2) ->
+    (* XXX: also a hack *)
+    let e1 = snd (clean_abort_expr (`Bottom,e1)) in
+    (e_type,`Assignment (e1,clean_abort_expr e2))
+  | `Call ("crust_abort", _, _, _) ->
+    failwith "crust_abort found in unsupported position"
+  | `Call (s,l,t,e) ->
+    e_type,`Call (s,l,t,List.map clean_abort_expr e)
+let rec clean_abort (expr : all_expr) = 
+  let e_type = fst expr in
+  match (snd expr) with
+  | #simple_expr as s -> (clean_abort_expr (e_type,s) :> all_expr)
+  | `Match (m,m_arms) ->
+    e_type,`Match (clean_abort_expr m,List.map (fun (cond,m) ->
+        clean_abort_expr cond,clean_abort m
+      ) m_arms)
+  | `Block (stmt,e) ->
+    let stmt = List.map (function
+        | (`Expr (_,`Call ("crust_abort",_,_,_))) as e -> e
+        | `Expr e -> `Expr (clean_abort e)
+        | `Let (v,t,e) -> `Let (v,t,clean_abort_expr e)
+        | (`Declare _) as d -> d
+      ) stmt 
+    in
+    e_type,(`Block (stmt,clean_abort e))
       
 let get_simple_ir ir = 
   simplify_addr_op ir
   |> instrument_return
   |> simplify_ir
+  |> clean_abort
   |> flatten_blocks 

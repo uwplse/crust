@@ -347,15 +347,19 @@ let sig_of_fdef fn_def mono_args =
   Buffer.contents buf
 
 let emit_fn_def out_channel buf (fn_name,mono_args) = 
-  let fn_def = Hashtbl.find Env.fn_env fn_name in
-  let simple_ir = memo_get_simple_ir fn_name fn_def in
-  Buffer.add_string buf @@ sig_of_fdef fn_def mono_args;
-  Buffer.add_string buf " ";
-  let expr_emitter = new expr_emitter buf @@ Types.type_binding fn_def.Ir.fn_tparams mono_args in
-  expr_emitter#dump_expr simple_ir;
-  Buffer.output_buffer out_channel buf;
-  Buffer.clear buf;
-  ()
+  if fn_name = "crust_abort" then begin
+    Buffer.add_string buf @@ type_to_string `Bottom;
+    Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n"
+  end else
+    let fn_def = Hashtbl.find Env.fn_env fn_name in
+    let simple_ir = memo_get_simple_ir fn_name fn_def in
+    Buffer.add_string buf @@ sig_of_fdef fn_def mono_args;
+    Buffer.add_string buf " ";
+    let expr_emitter = new expr_emitter buf @@ Types.type_binding fn_def.Ir.fn_tparams mono_args in
+    expr_emitter#dump_expr simple_ir;
+    Buffer.output_buffer out_channel buf;
+    Buffer.clear buf;
+    ()
 
 let emit_fsigs out_channel f_list = 
   List.iter (fun (f_name,m_args) ->
