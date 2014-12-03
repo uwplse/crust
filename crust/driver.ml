@@ -152,7 +152,7 @@ module DriverF(COMP : Compilation) = struct
       self#emit_define no_borrow_symbol "-1";
       self#emit_define immutable_borrow_symbol "0";
       self#emit_define mutable_borrow_symbol "1";
-      self#emit_define max_actions_symbol "12";
+      self#emit_define max_actions_symbol "8";
       List.iteri (fun index ty ->
           let type_code = string_of_int index in
           let type_const = "TYPE_" ^ (String.uppercase @@ COMP.adt_type_name ty) in
@@ -167,14 +167,7 @@ module DriverF(COMP : Compilation) = struct
         ) tsize_const_cache [] in
       let n_object_const = "(" ^ (String.concat " + " all_types) ^ ")" in
       self#emit_define n_object_symbol n_object_const;
-      self#emit_define stack_depth_symbol "12";
-      (if !Env.gcc_mode then begin
-         self#put_all [ "#define __CPROVER_assume(x)" ];
-         self#newline ();
-         self#put_all [ "#define assert(x)" ];
-         self#newline ()
-       end else ()
-      )
+      self#emit_define stack_depth_symbol "12"
 
     method private emit_nondets () = 
       let emit_nondet t_const = 

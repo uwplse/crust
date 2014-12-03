@@ -348,7 +348,7 @@ let sig_of_fdef fn_def mono_args =
 
 let emit_fn_def out_channel buf (fn_name,mono_args) = 
   if fn_name = "crust_abort" then begin
-    Buffer.add_string buf @@ type_to_string `Bottom;
+    Buffer.add_string buf @@ type_to_string `Unit;
     Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n"
   end else
     let fn_def = Hashtbl.find Env.fn_env fn_name in
@@ -392,13 +392,74 @@ let find_dup_inst : (string * (Types.mono_type list)) list -> (string * c_types 
     List.sort Pervasives.compare simple_inst
     |> uniq_list
 
+module CTypeInst = struct
+  type t = string * (c_types list)
+  let compare = Pervasives.compare
+end
+
+module CISet = Set.Make(CTypeInst)
+
+module CIMap = Map.Make(CTypeInst)
+
+let add_inst accum (ty : c_types) =
+  match ty with
+  | `Tuple tl -> CISet.add (Types.rust_tuple_name,tl) accum
+  | `Adt_type { Types.type_name = t; Types.type_param = tl } ->
+    CISet.add (t,tl) accum
+  | _ -> accum
+
+let rec build_dep_map accum ((type_name,type_args) as inst)= 
+  if type_name = Types.rust_tuple_name then
+    CIMap.add inst (List.fold_left add_inst CISet.empty type_args) accum
+  else
+    let t_def = Hashtbl.find Env.adt_env type_name in
+    let ref_types = 
+      match t_def with
+      | `Enum_def ed -> 
+        let b = Types.type_binding ed.Ir.e_tparam type_args in
+        List.concat @@ List.map (fun ed ->
+            List.map (to_monomorph_c_type b) ed.Ir.variant_fields
+        ) ed.Ir.variants
+      | `Struct_def sd ->
+        let b = Types.type_binding sd.Ir.s_tparam type_args in
+        List.map (fun (_,t) -> to_monomorph_c_type b t) sd.Ir.struct_fields
+    in
+    CIMap.add inst (List.fold_left add_inst CISet.empty ref_types) accum
+
+let rec topo_sort dep_map accum = 
+  let (dep_met,has_dep) = CIMap.partition (fun _ deps ->
+      CISet.is_empty deps
+    ) dep_map
+  in
+  if CIMap.cardinal dep_met = 0 then
+    failwith "Type dependency cycle!"
+  else begin
+    let (accum,dep_met_s) = CIMap.fold (fun i _ (accum,dms) ->
+        i::accum,CISet.add i dms
+      ) dep_met (accum,CISet.empty) in
+    if CIMap.cardinal has_dep = 0 then
+      List.rev accum
+    else
+      let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
+      topo_sort dep_map' accum
+  end
+
+let order_types t_list = 
+  let d_map = List.fold_left build_dep_map CIMap.empty t_list in
+  topo_sort d_map []
+
 let emit out_channel pub_type_set pub_fn_set t_set f_set = 
-  let t_list = find_dup_inst @@ Analysis.TISet.elements t_set in
+  let t_list = order_types @@ find_dup_inst @@ Analysis.TISet.elements t_set in
   let f_list = find_dup_inst @@ Analysis.FISet.elements f_set in
   let (pt_list : c_types list) = List.sort Pervasives.compare @@ List.map c_type_of_monomorph @@ Analysis.MTSet.elements pub_type_set in
   let pt_list = uniq_list pt_list in
   let pf_list = find_dup_inst @@ Analysis.FISet.elements pub_fn_set in
   emit_common_typedefs out_channel;
+  begin
+    if !Env.gcc_mode then
+      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n"
+    else ()
+  end;
   List.iter (emit_typedefs out_channel) t_list;
   emit_fsigs out_channel f_list;
   let type_buffer = Buffer.create 1000 in
