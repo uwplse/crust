@@ -86,20 +86,24 @@ and walk_type_def w_state adt_def m_params =
   let gen_binding = fun t_names -> Types.type_binding t_names m_params in
   match adt_def with
   | `Struct_def sd -> 
-	 let new_bindings = gen_binding sd.s_tparam in
-	 let a = (snd >>= (Types.to_monomorph new_bindings) >>= (rev_app walk_type)) in
-	 let fold = rev_app a in
-	 List.fold_left fold w_state sd.struct_fields
+	let new_bindings = gen_binding sd.s_tparam in
+	let a = (snd >>= (Types.to_monomorph new_bindings) >>= (rev_app walk_type)) in
+	let fold = rev_app a in
+	let w_state = List.fold_left fold w_state sd.struct_fields in
+	begin
+		match sd.Ir.drop_fn with
+		| Some df -> walk_fn w_state df m_params
+		| None -> w_state
+	end
   | `Enum_def ed ->
 	 let new_bindings = gen_binding ed.e_tparam in
 	 let m = List.map (fun v -> List.map (Types.to_monomorph new_bindings) v.variant_fields) ed.variants in
-	 List.fold_left (List.fold_left walk_type) w_state m 
-					
-let inst_walk_type t_bindings w_state t = 
+	 let w_state  = List.fold_left (List.fold_left walk_type) w_state m in
+	 begin match ed.Ir.drop_fn with | Some df -> walk_fn w_state df m_params | None -> w_state end
+and inst_walk_type t_bindings w_state t = 
   let m_type = Types.to_monomorph t_bindings t in
   walk_type w_state m_type
-
-let rec walk_expr t_bindings w_state (expr : Ir.expr) = 
+and walk_expr t_bindings w_state (expr : Ir.expr) = 
   let w_state = inst_walk_type t_bindings w_state (fst expr) in
   match snd expr with
   | `Block (stmt,e)
@@ -303,10 +307,10 @@ let primitive_types =
   );;
 
 (* I originally wrote this class because I had this idea that
- sub-classes would fill in the handling of certain types.
+   sub-classes would fill in the handling of certain types.
 
-This didn't pan out and all these methods could be made into
- functions, but I like them packaged up like this *)
+   This didn't pan out and all these methods could be made into
+   functions, but I like them packaged up like this *)
 class type_matcher = object(self)
   method get_inst t_set m = 
 	self#match_types (new set_match_state true t_set) [] m
