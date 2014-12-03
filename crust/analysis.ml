@@ -451,13 +451,21 @@ let walk_public_fn fn_def w_state m_args =
 let get_inst = 
   let matcher = new type_matcher in
   fun t_set fn_def ->
-  let arg_types = List.map snd fn_def.Ir.fn_args in
-  match matcher#get_inst t_set arg_types with
-  | `Inst t_bindings -> 
-	 Some (List.map (fun t_binding ->
-			   List.map (t_binding |> rev_app List.assoc) fn_def.Ir.fn_tparams
-			  ) t_bindings)
-  | `Mismatch -> None
+    let arg_types = List.map snd fn_def.Ir.fn_args |> 
+                    List.sort (fun a b ->
+                        match (a,b) with
+                        | `T_Var t1,`T_Var t2 -> Pervasives.compare t1 t2
+                        | `T_Var _,_ -> 1
+                        | _,`T_Var _ -> -1
+                        | _,_ -> 0
+                      )
+    in
+    match matcher#get_inst t_set arg_types with
+    | `Inst t_bindings -> 
+	  Some (List.map (fun t_binding ->
+		  List.map (t_binding |> rev_app List.assoc) fn_def.Ir.fn_tparams
+		) t_bindings)
+    | `Mismatch -> None
 
 let has_inst w_state f_name = 
   FISet.exists (fun (f_name',_) -> 
@@ -516,6 +524,7 @@ let run_analysis () =
   let with_init_state = walk_fn_def w_state crust_init_def [] in
   find_fn restrict_fn constructor_fn with_init_state
 
+(* borrow analysis *)
 let indexed_fold_left f accum l = 
   let rec fold_loop i accum l = 
     match l with
