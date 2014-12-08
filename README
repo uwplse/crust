@@ -1,0 +1,54 @@
+CRust is implemented as three separate binaries that are called one after another.
+
+The tests/ directory includes several rust source files that together define the set of
+interesting features of Rust that we support. With the exception of refcell.rs, none of
+these files display any interesting behavior from a verification perspective.
+
+To generate the C code and driver functions for a given input, run the following command:
+./rbmc -A warnings ./tests/foo.rs | ./Preprocess | ./crust.native - > ./output.c
+
+output.c can then be verified via cbmc with a simple:
+cbmc ./output.c
+
+again, with the exception of refcell.rs, none of the other test files exhibit interesting
+behavior.
+
+The current version of refcell.rs included in tests/ is a working
+version. The refcell_error*.patch files are a collection of changes to
+refcell.rs that lead to the introduction of a bug. To verify that
+these bugs are in fact caught by CRust, patch refcell.rs (remember to
+make a backup of the original beforehand!), and re-run the above
+process from the beginning. cbmc should output a verification failure
+and a (long) counter-example execution trace.
+
+Installation and building:
+CBMC is freely available software and is available in Debian and derived distributions.
+For other operating systems or distributions, consult the CBMC homepage or your OS's
+package manager.
+
+Building rbmc:
+The rbmc tool currently only works with a very specific version of the
+compiler. To build rbmc, you must have the corresponding version of
+the compiler installed on your system.  The version required is git
+revision 336349c93207d792587eb0b5258b29da6ec0db8a from the rust git
+repository found here: https://github.com/rust-lang/rust (warning,
+compilation takes tens of minutes)
+
+For simplicity, consider building rustc using rpath: this will make using
+rust in the building of rbmc considerable easier.
+
+Once built, ensure that the rustc binary is installed in a location in
+your PATH. Rbmc can then be built with a simple "make rbmc" issued in the project's root
+directory.
+
+Building Preprocess:
+Preprocess requires alex, ghc, syb, and parsec. Consult your operating
+system or distribution's package manager for how to get this
+software. Once you have installed these requirements, you should be
+able to build the Preprocess binary with "make Preprocess"
+
+Building crust:
+Crust requires at least version 4.01 of the ocaml compiler. It also requires that you have
+ocamlfind and ocamlbuild installed on your system (ocamlbuild is sometimes bundled separately
+from the compiler). Once these preconditions are met, simply issue "make" in the crust/
+subdirectory.

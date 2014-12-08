@@ -2,7 +2,7 @@ diff --git a/tests/refcell.rs b/tests/refcell.rs
 index 8ee0065..7d217ef 100644
 --- a/tests/refcell.rs
 +++ b/tests/refcell.rs
-@@ -117,7 +117,6 @@ impl<T> RefCell<T> {
+@@ -131,7 +131,6 @@ impl<T> RefCell<T> {
      pub fn try_borrow_mut<'a>(&'a self) -> Option<RefMut<'a, T>> {
          match self.borrow.get() {
              UNUSED => {
