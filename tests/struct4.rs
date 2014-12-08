@@ -1,5 +1,8 @@
 #![crate_type = "lib"]
 #![feature(unsafe_destructor)]
+#![no_std]
+extern crate core;
+use core::prelude::Drop;
 
 struct S<'a> {
     p: &'a mut uint,

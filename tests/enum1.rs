@@ -1,4 +1,6 @@
 #![crate_type = "lib"]
+#![no_std]
+extern crate core;
 
 enum E {
     V1(uint),

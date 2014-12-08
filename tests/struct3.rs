@@ -1,4 +1,6 @@
 #![crate_type = "lib"]
+#![no_std]
+extern crate core;
 
 struct S<'a> {
     x: &'a uint,

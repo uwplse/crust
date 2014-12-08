@@ -1,6 +1,6 @@
 #![crate_type = "lib"]
 #![no_std]
-extern crate std;   // for lang items
+extern crate core;   // for lang items
 
 enum Option<T> {
     Some(T),
