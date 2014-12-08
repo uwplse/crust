@@ -2,7 +2,7 @@ diff --git a/tests/refcell.rs b/tests/refcell.rs
 index 8ee0065..c9c25a4 100644
 --- a/tests/refcell.rs
 +++ b/tests/refcell.rs
-@@ -100,7 +100,6 @@ impl<T> RefCell<T> {
+@@ -114,7 +114,6 @@ impl<T> RefCell<T> {
          match self.borrow.get() {
              WRITING => None,
              borrow => {
