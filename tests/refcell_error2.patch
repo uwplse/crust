@@ -1,0 +1,13 @@
+diff --git a/tests/refcell.rs b/tests/refcell.rs
+index 8ee0065..6f5d40e 100644
+--- a/tests/refcell.rs
++++ b/tests/refcell.rs
+@@ -100,7 +100,7 @@ impl<T> RefCell<T> {
+         match self.borrow.get() {
+             WRITING => None,
+             borrow => {
+-                self.borrow.set(borrow + 1);
++                self.borrow.set(borrow + 2147483648);
+                 Some(Ref { _parent: self })
+             }
+         }

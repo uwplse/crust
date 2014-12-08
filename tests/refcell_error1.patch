@@ -1,0 +1,13 @@
+diff --git a/tests/refcell.rs b/tests/refcell.rs
+index 8ee0065..c9b6646 100644
+--- a/tests/refcell.rs
++++ b/tests/refcell.rs
+@@ -144,7 +144,7 @@ impl<'b, T> Drop for Ref<'b, T> {
+         let borrow = self._parent.borrow.get();
+         //debug_assert!(borrow != WRITING && borrow != UNUSED);
+         //debug_assert!(borrow != -1 && borrow != 0);
+-        self._parent.borrow.set(borrow - 1);
++        self._parent.borrow.set(borrow - 2);
+     }
+ }
+ 
