@@ -34,9 +34,12 @@ revision 336349c93207d792587eb0b5258b29da6ec0db8a from the rust git
 repository found here: https://github.com/rust-lang/rust (warning,
 compilation takes tens of minutes)
 
+For simplicity, consider building rustc using rpath: this will make using
+rust in the building of rbmc considerable easier.
+
 Once built, ensure that the rustc binary is installed in a location in
 your PATH. Rbmc can then be built with a simple "make rbmc" issued in the project's root
-directory
+directory.
 
 Building Preprocess:
 Preprocess requires alex, ghc, syb, and parsec. Consult your operating
