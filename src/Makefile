@@ -2,10 +2,11 @@ RUSTC=rustc
 RUST_FLAGS=-A warnings -C rpath
 GHC=ghc
 ALEX=alex
-.PHONY: all crust clean
+.PHONY: all crust clean archive
 MAKE=make
+BINARIES=rbmc crust Preprocess
 
-all: rbmc crust Preprocess
+all: $(BINARIES)
 
 rbmc: main.rs trans.rs
 	$(RUSTC) $(RUST_FLAGS) main.rs

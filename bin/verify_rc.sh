@@ -8,7 +8,8 @@ function cleanup {
 
 trap cleanup EXIT
 
-ROOT_DIR=$(cd $(dirname $0) && pwd);
+BIN_DIR=$(cd $(dirname $0) && pwd);
+ROOT_DIR=$BIN_DIR/../
 
 function run_toolchain {
 	rm -f $TEMP_DIR/*
@@ -16,7 +17,7 @@ function run_toolchain {
 	if [ $# -eq 1 ]; then
 		patch -d $TEMP_DIR -p2 < $1
 	fi
-	bash $ROOT_DIR/run_rbmc.sh $TEMP_DIR/refcell.rs | $ROOT_DIR/Preprocess | $ROOT_DIR/crust/crust.byte - > $TEMP_DIR/refcell.c
+	bash $BIN_DIR/run_rbmc.sh $TEMP_DIR/refcell.rs | $BIN_DIR/Preprocess | $BIN_DIR/crust.native - > $TEMP_DIR/refcell.c
 	cbmc $TEMP_DIR/refcell.c 2> /dev/null > /dev/null
 }
 
