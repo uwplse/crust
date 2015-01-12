@@ -889,18 +889,35 @@ fn combine_generics(tcx: &ty::ctxt, impl_g: &Generics, fn_g: &Generics) -> (Vec<
     (lifetimes, ty_params)
 }
 
+fn clean_path_elem(s: &str, out: &mut String) {
+    let mut depth = 0u;
+    for c in s.chars() {
+        if c == '<' {
+            depth += 1;
+        } else if c == '>' {
+            depth -= 1;
+        } else if depth == 0 {
+            if c == '.' {
+                out.push_str("__");
+            } else {
+                out.push(c);
+            }
+        }
+    }
+}
+
 fn mangled_def_name(tcx: &ty::ctxt, did: DefId) -> String {
     let mut name = String::new();
     if did.krate == LOCAL_CRATE {
         tcx.map.with_path(did.node, |mut elems| {
             for elem in elems {
-                name.push_str(elem.name().as_str().split('<').nth(0).unwrap());
+                clean_path_elem(elem.name().as_str(), &mut name);
                 name.push_str("_");
             }
         })
     } else {
         for elem in csearch::get_item_path(tcx, did).into_iter() {
-            name.push_str(elem.name().as_str().split('<').nth(0).unwrap());
+            clean_path_elem(elem.name().as_str(), &mut name);
             name.push_str("_");
         }
     }
