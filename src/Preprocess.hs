@@ -20,9 +20,17 @@ main = do
             ifFix $
             fixAbort $
             fixBottom $
+            fixAddress $
             items
     putStrLn $ concatMap pp items'
 
+fixAddress = everywhere (mkT stripAddr)
+  where
+    stripAddr (Expr _ (EAddrOf (Expr _ (EDeref e)))) = e
+    stripAddr (Expr _ (EAddrOf (Expr _ (EUnOp "UnDeref" e)))) = e
+    stripAddr (Expr _ (EUnOp "UnDeref" (Expr _ (EAddrOf e)))) = e
+    stripAddr (Expr _ (EDeref (Expr _ (EAddrOf e)))) = e
+    stripAddr e = e
 
 constElim items = filter (not . isConst) $ everywhere (mkT fixExpr `extT` fixPat) items
   where

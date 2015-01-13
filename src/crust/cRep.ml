@@ -310,59 +310,6 @@ let rec flatten_blocks (ir : all_expr) =
   | `Block ([],((b_t,`Block e) as b)) -> flatten_blocks b
   | _ -> ir
 
-let rec simplify_addr_op (expr : Ir.expr) = 
-  let e_type = fst expr in
-  match (snd expr) with
-  | `Literal _
-  | `Var _ -> expr
-  | `Address_of (_,(`Deref e)) -> simplify_addr_op e
-  | `Address_of (_,(`UnOp (`UnDeref,e))) -> simplify_addr_op e
-  | `Address_of e ->
-    e_type,`Address_of (simplify_addr_op e)
-  | `Deref (_,`Address_of e) -> simplify_addr_op e
-  | `UnOp (`UnDeref,((_,`Address_of e))) -> simplify_addr_op e
-  | `Deref e ->
-    e_type,`Deref (simplify_addr_op e)
-  | `Tuple el ->
-    e_type,(`Tuple (List.map simplify_addr_op el))
-  | `BinOp (op,e1,e2) ->
-    e_type,`BinOp (op,simplify_addr_op e1,simplify_addr_op e2)
-  | `UnOp (op,e) ->
-    e_type,`UnOp (op,simplify_addr_op e)
-  | `Call (fn,ll,tl,al) ->
-    let al' = List.map simplify_addr_op al in
-    e_type,`Call (fn,ll,tl,al')
-  | `Struct_Literal sf ->
-    e_type,`Struct_Literal (List.map (fun (f_name,fe) -> f_name,simplify_addr_op fe) sf)
-  | `Enum_Literal (en,v,al) ->
-    e_type,`Enum_Literal (en,v,List.map simplify_addr_op al)
-  | `Struct_Field (se,f) ->
-    e_type,`Struct_Field (simplify_addr_op se,f)
-  | `Return e ->
-    e_type,`Return (simplify_addr_op e)
-  | `Match (e,m_arm) ->
-    let matchee = simplify_addr_op e in
-    let m_arm' = List.map (fun (p,m_e) -> p,(simplify_addr_op m_e)) m_arm in
-    e_type,`Match (matchee,m_arm')
-  | `Cast (e,t) ->
-    e_type,`Cast (simplify_addr_op e,t)
-  | `Block (s,e) ->
-    let s' = List.map (function
-        | `Expr e -> `Expr (simplify_addr_op e)
-        | `Let (s,t,e) ->
-          `Let (s,t,simplify_addr_op e)
-      ) s in
-    e_type,`Block (s',simplify_addr_op e)
-  | `Unsafe (s,e) ->
-    let s' = List.map (function
-        | `Expr e -> `Expr (simplify_addr_op e)
-        | `Let (s,t,e) ->
-          `Let (s,t,simplify_addr_op e)
-      ) s in
-    e_type,`Unsafe (s',simplify_addr_op e)
-  | `Assignment (lhs,rhs) ->
-    e_type,`Assignment (simplify_addr_op lhs,simplify_addr_op rhs)
-
 let rec clean_abort_expr (expr : t_simple_expr) = 
   let e_type = fst expr in
   match (snd expr) with
@@ -394,6 +341,7 @@ let rec clean_abort_expr (expr : t_simple_expr) =
     failwith "crust_abort found in unsupported position"
   | `Call (s,l,t,e) ->
     e_type,`Call (s,l,t,List.map clean_abort_expr e)
+
 let rec clean_abort (expr : all_expr) = 
   let e_type = fst expr in
   match (snd expr) with
@@ -411,10 +359,9 @@ let rec clean_abort (expr : all_expr) =
       ) stmt 
     in
     e_type,(`Block (stmt,clean_abort e))
-      
+
 let get_simple_ir ir = 
-  simplify_addr_op ir
-  |> instrument_return
+  instrument_return ir
   |> simplify_ir
   |> clean_abort
   |> flatten_blocks 
