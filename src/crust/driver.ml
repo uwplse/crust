@@ -117,7 +117,7 @@ module DriverF(COMP : Compilation) = struct
       self#newline ~post:";" ()
 
     method private emit_initialization () = 
-      let init_fun = Hashtbl.find Env.fn_env "crust_init" in
+      let init_fun = Env.EnvMap.find Env.fn_env "crust_init" in
       let seed_tuple = COMP.to_monomorph_c_type [] init_fun.Ir.ret_type in
       let seed_types = List.filter (function
           | #Types.simple_type -> false
@@ -266,7 +266,7 @@ module DriverF(COMP : Compilation) = struct
 
     method private get_adt_drop_fn p = 
       let raw_name = 
-        let adt_def = Hashtbl.find Env.adt_env p.Types.type_name in
+        let adt_def = Env.EnvMap.find Env.adt_env p.Types.type_name in
         match adt_def with
         | `Enum_def e -> e.Ir.drop_fn
         | `Struct_def s -> s.Ir.drop_fn
@@ -365,7 +365,7 @@ module DriverF(COMP : Compilation) = struct
       Hashtbl.find nondet_gen_cache t
 
     method private get_fn_def fn_name = 
-      Hashtbl.find Env.fn_env fn_name
+      Env.EnvMap.find Env.fn_env fn_name
     method private emit_live_constraint slot ty const = 
       let slot_call = self#slot_call slot ty in
       let array_ref = self#array_ref live_state slot_call in
@@ -451,7 +451,7 @@ module DriverF(COMP : Compilation) = struct
         self#emit_live_constraint src_var a `Live;
         Complex (src_var,a)
     method private resolve_types fn_name method_args = 
-      let fn_def = Hashtbl.find Env.fn_env fn_name in
+      let fn_def = Env.EnvMap.find Env.fn_env fn_name in
       let t_bindings = Types.type_binding fn_def.Ir.fn_tparams method_args in
       let ret_type = COMP.to_monomorph_c_type t_bindings fn_def.Ir.ret_type in
       let args = List.map snd fn_def.Ir.fn_args

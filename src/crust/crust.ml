@@ -1,8 +1,8 @@
 let get_sets () = 
-  let t_set = Hashtbl.fold (fun t _ accum ->
+  let t_set = Env.EnvMap.fold (fun t _ accum ->
 							Analysis.TISet.add (t,[]) accum
 						   ) Env.adt_env Analysis.TISet.empty in
-  let f_set = Hashtbl.fold (fun f _ accum ->
+  let f_set = Env.EnvMap.fold (fun f _ accum ->
 							Analysis.FISet.add (f,[]) accum
 						   ) Env.fn_env Analysis.FISet.empty in
   (t_set,f_set)

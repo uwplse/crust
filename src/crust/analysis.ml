@@ -81,7 +81,7 @@ let rec walk_type : walk_state -> Types.mono_type -> walk_state = fun w_state t 
   | `Bottom -> w_state
   | #simple_type -> w_state
 and walk_type_def_named w_state t_name m_params  = 
-  walk_type_def w_state (Hashtbl.find Env.adt_env t_name) m_params 
+  walk_type_def w_state (Env.EnvMap.find Env.adt_env t_name) m_params 
 and walk_type_def w_state adt_def m_params =
   let gen_binding = fun t_names -> Types.type_binding t_names m_params in
   match adt_def with
@@ -159,7 +159,7 @@ and walk_pattern t_bindings w_state patt =
   | `Enum (_,_,p_list) ->
 	 List.fold_left (walk_pattern t_bindings) w_state p_list
 and walk_fn w_state fn_name m_args  = 
-  walk_fn_def w_state (Hashtbl.find Env.fn_env fn_name) m_args
+  walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
 and walk_fn_def w_state fn_def m_args = 
   let f_inst = fn_def.fn_name,m_args in
   if FISet.mem f_inst w_state.fn_inst then
@@ -199,7 +199,7 @@ let rec type_contains src_types target  =
 
 let find_constructors () = 
   let accum = SSet.empty in
-  Hashtbl.fold (fun f_name fn_def accum ->
+  Env.EnvMap.fold (fun f_name fn_def accum ->
 				let arg_types = List.map snd fn_def.Ir.fn_args in
 				let ret_type = fn_def.Ir.ret_type in
 				if type_contains arg_types ret_type  then
@@ -473,7 +473,7 @@ let has_inst w_state f_name =
     
 let rec find_fn restrict_fn constructor_fn w_state = 
   let old_size = state_size w_state in
-  let w_state = Hashtbl.fold (fun fn_name fn_def w_state ->
+  let w_state = Env.EnvMap.fold (fun fn_name fn_def w_state ->
       if (SSet.mem fn_name constructor_fn) && has_inst w_state fn_name then
 	    w_state
       else if SSet.mem fn_name restrict_fn then
@@ -492,7 +492,7 @@ let rec find_fn restrict_fn constructor_fn w_state =
     
 let run_analysis () = 
   let constructor_fn = find_constructors () |> SSet.add "crust_init" in
-  let restrict_fn = Hashtbl.fold (fun type_name type_def accum ->
+  let restrict_fn = Env.EnvMap.fold (fun type_name type_def accum ->
       match type_def with
       | `Enum_def ({ drop_fn = Some df; _ } : Ir.enum_def) ->
         SSet.add df accum
@@ -501,7 +501,7 @@ let run_analysis () =
       | _ -> accum
     ) Env.adt_env @@ SSet.singleton "crust_abort"
   in
-  let crust_init_def = Hashtbl.find Env.fn_env "crust_init" in
+  let crust_init_def = Env.EnvMap.find Env.fn_env "crust_init" in
   let init_state = {
 	  type_inst = TISet.empty;
 	  fn_inst = FISet.empty;

@@ -122,7 +122,7 @@ class typedef_emitter buf =
       if type_name = Types.rust_tuple_name then
         self#dump_tuple mono_args
       else begin
-        let t_def = Hashtbl.find Env.adt_env type_name in
+        let t_def = Env.EnvMap.find Env.adt_env type_name in
         match t_def with
         | `Enum_def d -> 
           let t_binding = self#bindings d.Ir.e_tparam mono_args in
@@ -351,7 +351,7 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
     Buffer.add_string buf @@ type_to_string `Unit;
     Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n"
   end else
-    let fn_def = Hashtbl.find Env.fn_env fn_name in
+    let fn_def = Env.EnvMap.find Env.fn_env fn_name in
     let simple_ir = memo_get_simple_ir fn_name fn_def in
     Buffer.add_string buf @@ sig_of_fdef fn_def mono_args;
     Buffer.add_string buf " ";
@@ -363,7 +363,7 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
 
 let emit_fsigs out_channel f_list = 
   List.iter (fun (f_name,m_args) ->
-      let f_def = Hashtbl.find Env.fn_env f_name in
+      let f_def = Env.EnvMap.find Env.fn_env f_name in
       Printf.fprintf out_channel "%s;\n" @@ sig_of_fdef f_def m_args
     ) f_list
 
@@ -412,7 +412,7 @@ let rec build_dep_map accum ((type_name,type_args) as inst)=
   if type_name = Types.rust_tuple_name then
     CIMap.add inst (List.fold_left add_inst CISet.empty type_args) accum
   else
-    let t_def = Hashtbl.find Env.adt_env type_name in
+    let t_def = Env.EnvMap.find Env.adt_env type_name in
     let ref_types = 
       match t_def with
       | `Enum_def ed -> 
