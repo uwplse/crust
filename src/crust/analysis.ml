@@ -171,8 +171,6 @@ and walk_fn_def w_state fn_def m_args =
 	let w_state =  walk_type w_state ret_type in
 	walk_expr t_bindings w_state fn_def.Ir.fn_body
 
-module SSet = Set.Make(String)
-
 let rec type_contains_loop src_types = function
   | ((`T_Var _) as s)
   | (#simple_type as s) -> List.mem s src_types
