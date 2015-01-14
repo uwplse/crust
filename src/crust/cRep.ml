@@ -76,6 +76,7 @@ let trivial_expr = `Bool,(`Literal "1")
 
 let rec push_assignment (lhs : simple_expr) (e : all_expr) = 
   match (snd e) with
+  | `Return _ -> e
   | #simple_expr as s -> 
 	 let assign = `Assignment (lhs,((fst e),s)) in
 	 ((`Unit,assign) : all_expr)
