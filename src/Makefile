@@ -14,7 +14,7 @@ rbmc: main.rs trans.rs
 crust:
 	$(MAKE) -C crust
 
-Preprocess: $(wildcard *.hs)
+Preprocess: $(wildcard *.hs) Lexer.hs
 	$(GHC) --make Preprocess.hs
 
 Lexer.hs: Lexer.x
@@ -22,5 +22,5 @@ Lexer.hs: Lexer.x
 
 clean:
 	rm -f rbmc
-	bash -c "rm -f Lexer.hs {Lexer,Parser,Preprocess}.{o,hi} Preprocess"
+	bash -c "rm -f Lexer.hs {Lexer,Parser,Preprocess,TempLift,Index,Builder}.{o,hi} Preprocess"
 	$(MAKE) -C crust clean
