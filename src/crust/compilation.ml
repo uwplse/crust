@@ -233,10 +233,14 @@ class expr_emitter buf t_bindings =
       | `Call (fn_name,_,inst,args) ->
         let m_args = List.map (to_monomorph_c_type t_bindings) inst in
         let mangled_fname = mangle_fn_name fn_name m_args in
-        self#put_i mangled_fname;
-        self#put "(";
-        self#put_many ", " self#dump_args args;
-        self#put ")"
+        if Intrinsics.is_intrinsic_fn fn_name then
+          self#handle_intrinsic fn_name mangled_fname m_args args
+        else begin
+          self#put_i mangled_fname;
+          self#put "(";
+          self#put_many ", " self#dump_args args;
+          self#put ")"
+        end
       | `BinOp (op,(_,rhs),(_,lhs)) ->
         self#put_i "(";
         self#dump_simple_expr rhs;
@@ -250,6 +254,14 @@ class expr_emitter buf t_bindings =
         self#put @@ string_of_unop op;
         self#dump_simple_expr e;
         self#put ")"
+    method handle_intrinsic fn_name (mangled_fn_name: string) m_args args =
+      let arg_buf = Buffer.create 100 in
+      self#put_i "";
+      let arg_strings = List.map (fun (_,expr) ->
+          self#with_intercept ~b:arg_buf (fun () -> self#dump_simple_expr expr)
+        ) args in
+      let t_strings = List.map type_to_string m_args in
+      Intrinsics.emit_intrinsic_call fn_name mangled_fn_name t_strings arg_strings buf
     method dump_match (match_condition,match_body) = 
       self#put_i "if(";
       self#dump_expr (match_condition :> CRep.all_expr);
@@ -327,30 +339,39 @@ let emit_typedefs out_channel inst =
 
 let sig_of_fdef fn_def mono_args = 
   let buf = Buffer.create 100 in
-  let bindings = Types.type_binding fn_def.Ir.fn_tparams mono_args in
-  Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings fn_def.Ir.ret_type;
-  Buffer.add_string buf " ";
-  Buffer.add_string buf @@ mangle_fn_name fn_def.Ir.fn_name mono_args;
-  Buffer.add_string buf "(";
-  let rec dump_loop first l = 
-    match l with
-    | (a_name,a_type)::t -> 
-      if not first then Buffer.add_string buf ", " else ();
-      Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings a_type;
-      Buffer.add_string buf " ";
-      Buffer.add_string buf a_name;
-      dump_loop false t
-    | [] -> ()
-  in
-  dump_loop true fn_def.Ir.fn_args;
-  Buffer.add_string buf ")";
-  Buffer.contents buf
+  if Intrinsics.is_intrinsic_fn fn_def.Ir.fn_name then begin
+    let m_strings = List.map type_to_string mono_args in
+    let mangled_name = mangle_fn_name fn_def.Ir.fn_name mono_args in
+    Intrinsics.emit_intrinsic_inst fn_def.Ir.fn_name mangled_name m_strings buf;
+    Buffer.contents buf
+  end else
+    let bindings = Types.type_binding fn_def.Ir.fn_tparams mono_args in
+    Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings fn_def.Ir.ret_type;
+    Buffer.add_string buf " ";
+    Buffer.add_string buf @@ mangle_fn_name fn_def.Ir.fn_name mono_args;
+    Buffer.add_string buf "(";
+    let rec dump_loop first l = 
+      match l with
+      | (a_name,a_type)::t -> 
+        if not first then Buffer.add_string buf ", " else ();
+        Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings a_type;
+        Buffer.add_string buf " ";
+        Buffer.add_string buf a_name;
+        dump_loop false t
+      | [] -> ()
+    in
+    dump_loop true fn_def.Ir.fn_args;
+    Buffer.add_string buf ")";
+    Buffer.contents buf
 
 let emit_fn_def out_channel buf (fn_name,mono_args) = 
   if fn_name = "crust_abort" then begin
     Buffer.add_string buf @@ type_to_string `Unit;
     Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n"
-  end else
+    end 
+  else if Intrinsics.is_intrinsic_fn fn_name then 
+    ()
+  else
     let fn_def = Env.EnvMap.find Env.fn_env fn_name in
     let simple_ir = memo_get_simple_ir fn_name fn_def in
     Buffer.add_string buf @@ sig_of_fdef fn_def mono_args;
@@ -448,6 +469,17 @@ let order_types t_list =
   let d_map = List.fold_left build_dep_map CIMap.empty t_list in
   topo_sort d_map []
 
+(* TODO: config this *)
+let includes = [
+  "stdlib.h";
+  "string.h"
+]
+
+let dump_includes out_channel = 
+  List.iter (fun i ->
+      Printf.fprintf out_channel "#include <%s>\n" i
+    ) includes
+
 let emit out_channel pub_type_set pub_fn_set t_set f_set = 
   let t_list = order_types @@ find_dup_inst @@ Analysis.TISet.elements t_set in
   let f_list = find_dup_inst @@ Analysis.FISet.elements f_set in
@@ -456,9 +488,11 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
   let pf_list = find_dup_inst @@ Analysis.FISet.elements pub_fn_set in
   emit_common_typedefs out_channel;
   begin
-    if !Env.gcc_mode then
-      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n"
-    else ()
+    if !Env.gcc_mode then begin
+      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n";
+      dump_includes out_channel
+    end else ()
+       
   end;
   List.iter (emit_typedefs out_channel) t_list;
   emit_fsigs out_channel f_list;

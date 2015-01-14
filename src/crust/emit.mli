@@ -9,5 +9,6 @@ class type emitter_t = object
 				method private open_block : unit -> unit
 				method private maybe_put : string option -> unit
 				method private close_block : ?post:string -> unit -> unit
+				method private with_intercept : ?b:Buffer.t -> (unit -> unit) -> string
 			  end
 class emitter : Buffer.t -> emitter_t

@@ -40,47 +40,47 @@ type instrinsic = {
 *)
 let i_list = [
   {
-    i_name = "set_memory";
+    i_name = "core_intrinsics_set_memory";
     i_params = [ "t1" ];
     i_body = Inline "memset({arg1}, {arg2}, sizeof({t1}) * {arg3})"
   };
   {
-    i_name = "transmute";
+    i_name = "core_intrinsics_transmute";
     i_params = [ "t1"; "u1" ];
     i_body = Inline "(({u1}){arg1})"
   };
   {
-    i_name = "uninit";
+    i_name = "core_intrinsics_uninit";
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; return to_ret; }"
   };
   {
-    i_name = "offset";
+    i_name = "core_intrinsics_offset";
     i_params = ["t1"];
     i_body = Inline "(({t1}*)(((size_t){arg1}) + {arg2}))"
   };
   {
-    i_name = "move_val_init";
+    i_name = "core_intrinsics_move_val_init";
     i_params = ["t1"];
     i_body = Inline "memcpy({arg1}, &{arg2}, sizeof({t1}))"
   };
   {
-    i_name = "init";
+    i_name = "core_intrinsics_init";
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; memset(&to_ret, 0, sizeof({t1})); return to_ret; }"
   };
   {
-    i_name = "forget";
+    i_name = "core_intrinsics_forget";
     i_params = [""];
     i_body = Nop
   };
   {
-    i_name = "copy_memory";
+    i_name = "core_intrinsics_copy_memory";
     i_params = [ "t1" ];
     i_body = Inline "memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))";
   };
   {
-    i_name = "copy_nonoverlapping_memory";
+    i_name = "core_intrinsics_copy_nonoverlapping_memory";
     i_params = [ "t1" ];
     i_body = Inline "memcpy({arg1}, {arg2}, {arg3} * sizeof({t1}))"
   };
@@ -106,7 +106,7 @@ let do_replacement bindings str =
       Str.global_replace (Str.regexp token) repl accum
     ) str bindings
 
-let compile_intrinsic_inst i_name mangled_name t_params buf =
+let emit_intrinsic_inst i_name mangled_name t_params buf =
   let i_def = Hashtbl.find intrinsic_hash i_name in
   match i_def.i_body with 
   | Nop | Inline _ -> ()
@@ -114,7 +114,7 @@ let compile_intrinsic_inst i_name mangled_name t_params buf =
     Buffer.add_string buf @@ do_replacement (("mname",mangled_name)::(build_binding i_def.i_params t_params)) temp;
     Buffer.add_string buf "\n"
 
-let compile_intrinsic_call i_name mangled_name t_list arg_list buf = 
+let emit_intrinsic_call i_name mangled_name t_list arg_list buf = 
   let i_def = Hashtbl.find intrinsic_hash i_name in
   match i_def.i_body with
   | Nop -> ()

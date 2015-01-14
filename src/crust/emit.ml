@@ -9,12 +9,14 @@ class type emitter_t = object
 				method private open_block : unit -> unit
 				method private maybe_put : string option -> unit
 				method private close_block : ?post:string -> unit -> unit
+ 				method private with_intercept : ?b:Buffer.t -> (unit -> unit) -> string
 			  end
-class emitter buf =
+class emitter _buf =
 object(self)
   val mutable indent_level = 0
   val mutable indent_string = ""
   val mutable indented = false
+  val mutable buf = _buf
   method private put_many : 'a.string -> ('a -> unit) -> 'a list -> unit =
 	let rec put_loop first separator put_fn items = 
 	  match items with
@@ -58,4 +60,16 @@ object(self)
   method private put_all l = 
 	self#put_i @@ List.hd l;
 	List.iter self#put @@ List.tl l
+   method private with_intercept ?b (f: unit -> unit) =
+     let temp_b = match b with
+       | None -> Buffer.create 100
+       | Some _b -> Buffer.clear _b; _b
+     in
+     try
+       buf <- temp_b;
+       f ();
+       let to_ret = Buffer.contents temp_b in
+       buf <- _buf;
+       to_ret
+     with e -> buf <- _buf; raise e
 end
