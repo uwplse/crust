@@ -17,7 +17,7 @@ for i in $(find $PROJECT_DIR/tests -type f -name '*.rs' | sort); do
 		rm $OUT_FILE;
 		continue;
 	fi
-	gcc -std=c99 -Wall -x c -c -o /dev/null $OUT_FILE;
+	gcc -std=c99 -x c -c -o /dev/null $OUT_FILE;
 	if [ $? -eq 0 ]; then
 		echo $(basename $i) PASS
 	else
@@ -25,3 +25,4 @@ for i in $(find $PROJECT_DIR/tests -type f -name '*.rs' | sort); do
 	fi
 	rm $OUT_FILE;
 done
+

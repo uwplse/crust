@@ -22,3 +22,4 @@ bin/crust.*
 \#*
 
 out*
+lib/
