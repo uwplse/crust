@@ -1,15 +1,16 @@
-/rbmc
+src/rbmc
 
-*.o
-*.hi
-/Lexer.hs
-/Preprocess
+src/*.o
+src/*.hi
+src/Lexer.hs
+src/Preprocess
+src/out*
 
 *.aux
 *.bbl
 *.blg
 *.log
 *.pdf
-/crust/_build
-/crust/*.byte
-/crust/*.native
+src/crust/_build
+src/crust/*.byte
+src/crust/*.native
