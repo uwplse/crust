@@ -14,3 +14,9 @@ src/out*
 src/crust/_build
 src/crust/*.byte
 src/crust/*.native
+
+bin/rbmc
+bin/Preprocess
+bin/crust.*
+
+\#*
