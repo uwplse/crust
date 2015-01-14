@@ -84,6 +84,21 @@ let i_list = [
     i_params = [ "t1" ];
     i_body = Inline "memcpy({arg1}, {arg2}, {arg3} * sizeof({t1}))"
   };
+  {
+    i_name = "alloc_heap_allocate";
+    i_params = [];
+    i_body = Inline "((char*)malloc({arg1}))"
+  };
+  {
+    i_name = "alloc_heap_deallocate";
+    i_params = [];
+    i_body = Inline "free({arg1})"
+  };
+  {
+    i_name = "alloc_heap_reallocate";
+    i_params = [];
+    i_body = Inline "((char*)realloc({arg1}, {arg3}))"
+  }
 ]
 
 let intrinsic_hash = Hashtbl.create 10;;
