@@ -14,7 +14,7 @@ rbmc: main.rs trans.rs
 crust:
 	$(MAKE) -C crust
 
-Preprocess: Preprocess.hs Lexer.hs Parser.hs
+Preprocess: $(wildcard *.hs)
 	$(GHC) --make Preprocess.hs
 
 Lexer.hs: Lexer.x
