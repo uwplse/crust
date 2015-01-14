@@ -29,4 +29,4 @@ fn test() {
     }
 }
 
-fn crust_init() -> (S1,) { (S1, ) }
+fn crust_init() -> (S2,) { (S2 { x: S1, y: S1 }, ) }

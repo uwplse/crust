@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable #-}
 import Control.Applicative ((<$>))
 import Control.Exception (evaluate)
 import Control.Monad
@@ -6,16 +6,21 @@ import Data.Char (toLower)
 import Data.Generics
 import Data.List (intercalate, isPrefixOf)
 import qualified Data.Map as M
+import Data.Maybe
 import Text.Parsec hiding (label, State)
 
 import Lexer
 import Parser
+import Index
+import TempLift
 
 import Debug.Trace
 
 main = do
     items <- parseContents item
+    let ix = mkIndex items
     let items' =
+            liftTemps ix $
             constElim $
             ifFix $
             fixAbort $
