@@ -1,4 +1,4 @@
-.PHONY: all rust_lib
+.PHONY: all rust_lib crust
 MAKE=make
 
 all: crust lib/libcore-4e7c5e5c.rlib
