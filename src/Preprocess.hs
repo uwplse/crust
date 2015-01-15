@@ -14,6 +14,7 @@ import Parser
 import Index
 import TempLift
 import Rename
+import Pprint
 
 import Debug.Trace
 
@@ -29,6 +30,7 @@ main = do
             fixBottom $
             fixAddress $
             items
+    trace (runPp $ mapM_ ppItem items') $ return ()
     putStrLn $ concatMap pp items'
 
 fixAddress = everywhere (mkT stripAddr)
