@@ -13,6 +13,7 @@ import Lexer
 import Parser
 import Index
 import TempLift
+import Rename
 
 import Debug.Trace
 
@@ -21,6 +22,7 @@ main = do
     let ix = mkIndex items
     let items' =
             liftTemps ix $
+            renameLocals $
             constElim $
             ifFix $
             fixAbort $

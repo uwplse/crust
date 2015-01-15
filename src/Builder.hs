@@ -72,6 +72,21 @@ block ss e = do
 
 unit = return $ Expr TUnit $ ESimpleLiteral "_unit"
 
+matchEnum e mkArm = do
+    e <- e
+    let ty = typeOf e
+    EnumDef _ _ _ variants _ <- getEnum $ adtName ty
+
+    arms <- forM (zip [0..] variants) $ \(idx, VariantDef name tys) -> do
+        let varNames = take (length tys) $ map (\i -> "f" ++ show i) [0..]
+            varPatterns = zipWith (\name ty -> Pattern ty $ PVar name) varNames tys
+            varExprs = zipWith (\name ty -> Expr ty $ EVar name) varNames tys
+            pattern = Pattern (typeOf e) $ PEnum name idx varPatterns
+        body <- mkArm idx varExprs
+        return $ MatchArm pattern body
+    let (MatchArm _ (Expr matchTy _) : _) = arms
+    return $ Expr matchTy $ EMatch e arms
+
 
 
 

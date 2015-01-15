@@ -149,3 +149,7 @@ getFieldTy (StructDef structName _ _ fs _) n = case candidates of
     _ -> error $ "struct " ++ structName ++ " has multiple fields called " ++ n
   where
     candidates = filter (\(FieldDef n' _) -> n' == n) fs
+
+adtName ty = case ty of
+    TAdt name _ _ -> name
+    t -> error $ "expected self to be TAdt, not " ++ show t
