@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts #-}
 module Builder
 where
 
@@ -70,8 +70,14 @@ block ss e = do
     e <- e
     return $ Expr (typeOf e) $ EBlock ss e
 
+unsafe ss e = do
+    ss <- sequence ss
+    e <- e
+    return $ Expr (typeOf e) $ EUnsafe ss e
+
 unit = return $ Expr TUnit $ ESimpleLiteral "_unit"
 
+matchEnum :: MonadReader Index m => m Expr -> (Int -> [Expr] -> m Expr) -> m Expr
 matchEnum e mkArm = do
     e <- e
     let ty = typeOf e
@@ -87,6 +93,34 @@ matchEnum e mkArm = do
     let (MatchArm _ (Expr matchTy _) : _) = arms
     return $ Expr matchTy $ EMatch e arms
 
+true = return $ Expr TBool $ ESimpleLiteral "true"
+false = return $ Expr TBool $ ESimpleLiteral "false"
 
+assign l r = do
+    l <- l
+    r <- r
+    return $ Expr TUnit $ EAssign l r
 
+if_ c t = do
+    c <- c
+    t <- t
+    unit <- unit
+    return $ Expr TUnit $ EMatch c $
+        [ MatchArm (Pattern TBool $ PSimpleLiteral "0") unit
+        , MatchArm (Pattern TBool PWild) t
+        ]
 
+binop op a b = do
+    a <- a
+    b <- b
+    let ty = if opIsCompare op then TBool else typeOf b
+    return $ Expr ty $ EBinOp op a b
+
+opIsCompare op = case op of
+    "BiEq" -> True
+    "BiLt" -> True
+    "BiLe" -> True
+    "BiNe" -> True
+    "BiGe" -> True
+    "BiGt" -> True
+    _ -> False

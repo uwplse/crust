@@ -57,7 +57,7 @@ data Index = Index
 
 mkIndex items = Index fns types consts
   where
-    fns = M.fromList $ mapMaybe onFn items
+    fns = M.fromList $ dropGlue : mapMaybe onFn items
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
 
@@ -70,6 +70,11 @@ mkIndex items = Index fns types consts
 
     onConst (IConst x@(ConstDef name _ _)) = Just (name, x)
     onConst _ = Nothing
+
+dropGlue = ("drop_glue", def)
+  where def = FnDef "drop_glue" [] ["T"]
+                [ArgDecl "self" (TRef "r_anon" MMut $ TVar "T")]
+                TUnit (Expr TUnit $ ESimpleLiteral "drop_glue")
 
 
 type CtxM a = Reader Index a
