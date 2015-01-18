@@ -9,6 +9,7 @@ fn foo() {
     unsafe {
         core::intrinsics::copy_memory(&mut y as *mut uint, &x as *const uint, 1);
     }
+    let z : int = unsafe { core::intrinsics::init() };
 }
 
 fn crust_init() -> (int,) {

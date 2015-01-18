@@ -159,8 +159,9 @@ and walk_pattern t_bindings w_state patt =
   | `Enum (_,_,p_list) ->
 	 List.fold_left (walk_pattern t_bindings) w_state p_list
 and walk_fn w_state fn_name m_args  = 
-  if Intrinsics.is_intrinsic_fn fn_name then w_state else
-  walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
+  if Intrinsics.is_intrinsic_fn fn_name then 
+    add_fn_instance w_state (fn_name,m_args)
+  else walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
 and walk_fn_def w_state fn_def m_args = 
   let f_inst = fn_def.fn_name,m_args in
   if FISet.mem f_inst w_state.fn_inst then

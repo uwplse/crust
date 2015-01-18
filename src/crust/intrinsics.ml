@@ -1,6 +1,7 @@
 type i_def = 
   | Template of string
   | Inline of string
+  | Macro of string
   | Nop
 
 type instrinsic = {
@@ -16,12 +17,13 @@ type instrinsic = {
    * the name of the type parameters for the intrinsic (used in token replacement)
    * the implementation of the intrinsic
 
-   The implementation can be one of three things:
+   The implementation can be one of four things:
    * Nop: does nothing, the calling expression is compiled to an empty string
    * Inline: replace the call with an arbitrary expression, with token replacement.
    The replacement string is the variant value
    * Template: replace the call with a call to a template function, the body of which
    is the variant value
+   * Macro: do not replace the call, instantiate the function with a macro
 
    Token replacement:
    The template string has the following tokens replaced:
@@ -37,8 +39,33 @@ type instrinsic = {
    Inline the call expression at the callsite with the given template string. Template replaces the
    call with a call to an appropriately mangled function name. In a separate pass, crust
    will use the template string to generate the appropriate definiton for the function.
+
+   Macros:
+   The macros referenced in Macro constructor must be defined in the rust_intrinsics.h
+   found in the directory above this. Further, cbmc must be invoked with the correct include
+   flag if any macros are used. Further, macros cannot be used in conjunction with
+   polymorphism.
 *)
-let i_list = [
+
+(* 0th element: intrinsic name, 1st element: macro suffix *)
+let a_ops = [ ("sub", "SUB"); ("mul", "MUL"); ("add", "ADD") ];;
+(* yeeeeep... *)
+let arith_intrinsics = List.flatten
+  @@ List.flatten
+  @@ List.map (fun size ->
+      List.map (fun (i_name, macro_name) ->
+          List.map (fun (i_pref, macro_prefix) ->
+              let f_name = Printf.sprintf "core_intrinsics_%s%d_%s_with_overflow" i_pref size i_name in
+              {
+                i_name = f_name;
+                i_params = [];
+                i_body = Macro (Printf.sprintf "%s_%s(%d)" macro_prefix macro_name size)
+              }
+            ) [ ("u", "UNSIGNED"); ("i", "SIGNED") ]
+        ) a_ops
+    ) [ 8; 16; 32; 64 ]
+
+let i_list = arith_intrinsics @ [
   {
     i_name = "core_intrinsics_set_memory";
     i_params = [ "t1" ];
@@ -109,7 +136,8 @@ let intrinsic_fn =
       SSet.add n accum
     ) SSet.empty i_list
 
-let is_intrinsic_fn x = SSet.mem x intrinsic_fn
+let is_intrinsic_fn x = 
+  SSet.mem x intrinsic_fn
 let is_intrinsic_inst (x,_) = is_intrinsic_fn x
 
 let build_binding b_names b_repl = 
@@ -125,14 +153,16 @@ let emit_intrinsic_inst i_name mangled_name t_params buf =
   let i_def = Hashtbl.find intrinsic_hash i_name in
   match i_def.i_body with 
   | Nop | Inline _ -> ()
+  | Macro s -> Buffer.add_string buf s; Buffer.add_string buf "\n"
   | Template temp -> 
-    Buffer.add_string buf @@ do_replacement (("mname",mangled_name)::(build_binding i_def.i_params t_params)) temp;
+    Buffer.add_string buf @@ do_replacement (("{mname}",mangled_name)::(build_binding i_def.i_params t_params)) temp;
     Buffer.add_string buf "\n"
 
 let emit_intrinsic_call i_name mangled_name t_list arg_list buf = 
   let i_def = Hashtbl.find intrinsic_hash i_name in
   match i_def.i_body with
   | Nop -> ()
+  | Macro _ 
   | Template _ -> 
     begin
       Buffer.add_string buf mangled_name;
@@ -150,3 +180,12 @@ let emit_intrinsic_call i_name mangled_name t_list arg_list buf =
       ) arg_list in
     let r_bindings = arg_bindings @ build_binding i_def.i_params t_list in
     Buffer.add_string buf @@ do_replacement r_bindings templ
+
+
+let need_iheader = List.exists (fun (name,_) ->
+    if Hashtbl.mem intrinsic_hash name then
+      let i_def = Hashtbl.find intrinsic_hash name in
+      match i_def.i_body with | Macro _ -> true | _ -> false
+    else
+      false
+  )
