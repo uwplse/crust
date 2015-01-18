@@ -77,6 +77,11 @@ let i_list = arith_intrinsics @ [
     i_body = Inline "(({u1}){arg1})"
   };
   {
+    i_name = "core_intrinsics_size_of";
+    i_params = [ "t1" ];
+    i_body = Inline "(sizeof({t1}))"
+  };
+  {
     i_name = "core_intrinsics_uninit";
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; return to_ret; }"
