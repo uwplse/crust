@@ -130,6 +130,18 @@ let i_list = arith_intrinsics @ [
     i_name = "alloc_heap_reallocate";
     i_params = [];
     i_body = Inline "((char*)realloc({arg1}, {arg3}))"
+  };
+  (* should this be 1? maybe... I don't think cbmc can really support this anyway,
+     and alignment doesn't/shouldn't matter in symbolically executed code
+  *)
+  {
+    i_name "core_intrinsics_pref_align_of";
+    i_params = [ "_" ];
+    i_body = Inline "((size_t)1)"
+  };
+  { i_name = "core_intrinsics_min_align_of";
+    i_params = [ "_" ];
+    i_body = Inline "((size_t)1)"
   }
 ]
 
