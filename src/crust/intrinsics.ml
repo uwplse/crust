@@ -13,7 +13,7 @@ type instrinsic = {
 (*
    How to add to this list:
    you need to provide three items:
-   * the mangled name of the intrinsic
+   * the mangled name of the intrinsic, e.g. core_instrinsics_whatever
    * the name of the type parameters for the intrinsic (used in token replacement)
    * the implementation of the intrinsic
 
@@ -28,7 +28,7 @@ type instrinsic = {
    Token replacement:
    The template string has the following tokens replaced:
    * {t_name1}, {t_name2}, ... where t_namei is the ith type parameter name
-   declared for the intrinsic. The replacement string is the string reprsentation of the
+   declared for the intrinsic. The replacement string is the string representation of the
    type's C name
    * (Inline only) {arg1}, {arg2}, ... one for each argument to the intrinsic call.
    The string is the C representation of the expression for the call to the argument (parens recommended!)
@@ -131,13 +131,12 @@ let i_list = arith_intrinsics @ [
 let intrinsic_hash = Hashtbl.create 10;;
 
 let intrinsic_fn = 
-  List.fold_left (fun accum ({ i_name = n; _ } as i) ->
+  List.iter (fun ({ i_name = n; _ } as i) ->
       Hashtbl.add intrinsic_hash n i;
-      SSet.add n accum
-    ) SSet.empty i_list
+    ) i_list
 
 let is_intrinsic_fn x = 
-  SSet.mem x intrinsic_fn
+  Hashtbl.mem intrinsic_hash x
 let is_intrinsic_inst (x,_) = is_intrinsic_fn x
 
 let build_binding b_names b_repl = 
