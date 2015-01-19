@@ -489,7 +489,21 @@ let rec find_fn restrict_fn constructor_fn w_state =
     w_state
   else
     find_fn restrict_fn constructor_fn w_state
-    
+
+let build_nopub_fn () = 
+  Env.EnvMap.fold (fun fn_name fn_def accum ->
+      match fn_def.Ir.fn_args with
+      | ("self",t)::_ -> begin
+          match t with
+          | `Ref (_,`Adt_type a)
+          | `Ref_Mut (_,`Adt_type a)
+          | `Adt_type a when Env.EnvSet.mem Env.type_infr_filter a.Types.type_name ->
+            SSet.add fn_def.Ir.fn_name accum
+          | _ -> accum
+        end
+      | _ -> accum
+    ) Env.fn_env @@ SSet.singleton "crust_abort"
+     
 let run_analysis () = 
   let constructor_fn = find_constructors () |> SSet.add "crust_init" in
   let restrict_fn = Env.EnvMap.fold (fun type_name type_def accum ->
@@ -499,7 +513,7 @@ let run_analysis () =
       | `Struct_def ({ drop_fn = Some df; _ } : Ir.struct_def)->
         SSet.add df accum
       | _ -> accum
-    ) Env.adt_env @@ SSet.singleton "crust_abort"
+    ) Env.adt_env @@ build_nopub_fn ()
   in
   let crust_init_def = Env.EnvMap.find Env.fn_env "crust_init" in
   let init_state = {

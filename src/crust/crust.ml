@@ -40,6 +40,7 @@ let do_it f =
   let arg_spec = [
     ("-gcc", Arg.Set Env.gcc_mode, "Turn on gcc mode");
     ("-filter", Arg.String (fun f_name -> filter_file := Some f_name), "Filter function names");
+    ("-infer-filter", Arg.String (fun f_name -> Env.init_inference_filter f_name), "Read a list of types for which to filter public function inference from file f (one per line)");
     ("-", Arg.Unit (fun () -> input_file := "-"), "Read from stdin");
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
