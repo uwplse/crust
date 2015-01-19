@@ -13,6 +13,7 @@ use syntax::ptr::P;
 use syntax::visit::Visitor;
 use syntax::visit::{FnKind, FkItemFn, FkMethod, FkFnBlock};
 use syntax::visit;
+use std::collections::HashSet;
 
 trait Trans {
     fn trans(&self, tcx: &ty::ctxt) -> String;
@@ -757,17 +758,18 @@ impl Trans for VariantArg {
 
 struct TransVisitor<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
+    filter_fn: HashSet<String>
 }
 
 impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
     fn visit_item(&mut self, i: &'v Item) {
-        println!("{}", i.trans(self.tcx));
+        println!("{}", i.trans_extra(self.tcx, &self.filter_fn));
         visit::walk_item(self, i);
     }
 }
 
-impl Trans for Item {
-    fn trans(&self, tcx: &ty::ctxt) -> String {
+impl<'a> TransExtra<&'a HashSet<String>> for Item {
+    fn trans_extra(&self, tcx: &ty::ctxt, filter_fn: &'a HashSet<String>) -> String {
         match self.node {
             ItemStruct(ref def, ref g) => {
                 //assert!(def.ctor_id.is_none());
@@ -785,8 +787,12 @@ impl Trans for Item {
                         ty::ty_dtor(tcx, local_def(self.id)).trans(tcx))
             },
             ItemFn(ref decl, style, _, ref generics, ref body) => {
+                let mangled_name = mangled_def_name(tcx, local_def(self.id));
+                if filter_fn.contains(&mangled_name) {
+                    format!("") /* why can't I do a literal empty string? I dunno... */
+                } else {
                 format!("fn {} {} {} body {} {} {{\n{}\t{}\n}}\n\n",
-                        mangled_def_name(tcx, local_def(self.id)),
+                        mangled_name,
                         generics.trans_extra(tcx, FnSpace),
                         decl.trans(tcx),
                         decl.output.trans(tcx),
@@ -797,12 +803,17 @@ impl Trans for Item {
                         body.stmts.trans(tcx),
                         body.expr.as_ref().map(|e| e.trans(tcx))
                             .unwrap_or("[unit] simple_literal _ItemFn".into_string()))
+                }
             },
             ItemImpl(ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
                 let mut result = String::new();
                 for item in items.iter() {
                     let part = match *item {
                         MethodImplItem(ref method) => {
+                            let mangled_name = mangled_def_name(tcx, local_def(method.id));
+                            if filter_fn.contains(&mangled_name) {
+                                return format!("");
+                            };
                             let (name, generics, _, exp_self, style, decl, body, _) = match method.node {
                                 MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
                                 MethMac(_) => panic!("unexpected MethMac"),
@@ -847,7 +858,7 @@ impl Trans for Item {
 
                             arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(tcx)));
                             format!("fn {} {} {} (args {}) return {} body {} {} {{\n{}\t{}\n}}\n\n",
-                                    mangled_def_name(tcx, local_def(method.id)),
+                                    mangled_name,
                                     lifetimes.trans(tcx),
                                     ty_params.trans(tcx),
                                     arg_strs.trans(tcx),
@@ -859,7 +870,7 @@ impl Trans for Item {
                                     },
                                     body.stmts.trans(tcx),
                                     body.expr.as_ref().map(|e| e.trans(tcx))
-                                        .unwrap_or("[unit] simple_literal _method".into_string()))
+                                    .unwrap_or("[unit] simple_literal _method".into_string()))
                         },
                         TypeImplItem(_) => panic!("unsupported TypeImplItem"),
                     };
@@ -926,8 +937,8 @@ fn mangled_def_name(tcx: &ty::ctxt, did: DefId) -> String {
 }
 
 
-pub fn process(tcx: &ty::ctxt) {
+pub fn process(tcx: &ty::ctxt, filter_fn : HashSet<String>) {
     let krate = tcx.map.krate();
-    let mut visitor = TransVisitor { tcx: tcx };
+    let mut visitor = TransVisitor { tcx: tcx, filter_fn: filter_fn };
     visit::walk_crate(&mut visitor, krate);
 }
