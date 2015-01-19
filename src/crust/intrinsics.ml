@@ -135,7 +135,7 @@ let i_list = arith_intrinsics @ [
      and alignment doesn't/shouldn't matter in symbolically executed code
   *)
   {
-    i_name "core_intrinsics_pref_align_of";
+    i_name = "core_intrinsics_pref_align_of";
     i_params = [ "_" ];
     i_body = Inline "((size_t)1)"
   };
