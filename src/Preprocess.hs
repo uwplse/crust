@@ -23,8 +23,8 @@ main = do
     items <- parseContents item
     let ix = mkIndex items
     let items' =
-            addCleanup ix $
             renameLocals $
+            addCleanup ix $
             liftTemps ix $
             constElim $
             ifFix $
