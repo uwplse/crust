@@ -11,7 +11,7 @@ for i in $(find $PROJECT_DIR/tests -type f -name '*.rs' | sort); do
 	OUT_FILE=$(mktemp);
 	$BIN_DIR/rbmc $RBMC_FLAGS $i 2> /dev/null | \
         $BIN_DIR/Preprocess 2> /dev/null | \
-		$BIN_DIR/crust.native -gcc - 2> /dev/null > $OUT_FILE;
+		$BIN_DIR/crust.native -optional-init -gcc - 2> /dev/null > $OUT_FILE;
 	if [ \! $? -eq 0 ]; then
 		echo $(basename $i) FAILED;
 		rm $OUT_FILE;

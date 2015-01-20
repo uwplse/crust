@@ -7,6 +7,7 @@ module EnvMap = struct
     with Not_found ->
       raise (Missing_binding ("No binding found for object: " ^ k))
   let fold = Hashtbl.fold
+  let mem = Hashtbl.mem
 end
 
 module EnvSet = struct
@@ -36,6 +37,7 @@ let rec set_env = function
 	 set_env t
 
 let gcc_mode = ref false;;
+let init_opt = ref false;;
 
 let init_inference_filter file_name = 
   let f_in = open_in file_name in
