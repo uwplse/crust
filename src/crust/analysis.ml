@@ -161,6 +161,19 @@ and walk_pattern t_bindings w_state patt =
 and walk_fn w_state fn_name m_args  = 
   if Intrinsics.is_intrinsic_fn fn_name then 
     add_fn_instance w_state (fn_name,m_args)
+  else if fn_name = "drop_glue" then
+    match m_args with
+    | [t] -> begin
+        match t with
+        | `Tuple tl -> List.fold_left (fun accum t -> walk_fn accum "drop_glue" [t]) w_state tl
+        | `Adt_type a -> 
+          (match Env.get_adt_drop a.Types.type_name with
+           | None -> w_state
+           | Some df -> walk_fn w_state df a.Types.type_param
+          )
+        | _ -> w_state
+      end
+    | _ -> failwith "Invalid type arity of drop_glue"
   else walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
 and walk_fn_def w_state fn_def m_args = 
   let f_inst = fn_def.fn_name,m_args in

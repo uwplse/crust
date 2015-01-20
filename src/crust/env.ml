@@ -49,3 +49,9 @@ let init_inference_filter file_name =
     with End_of_file -> close_in f_in
   in
   read_loop ()
+
+let get_adt_drop t_name = 
+  let t_def = Hashtbl.find adt_env t_name in
+  match t_def with
+  | `Enum_def e -> e.Ir.drop_fn
+  | `Struct_def e -> e.Ir.drop_fn

@@ -265,12 +265,7 @@ module DriverF(COMP : Compilation) = struct
       else Some l
 
     method private get_adt_drop_fn p = 
-      let raw_name = 
-        let adt_def = Env.EnvMap.find Env.adt_env p.Types.type_name in
-        match adt_def with
-        | `Enum_def e -> e.Ir.drop_fn
-        | `Struct_def s -> s.Ir.drop_fn
-      in
+      let raw_name = Env.get_adt_drop p.Types.type_name in
       match raw_name with
       | None -> None
       | Some df ->

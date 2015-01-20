@@ -235,6 +235,8 @@ class expr_emitter buf t_bindings =
         let mangled_fname = mangle_fn_name fn_name m_args in
         if Intrinsics.is_intrinsic_fn fn_name then
           self#handle_intrinsic fn_name mangled_fname m_args args
+        else if fn_name = "drop_glue" then
+          self#handle_drop fn_name m_args args
         else begin
           self#put_i mangled_fname;
           self#put "(";
@@ -254,6 +256,34 @@ class expr_emitter buf t_bindings =
         self#put @@ string_of_unop op;
         self#dump_simple_expr e;
         self#put ")"
+    method handle_drop fn_name m_args args = 
+      let arg_buf = Buffer.create 100 in
+      self#put_i "";
+      let arg_string = match args with
+        | [(_,a)] -> self#with_intercept ~b:arg_buf (fun () -> self#dump_simple_expr a)
+        | _ -> failwith @@ "Wrong arity to drop_glue, expected 1, found " ^ (string_of_int @@ List.length args)
+      in
+      let drop_type = match m_args with
+        | [t] -> t
+        | _ -> assert false
+      in
+      self#drop_type drop_type arg_string;
+      self#put "0"
+    (* XXX: there is a lot of overlap here with the drop action synth in driver.ml *)
+    method drop_type ty arg_string = 
+      match ty with
+      | `Tuple tl -> 
+        List.iteri (fun i ty' ->
+            self#drop_type ty' (Printf.sprintf "%s.%s" arg_string (Printf.sprintf CRep.tuple_field i) )
+          ) tl
+      | `Adt_type a -> begin
+        match Env.get_adt_drop a.Types.type_name with
+        | None -> ()
+        | Some df ->
+          let mangled_name = mangle_fn_name df a.Types.type_param in
+          self#put_all [ mangled_name; "("; arg_string; ")," ]
+        end
+      | _ -> ()
     method handle_intrinsic fn_name (mangled_fn_name: string) m_args args =
       let arg_buf = Buffer.create 100 in
       self#put_i "";
