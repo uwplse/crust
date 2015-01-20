@@ -337,32 +337,24 @@ let emit_typedefs out_channel inst =
   let struct_name = c_struct_name adt in
   Printf.fprintf out_channel "typedef struct %s %s;\n" struct_name @@ mangle_adt_name adt
 
-let sig_of_fdef fn_def mono_args = 
-  let buf = Buffer.create 100 in
-  if Intrinsics.is_intrinsic_fn fn_def.Ir.fn_name then begin
-    let m_strings = List.map type_to_string mono_args in
-    let mangled_name = mangle_fn_name fn_def.Ir.fn_name mono_args in
-    Intrinsics.emit_intrinsic_inst fn_def.Ir.fn_name mangled_name m_strings buf;
-    Buffer.contents buf
-  end else
-    let bindings = Types.type_binding fn_def.Ir.fn_tparams mono_args in
-    Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings fn_def.Ir.ret_type;
-    Buffer.add_string buf " ";
-    Buffer.add_string buf @@ mangle_fn_name fn_def.Ir.fn_name mono_args;
-    Buffer.add_string buf "(";
-    let rec dump_loop first l = 
-      match l with
-      | (a_name,a_type)::t -> 
-        if not first then Buffer.add_string buf ", " else ();
-        Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings a_type;
-        Buffer.add_string buf " ";
-        Buffer.add_string buf a_name;
-        dump_loop false t
-      | [] -> ()
-    in
-    dump_loop true fn_def.Ir.fn_args;
-    Buffer.add_string buf ")";
-    Buffer.contents buf
+let sig_of_fdef fn_def mono_args buf = 
+  let bindings = Types.type_binding fn_def.Ir.fn_tparams mono_args in
+  Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings fn_def.Ir.ret_type;
+  Buffer.add_string buf " ";
+  Buffer.add_string buf @@ mangle_fn_name fn_def.Ir.fn_name mono_args;
+  Buffer.add_string buf "(";
+  let rec dump_loop first l = 
+    match l with
+    | (a_name,a_type)::t -> 
+      if not first then Buffer.add_string buf ", " else ();
+      Buffer.add_string buf @@ type_to_string @@ to_monomorph_c_type bindings a_type;
+      Buffer.add_string buf " ";
+      Buffer.add_string buf a_name;
+      dump_loop false t
+    | [] -> ()
+  in
+  dump_loop true fn_def.Ir.fn_args;
+  Buffer.add_string buf ")"
 
 let emit_fn_def out_channel buf (fn_name,mono_args) = 
   if fn_name = "crust_abort" then begin
@@ -374,7 +366,7 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
   else
     let fn_def = Env.EnvMap.find Env.fn_env fn_name in
     let simple_ir = memo_get_simple_ir fn_name fn_def in
-    Buffer.add_string buf @@ sig_of_fdef fn_def mono_args;
+    sig_of_fdef fn_def mono_args buf;
     Buffer.add_string buf " ";
     let expr_emitter = new expr_emitter buf @@ Types.type_binding fn_def.Ir.fn_tparams mono_args in
     expr_emitter#dump_expr simple_ir;
@@ -383,10 +375,19 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
     ()
 
 let emit_fsigs out_channel f_list = 
+  let buf = Buffer.create 1000 in
   List.iter (fun (f_name,m_args) ->
-      let f_def = Env.EnvMap.find Env.fn_env f_name in
-      Printf.fprintf out_channel "%s;\n" @@ sig_of_fdef f_def m_args
-    ) f_list
+      if Intrinsics.is_intrinsic_fn f_name then
+        let m_strings = List.map type_to_string m_args in
+        let mangled_name = mangle_fn_name f_name m_args in
+        Intrinsics.emit_intrinsic_inst f_name mangled_name m_strings buf;
+        Buffer.add_string buf "\n"
+      else
+        let f_def = Env.EnvMap.find Env.fn_env f_name in
+        sig_of_fdef f_def m_args buf;
+        Buffer.add_string buf ";\n"
+    ) f_list;
+  Buffer.output_buffer out_channel buf
 
 (* at this point our types are still in terms of Refs, and Ptrs.
    However in C there is no such distinction. Therefore a Foo<*T> and a
@@ -452,20 +453,20 @@ let rec topo_sort dep_map accum =
       CISet.is_empty deps
     ) dep_map
   in
-  if CIMap.cardinal dep_met = 0 then
+  if CIMap.cardinal dep_met = 0 &&
+     CIMap.cardinal has_dep = 0 then
+    List.rev accum
+  else if CIMap.cardinal dep_met = 0 then
     failwith "Type dependency cycle!"
   else begin
     let (accum,dep_met_s) = CIMap.fold (fun i _ (accum,dms) ->
         i::accum,CISet.add i dms
       ) dep_met (accum,CISet.empty) in
-    if CIMap.cardinal has_dep = 0 then
-      List.rev accum
-    else
-      let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
-      topo_sort dep_map' accum
+    let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
+    topo_sort dep_map' accum
   end
 
-let order_types t_list = 
+let order_types t_list =
   let d_map = List.fold_left build_dep_map CIMap.empty t_list in
   topo_sort d_map []
 
@@ -492,10 +493,13 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
       Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n";
       dump_includes out_channel
     end else ()
-       
   end;
   List.iter (emit_typedefs out_channel) t_list;
-  emit_fsigs out_channel f_list;
+  (
+    if Intrinsics.need_iheader (f_list :> (string * Types.r_type list) list)  then
+      Printf.fprintf out_channel "#include \"rust_intrinsics.h\"\n"
+    else ()
+  );
   let type_buffer = Buffer.create 1000 in
   let type_emitter = new typedef_emitter type_buffer in
   List.iter (fun t_inst ->
@@ -503,10 +507,13 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
     ) t_list;
   Buffer.output_buffer out_channel type_buffer;
   Buffer.reset type_buffer;
+  emit_fsigs out_channel f_list;
   let fn_buffer = Buffer.create 1000 in
   List.iter (emit_fn_def out_channel fn_buffer) f_list;
   Buffer.clear fn_buffer;
-  let driver_emit = new DriverEmit.driver_emission fn_buffer pt_list in
-  driver_emit#emit_driver pf_list;
-  Buffer.output_buffer out_channel fn_buffer;
+  if Env.EnvMap.mem Env.fn_env "crust_init" then
+    let driver_emit = new DriverEmit.driver_emission fn_buffer pt_list in
+    driver_emit#emit_driver pf_list;
+    Buffer.output_buffer out_channel fn_buffer
+  else ();
   print_newline ()

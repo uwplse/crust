@@ -12,7 +12,9 @@ let do_it f =
   let input_file = ref "" in
   let arg_spec = [
     ("-gcc", Arg.Set Env.gcc_mode, "Turn on gcc mode");
+    ("-infer-filter", Arg.String (fun f_name -> Env.init_inference_filter f_name), "Read a list of types for which to filter public function inference from file f (one per line)");
     ("-", Arg.Unit (fun () -> input_file := "-"), "Read from stdin");
+    ("-optional-init", Arg.Set Env.init_opt, "Make crust_init optional (for testing purposes only!)")
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
   let (input,close) = 
@@ -22,10 +24,10 @@ let do_it f =
 	  (open_in !input_file),true
   in
   let ast =
-  try
-	Parser.parse_channel ~close:close input 
-  with Parser.Parse_failure (f_name,tokens) ->
-	failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
+    try
+	  Parser.parse_channel ~close:close input 
+    with Parser.Parse_failure (f_name,tokens) ->
+	  failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in
   Env.set_env ast;
   let w_state = Analysis.run_analysis () in
