@@ -15,6 +15,7 @@ import Index
 import TempLift
 import Rename
 import Pprint
+import DropGlue
 
 import Debug.Trace
 
@@ -22,8 +23,9 @@ main = do
     items <- parseContents item
     let ix = mkIndex items
     let items' =
-            liftTemps ix $
+            addCleanup ix $
             renameLocals $
+            liftTemps ix $
             constElim $
             ifFix $
             fixAbort $

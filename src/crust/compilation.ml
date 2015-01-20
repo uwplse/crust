@@ -483,20 +483,20 @@ let rec topo_sort dep_map accum =
       CISet.is_empty deps
     ) dep_map
   in
-  if CIMap.cardinal dep_met = 0 then
+  if CIMap.cardinal dep_met = 0 &&
+     CIMap.cardinal has_dep = 0 then
+    List.rev accum
+  else if CIMap.cardinal dep_met = 0 then
     failwith "Type dependency cycle!"
   else begin
     let (accum,dep_met_s) = CIMap.fold (fun i _ (accum,dms) ->
         i::accum,CISet.add i dms
       ) dep_met (accum,CISet.empty) in
-    if CIMap.cardinal has_dep = 0 then
-      List.rev accum
-    else
-      let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
-      topo_sort dep_map' accum
+    let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
+    topo_sort dep_map' accum
   end
 
-let order_types t_list = 
+let order_types t_list =
   let d_map = List.fold_left build_dep_map CIMap.empty t_list in
   topo_sort d_map []
 
@@ -541,7 +541,9 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
   let fn_buffer = Buffer.create 1000 in
   List.iter (emit_fn_def out_channel fn_buffer) f_list;
   Buffer.clear fn_buffer;
-  let driver_emit = new DriverEmit.driver_emission fn_buffer pt_list in
-  driver_emit#emit_driver pf_list;
-  Buffer.output_buffer out_channel fn_buffer;
+  if Env.EnvMap.mem Env.fn_env "crust_init" then
+    let driver_emit = new DriverEmit.driver_emission fn_buffer pt_list in
+    driver_emit#emit_driver pf_list;
+    Buffer.output_buffer out_channel fn_buffer
+  else ();
   print_newline ()

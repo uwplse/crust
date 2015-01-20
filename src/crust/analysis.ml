@@ -528,28 +528,31 @@ let run_analysis () =
       | _ -> accum
     ) Env.adt_env @@ build_nopub_fn ()
   in
-  let crust_init_def = Env.EnvMap.find Env.fn_env "crust_init" in
+  let (init_def,seed_types) =
+    if !Env.init_opt && not (Env.EnvMap.mem Env.fn_env "crust_init") then (None,[])
+    else begin
+      let crust_init_def = Env.EnvMap.find Env.fn_env "crust_init" in
+      (match crust_init_def.Ir.fn_tparams with
+       | [] -> ()
+       | _ -> failwith "crust_init cannot be polymorphic");
+	  match crust_init_def.Ir.ret_type with
+      | `Tuple tl -> (Some crust_init_def,List.map (Types.to_monomorph []) tl)
+	  | t -> failwith @@ "crust_init must return a tuple, found: " ^ (Types.pp_t t)
+    end
+  in
   let init_state = {
 	  type_inst = TISet.empty;
 	  fn_inst = FISet.empty;
-	  public_type = MTSet.empty;
+	  public_type = List.fold_right MTSet.add seed_types MTSet.empty;
 	  public_fn = FISet.empty
 	}
   in
-  (match crust_init_def.Ir.fn_tparams with
-  | [] -> ()
-  | _ -> failwith "crust_init cannot be polymorphic");
-  let seed_types = 
-	match crust_init_def.Ir.ret_type with
-	| `Tuple tl -> List.map (Types.to_monomorph []) tl
-	| t -> failwith @@ "crust_init must return a tuple, found: " ^ (Types.pp_t t)
+  let w_state = 
+    match init_def with
+    | None -> init_state
+    | Some crust_init_def -> walk_fn_def init_state crust_init_def []
   in
-  let w_state = {
-	  init_state with public_type = List.fold_right MTSet.add seed_types init_state.public_type
-	}
-  in
-  let with_init_state = walk_fn_def w_state crust_init_def [] in
-  find_fn restrict_fn constructor_fn with_init_state
+  find_fn restrict_fn constructor_fn w_state
 
 (* borrow analysis *)
 let indexed_fold_left f accum l = 

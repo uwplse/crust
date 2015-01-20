@@ -14,6 +14,7 @@ let do_it f =
     ("-gcc", Arg.Set Env.gcc_mode, "Turn on gcc mode");
     ("-infer-filter", Arg.String (fun f_name -> Env.init_inference_filter f_name), "Read a list of types for which to filter public function inference from file f (one per line)");
     ("-", Arg.Unit (fun () -> input_file := "-"), "Read from stdin");
+    ("-optional-init", Arg.Set Env.init_opt, "Make crust_init optional (for testing purposes only!)")
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
   let (input,close) = 
