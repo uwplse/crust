@@ -83,12 +83,12 @@ renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
     goExpr e = gmapM go e
 
     goMatchArm (MatchArm pat body) = withScope $ do
-        walkPat pat
-        MatchArm pat <$> go body
+        pat' <- walkPat pat
+        MatchArm pat' <$> go body
 
-    walkPat p = mapM_ getName $ everything (++) ([] `mkQ` getPatName) p
-    getPatName (PVar name) = [name]
-    getPatName _ = []
+    walkPat = everywhereM (mkM go)
+      where go (PVar name) = PVar <$> bindName name
+            go p = return p
 
     goStmtList (s@(SLet name ty expr) : ss) = do
         expr' <- go expr

@@ -19,10 +19,14 @@ import DropGlue
 
 import Debug.Trace
 
+dumpIr msg ir = trace text ir
+  where text = "\n\n --- IR Dump (" ++ msg ++ ") ---\n\n" ++ runPp (mapM_ ppItem ir)
+
 main = do
     items <- parseContents item
     let ix = mkIndex items
     let items' =
+            dumpIr "final" $
             renameLocals $
             addCleanup ix $
             renameLocals $
@@ -33,7 +37,6 @@ main = do
             fixBottom $
             fixAddress $
             items
-    trace (runPp $ mapM_ ppItem items') $ return ()
     putStrLn $ concatMap pp items'
 
 fixAddress = everywhere (mkT stripAddr)
