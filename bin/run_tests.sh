@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 BIN_DIR=$(dirname $0);
 PROJECT_DIR=$BIN_DIR/../
