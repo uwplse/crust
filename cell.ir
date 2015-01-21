@@ -76,6 +76,9 @@ fn UnsafeCell_new<0><1: T>
 #
 #   fn_def ::= "fn" name(fn) name(lifetime_param)* name(type_param)*
 #                   "args" arg_decl*  "return" type  "body" expr
+#                   [name(abstract_fn) ty(impl_for_type)]?
+#   abstract_fn_def ::= "abstract_fn" name(fn) name(lifetime_param)* name(type_param)*
+#                   "args" arg_decl*  "return" type
 #   arg_decl ::= name(arg) type 
 #
 #   expr ::= type expr_variant
