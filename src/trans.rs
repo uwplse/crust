@@ -396,6 +396,8 @@ impl Trans for Lifetime {
 
 impl Trans for Expr {
     fn trans(&self, tcx: &ty::ctxt) -> String {
+        let mut add_ty = true;
+
         let variant = match self.node {
             // ExprBox
             // ExprVec
@@ -425,6 +427,18 @@ impl Trans for Expr {
                 let name = match callee.origin {
                     MethodOrigin::MethodStatic(did) => {
                         mangled_def_name(tcx, did)
+                    },
+                    MethodOrigin::MethodTypeParam(ref mp) => {
+                        let trait_did = mp.trait_ref.def_id;
+                        // trait_ref substs are actually the same as the callee substs, so we can
+                        // ignore them here.
+                        let item_id = tcx.trait_item_def_ids.borrow()[trait_did][mp.method_num];
+                        let method_did = match item_id {
+                            ty::ImplOrTraitItemId::MethodTraitItemId(did) => did,
+                            ty::ImplOrTraitItemId::TypeTraitItemId(_) =>
+                                panic!("unexpected TypeTraitItemId in method call"),
+                        };
+                        mangled_def_name(tcx, method_did)
                     },
                     _ => panic!("unsupported MethodOrigin variant"),
                 };
@@ -555,14 +569,22 @@ impl Trans for Expr {
                 format!("struct_literal {}", fields.trans(tcx))
             },
             // ExprRepeat
-            ExprParen(ref expr) => expr.trans(tcx),
+            ExprParen(ref expr) => {
+                add_ty = false;
+                expr.trans(tcx)
+            },
             _ => panic!("unrecognized Expr_ variant"),
         };
 
         let expr_ty = tcx.node_types.borrow()[self.id];
-        let unadjusted = format!("({} {})",
-                                 expr_ty.trans(tcx),
-                                 variant);
+        let unadjusted = 
+                if add_ty {
+                    format!("({} {})",
+                            expr_ty.trans(tcx),
+                            variant)
+                } else {
+                    variant
+                };
 
         match tcx.adjustments.borrow().get(&self.id) {
             None => unadjusted,
@@ -857,7 +879,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                             let impl_clause = match *trait_ref {
                                 Some(ref trait_ref) => {
                                     let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
-                                    let mut tys = vec![self_ty.trans(tcx)];
+                                    let mut tys = vec![];
                                     let mut lifes = vec![];
                                     match last_seg.parameters {
                                         AngleBracketedParameters(ref params) => {
@@ -871,6 +893,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                         ParenthesizedParameters(_) =>
                                             panic!("unsupported ParenthesizedParameters"),
                                     }
+                                    tys.push(self_ty.trans(tcx));
 
                                     format!("1 impl {}_{} {} {}",
                                             mangled_def_name(tcx, tcx.def_map.borrow()[trait_ref.ref_id].def_id()),

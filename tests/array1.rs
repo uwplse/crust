@@ -13,6 +13,7 @@ use core::ptr::{RawPtr, RawMutPtr};
 mod alloc {
     pub mod heap {
         pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+            // Die horribly if the translation fails to replace this function.
             *(0 as *mut *mut u8)
         }
 
