@@ -86,16 +86,30 @@ ppEnumDef (EnumDef name lps tps variants mDtor) = do
     line $ tell "}"
 
 ppFnDef :: (MonadReader Int m, MonadWriter String m) => FnDef -> m ()
-ppFnDef (FnDef name lps tps args retTy body) = do
+ppFnDef (FnDef name lps tps args retTy implClause body) = do
     line $ do
         tell "fn " >> tell name
         listNe angles (map ppLifetime lps ++ map tell tps)
         parens $ commaSep $ map ppArgDecl args
-        tell " -> " >> ppTy retTy >> tell " "
+        tell " -> " >> ppTy retTy
+        case implClause of
+            Nothing -> tell " "
+            Just implClause -> do
+                nl
+                indent $ indent $ indentation
+                tell "/* " >> ppImplClause implClause >> tell " */ "
         ppExpr body
 
 ppArgDecl :: (MonadReader Int m, MonadWriter String m) => ArgDecl -> m ()
 ppArgDecl (ArgDecl name ty) = tell name >> tell ": " >> ppTy ty
+
+ppImplClause :: (MonadReader Int m, MonadWriter String m) => ImplClause -> m ()
+ppImplClause (ImplClause name lifetimes tys) = do
+    let selfTy = last tys
+        otherTys = init tys
+    tell "impl " >> tell name
+    angles $ commaSep (map ppLifetime lifetimes ++ map ppTy otherTys)
+    tell " for " >> ppTy selfTy 
 
 ppExpr :: (MonadReader Int m, MonadWriter String m) => Expr -> m ()
 ppExpr (Expr ty e) = case e of

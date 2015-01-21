@@ -74,10 +74,13 @@ data EnumDef = EnumDef Name [LifetimeParam] [TyParam] [VariantDef] (Maybe Name)
 data VariantDef = VariantDef Name [Ty]
   deriving (Eq, Show, Data, Typeable)
 
-data FnDef = FnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty Expr
+data FnDef = FnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) Expr
   deriving (Eq, Show, Data, Typeable)
 
 data ArgDecl = ArgDecl Name Ty
+  deriving (Eq, Show, Data, Typeable)
+
+data ImplClause = ImplClause Name [Lifetime] [Ty]
   deriving (Eq, Show, Data, Typeable)
 
 data Expr = Expr Ty Expr_
@@ -185,11 +188,10 @@ fnDef = do
     f <- f <$> counted argDecl
     exactWord "return"
     f <- f <$> ty
-    optional $ do
+    implClause <- optional $ do
         exactWord "impl"
-        name
-        counted lifetime
-        counted ty
+        ImplClause <$> name <*> counted lifetime <*> counted ty
+    f <- f <$> return implClause
     exactWord "body"
     f <$> expr
 argDecl = ArgDecl <$> name <*> ty
@@ -298,14 +300,18 @@ instance Pp VariantDef where
     pp' (VariantDef a b) = map pp [pp a, pp b]
 
 instance Pp FnDef where
-    pp' (FnDef name lifetimeParams tyParams args retTy body) =
+    pp' (FnDef name lifetimeParams tyParams args retTy implClause body) =
         ["fn", pp name, pp lifetimeParams, pp tyParams,
          "args", pp args,
          "return", pp retTy,
+         pp implClause,
          "body", pp body]
 
 instance Pp ArgDecl where
     pp' (ArgDecl a b) = map pp [pp a, pp b]
+
+instance Pp ImplClause where
+    pp' (ImplClause absName lifetimes tys) = [pp absName, pp lifetimes, pp tys]
 
 instance Pp Expr where
     pp' (Expr a b) = map pp [pp a, pp b]

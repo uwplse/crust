@@ -45,9 +45,9 @@ ty_tyParams (TEnum (EnumDef _ _ ps _ _)) = ps
 ty_dtor (TStruct (StructDef _ _ _ _ d)) = d
 ty_dtor (TEnum (EnumDef _ _ _ _ d)) = d
 
-fn_lifetimeParams (FnDef _ ps _ _ _ _) = ps
-fn_tyParams (FnDef _ _ ps _ _ _) = ps
-fn_retTy (FnDef _ _ _ _ r _) = r
+fn_lifetimeParams (FnDef _ ps _ _ _ _ _) = ps
+fn_tyParams (FnDef _ _ ps _ _ _ _) = ps
+fn_retTy (FnDef _ _ _ _ r _ _) = r
 
 data Index = Index
     { i_fns :: M.Map Name FnDef
@@ -61,7 +61,7 @@ mkIndex items = Index fns types consts
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
 
-    onFn (IFn x@(FnDef name _ _ _ _ _)) = Just (name, x)
+    onFn (IFn x@(FnDef name _ _ _ _ _ _)) = Just (name, x)
     onFn _ = Nothing
 
     onType (IStruct x@(StructDef name _ _ _ _)) = Just (name, TStruct x)
@@ -74,7 +74,7 @@ mkIndex items = Index fns types consts
 dropGlue = ("drop_glue", def)
   where def = FnDef "drop_glue" [] ["T"]
                 [ArgDecl "self" (TRef "r_anon" MMut $ TVar "T")]
-                TUnit (Expr TUnit $ ESimpleLiteral "drop_glue")
+                TUnit Nothing (Expr TUnit $ ESimpleLiteral "drop_glue")
 
 
 type CtxM a = Reader Index a

@@ -97,10 +97,10 @@ renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
         (SLet name' ty expr' :) <$> go ss
     goStmtList ss = gmapM go ss
 
-    goFnDef (FnDef name lps tps args retTy body) = withEmptyScope $ do
+    goFnDef (FnDef name lps tps args retTy implClause body) = withEmptyScope $ do
         args' <- mapM renameArg args
         body' <- go body
-        return $ FnDef name lps tps args' retTy body'
+        return $ FnDef name lps tps args' retTy implClause body'
 
     renameArg (ArgDecl name ty) = do
         name' <- bindName name

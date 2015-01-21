@@ -20,7 +20,7 @@ import Debug.Trace
 generateDropGlues items = map (IFn . mkDropGlue ix . snd) (M.toList $ i_types ix) ++ items
   where ix = mkIndex items
 
-mkDropGlue ix ty = FnDef ("drop_glue_" ++ ty_name ty) lifetimes tyParams [argDecl] TUnit body
+mkDropGlue ix ty = FnDef ("drop_glue_" ++ ty_name ty) lifetimes tyParams [argDecl] TUnit Nothing body
   where
     lifetimes = ty_lifetimeParams ty
     tyParams = ty_tyParams ty
