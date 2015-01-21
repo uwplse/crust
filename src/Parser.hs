@@ -185,6 +185,11 @@ fnDef = do
     f <- f <$> counted argDecl
     exactWord "return"
     f <- f <$> ty
+    optional $ do
+        exactWord "impl"
+        name
+        counted lifetime
+        counted ty
     exactWord "body"
     f <$> expr
 argDecl = ArgDecl <$> name <*> ty

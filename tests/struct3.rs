@@ -1,3 +1,4 @@
+// Known broken: no handling of statics yet.
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;

@@ -789,20 +789,20 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
             ItemFn(ref decl, style, _, ref generics, ref body) => {
                 let mangled_name = mangled_def_name(tcx, local_def(self.id));
                 if filter_fn.contains(&mangled_name) {
-                    format!("") /* why can't I do a literal empty string? I dunno... */
+                    format!("")
                 } else {
-                format!("fn {} {} {} body {} {} {{\n{}\t{}\n}}\n\n",
-                        mangled_name,
-                        generics.trans_extra(tcx, FnSpace),
-                        decl.trans(tcx),
-                        decl.output.trans(tcx),
-                        match style {
-                            UnsafeFn => "unsafe",
-                            NormalFn => "block",
-                        },
-                        body.stmts.trans(tcx),
-                        body.expr.as_ref().map(|e| e.trans(tcx))
-                            .unwrap_or("[unit] simple_literal _ItemFn".into_string()))
+                    format!("fn {} {} {} 0 body {} {} {{\n{}\t{}\n}}\n\n",
+                            mangled_name,
+                            generics.trans_extra(tcx, FnSpace),
+                            decl.trans(tcx),
+                            decl.output.trans(tcx),
+                            match style {
+                                UnsafeFn => "unsafe",
+                                NormalFn => "block",
+                            },
+                            body.stmts.trans(tcx),
+                            body.expr.as_ref().map(|e| e.trans(tcx))
+                                .unwrap_or("[unit] simple_literal _ItemFn".into_string()))
                 }
             },
             ItemImpl(ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
@@ -854,15 +854,43 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                 None => 0,
                             };
 
+                            let impl_clause = match *trait_ref {
+                                Some(ref trait_ref) => {
+                                    let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
+                                    let mut tys = vec![self_ty.trans(tcx)];
+                                    let mut lifes = vec![];
+                                    match last_seg.parameters {
+                                        AngleBracketedParameters(ref params) => {
+                                            for life in params.lifetimes.iter() {
+                                                lifes.push(life.trans(tcx));
+                                            }
+                                            for ty in params.types.iter() {
+                                                tys.push(ty.trans(tcx));
+                                            }
+                                        },
+                                        ParenthesizedParameters(_) =>
+                                            panic!("unsupported ParenthesizedParameters"),
+                                    }
+
+                                    format!("1 impl {}_{} {} {}",
+                                            mangled_def_name(tcx, tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
+                                            name.trans(tcx),
+                                            lifes.trans(tcx),
+                                            tys.trans(tcx))
+                                },
+                                None => format!("0"),
+                            };
+
                             let (lifetimes, ty_params) = combine_generics(tcx, impl_generics, generics);
 
                             arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(tcx)));
-                            format!("fn {} {} {} (args {}) return {} body {} {} {{\n{}\t{}\n}}\n\n",
+                            format!("fn {} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
                                     mangled_name,
                                     lifetimes.trans(tcx),
                                     ty_params.trans(tcx),
                                     arg_strs.trans(tcx),
                                     decl.output.trans(tcx),
+                                    impl_clause,
                                     decl.output.trans(tcx),
                                     match style {
                                         UnsafeFn => "unsafe",
