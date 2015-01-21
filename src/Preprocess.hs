@@ -25,6 +25,7 @@ main = do
     let items' =
             renameLocals $
             addCleanup ix $
+            renameLocals $
             liftTemps ix $
             constElim $
             ifFix $
