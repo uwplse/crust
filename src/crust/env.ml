@@ -16,9 +16,12 @@ module EnvSet = struct
 end
 
 type adt_env_t = (string,Ir.type_expr) Hashtbl.t
-let (adt_env : adt_env_t) = Hashtbl.create 10;;
-let (fn_env : (string,Ir.fn_def) Hashtbl.t) = Hashtbl.create 10;;
+let adt_env = Hashtbl.create 10;;
+let fn_env = Hashtbl.create 10;;
 let type_infr_filter = Hashtbl.create 10;;
+let abstract_impl = Hashtbl.create 10;;
+
+let is_abstract name = Hashtbl.mem abstract_impl name
 
 let rec set_env = function 
   | [] -> ()

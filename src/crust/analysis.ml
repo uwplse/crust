@@ -327,6 +327,8 @@ let primitive_types =
 class type_matcher = object(self)
   method get_inst t_set m = 
 	self#match_types (new set_match_state true t_set) [] m
+  method is_isnt t_list m = 
+    self#match_types (new list_match_state false t_list) [] m
   method match_types = fun match_state t_binding to_match ->
 	self#p_match_types match_state t_binding [] to_match
   method private p_match_types = fun state t_binding t_accum to_match ->
@@ -483,6 +485,34 @@ let get_inst =
 let has_inst w_state f_name = 
   FISet.exists (fun (f_name',_) -> 
 	  f_name = f_name') w_state.fn_inst
+
+let resolve_abstract_fn = 
+  let matcher = new type_matcher in
+  let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
+  fun abstract_name param_args ->
+    let abstract_impls = Env.EnvMap.find Env.abstract_impl abstract_name in
+    let possible_insts = 
+      List.fold_left (fun accum fn_name ->
+          let impl_def = Env.EnvMap.find Env.fn_env fn_name in
+          let arg_types = List.map snd impl_def.Ir.fn_args in
+          match matcher#is_isnt param_args arg_types with
+          | `Mismatch -> accum
+          | `Inst l -> (match l with
+              | [t] ->
+                let targ_bindings = List.map ((rev_app List.assoc) t) impl_def.Ir.fn_tparams in
+                (targ_bindings,impl_def.Ir.fn_name)::accum
+              | _ -> assert false
+            )
+        ) [] abstract_impls in
+    match possible_insts with 
+    | [t] -> t
+    | [] -> 
+      failwith @@ "Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args)
+    | _ -> 
+      let inst_dump = String.concat "/" @@ List.map snd possible_insts in
+      let fail_args = arg_str param_args in
+      failwith @@ "Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump
+            
     
 let rec find_fn restrict_fn constructor_fn w_state = 
   let old_size = state_size w_state in
