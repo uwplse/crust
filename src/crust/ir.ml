@@ -60,14 +60,24 @@ and pattern_variant = [
   | `Const of string
   | `Tuple of pattern list
   ]
+
+type impl_info = {
+  abstract_name : string;
+  i_lifetimes: Types.type_param list;
+  i_types : Types.r_type list;
+  i_self : Types.r_type
+}
+
+
 type fn_def = {
-	fn_name : string;
-	fn_lifetime_params : Types.lifetime list;
-	fn_tparams : Types.type_param list;
-	ret_type : Types.r_type;
-	fn_body : expr;
-	fn_args : (string * Types.r_type) list;
-  }
+  fn_name : string;
+  fn_lifetime_params : Types.lifetime list;
+  fn_tparams : Types.type_param list;
+  ret_type : Types.r_type;
+  fn_body : expr;
+  fn_args : (string * Types.r_type) list;
+  fn_impl : impl_info option
+}
 
 type struct_def = {
 	struct_name : string;

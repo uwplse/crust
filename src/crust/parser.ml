@@ -105,7 +105,8 @@ let rec parse_adt_type tokens cb = match tokens with
 				} rest
 			 )
   | _ -> (raise (Parse_failure ("parse_adt_type",tokens)))
-and parse_type tokens cb = match tokens with
+and parse_type tokens cb = 
+  match tokens with
   | "adt"::_ -> parse_adt_type tokens (fun a rest ->
 									   cb (`Adt_type a) rest
 									  )
@@ -244,6 +245,15 @@ and parse_match_arm = fun tokens cb ->
 and parse_expr = fun tokens cb ->
   (parse_type >> parse_expr_var) tokens cb
 
+let maybe_parse parse_fn tokens cb = 
+  match tokens with
+  | "1"::t -> parse_fn t (fun a rest ->
+						  cb (Some a) rest
+						 )
+  | "0"::t -> cb None t
+  | _ -> raise (Parse_failure ("maybe_parse",tokens))
+
+
 let parse_fn = 
   let consume_arg = consume_name >> parse_type in
   let parse_args = fun tokens cb ->
@@ -258,32 +268,42 @@ let parse_fn =
   in
   let parse_body tokens cb = 
 	match tokens with
-	| "body"::rest -> parse_expr rest cb
+	| "body"::rest -> parse_expr rest cb 
 	| _ -> (raise (Parse_failure ("parse_body",tokens)))
+  in
+  let parse_impl tokens cb = 
+    match tokens with
+    | abstract_name::rest ->
+      (parse_lifetimes >> (parse_n parse_type)) rest (fun (lifetimes,ty) ->
+          let rty = List.rev ty in
+          let self_type = List.hd rty in
+          let t_params = List.tl rty |> List.rev in
+          cb {
+            Ir.abstract_name = abstract_name;
+            Ir.i_types = t_params;
+            Ir.i_self = self_type;
+            Ir.i_lifetimes = lifetimes
+          }
+        )
+    | _ -> raise (Parse_failure ("parse_impl", tokens))
   in
   fun tokens cb ->
   match tokens with
   | "fn"::fn_name::t ->
-	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return >> parse_body in
-	 parse_function t (fun ((((lifetime,t_params),args),ret_type),body) ->
-					   cb (`Fn {
+	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return >> (maybe_parse parse_impl) >> parse_body in
+	 parse_function t (fun (((((lifetime,t_params),args),ret_type),impl_info),body) ->
+	  cb (`Fn {
 						 Ir.fn_name = fn_name;
 						 Ir.fn_lifetime_params = lifetime;
 						 Ir.fn_tparams = t_params;
 						 Ir.ret_type = ret_type;
 						 Ir.fn_args = args;
-						 Ir.fn_body = body
+						 Ir.fn_body = body;
+						 Ir.fn_impl = impl_info
 					   })
-					  )
+	)
   | _ -> raise (Parse_failure ("parse_fn", tokens))
 
-let maybe_parse parse_fn tokens cb = 
-  match tokens with
-  | "1"::t -> parse_fn t (fun a rest ->
-						  cb (Some a) rest
-						 )
-  | "0"::t -> cb None t
-  | _ -> raise (Parse_failure ("maybe_parse",tokens))
 
 let parse_struct_def tokens cb = match tokens with
   | "struct"::name::t ->
