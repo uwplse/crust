@@ -1,4 +1,7 @@
+use std::collections::{HashMap, HashSet};
+
 use rustc::metadata::csearch;
+use rustc::middle::astencode;
 use rustc::middle::subst::ParamSpace::*;
 use rustc::middle::subst::ParamSpace;
 use rustc::middle::subst;
@@ -7,16 +10,17 @@ use rustc::middle::typeck::{MethodCall, MethodCallee, MethodOrigin};
 use rustc::middle::typeck;
 use rustc::util::ppaux::Repr;
 use syntax::ast::*;
+use syntax::ast_map;
 use syntax::ast_util::local_def;
 use syntax::codemap::Span;
 use syntax::ptr::P;
 use syntax::visit::Visitor;
 use syntax::visit::{FnKind, FkItemFn, FkMethod, FkFnBlock};
 use syntax::visit;
-use std::collections::HashSet;
 
 struct TransCtxt<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
+    observed_abstract_fns: HashMap<String, (DefId, DefId)>,
 }
 
 trait Trans {
@@ -442,7 +446,9 @@ impl Trans for Expr {
                             ty::ImplOrTraitItemId::TypeTraitItemId(_) =>
                                 panic!("unexpected TypeTraitItemId in method call"),
                         };
-                        mangled_def_name(trcx, method_did)
+                        let name = mangled_def_name(trcx, method_did);
+                        trcx.observed_abstract_fns.insert(name.clone(), (trait_did, method_did));
+                        name
                     },
                     _ => panic!("unsupported MethodOrigin variant"),
                 };
@@ -782,12 +788,12 @@ impl Trans for VariantArg {
     }
 }
 
-struct TransVisitor<'a, 'tcx: 'a> {
-    trcx: &'a mut TransCtxt<'a, 'tcx>,
+struct TransVisitor<'b, 'a: 'b, 'tcx: 'a> {
+    trcx: &'b mut TransCtxt<'a, 'tcx>,
     filter_fn: HashSet<String>
 }
 
-impl<'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'a, 'tcx> {
+impl<'b, 'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'b, 'a, 'tcx> {
     fn visit_item(&mut self, i: &'v Item) {
         println!("{}", i.trans_extra(self.trcx, &self.filter_fn));
         visit::walk_item(self, i);
@@ -836,96 +842,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 for item in items.iter() {
                     let part = match *item {
                         MethodImplItem(ref method) => {
-                            let mangled_name = mangled_def_name(trcx, local_def(method.id));
-                            if filter_fn.contains(&mangled_name) {
-                                return format!("");
-                            };
-                            let (name, generics, _, exp_self, style, decl, body, _) = match method.node {
-                                MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
-                                MethMac(_) => panic!("unexpected MethMac"),
-                            };
-                            let mut arg_strs = vec![];
-
-
-
-                            let self_arg = match exp_self.node {
-                                SelfStatic => None,
-                                SelfValue(ref name) =>
-                                    Some(format!("{} {}",
-                                                 name.trans(trcx),
-                                                 self_ty.trans(trcx))),
-                                SelfRegion(ref opt_lifetime, mutbl, ref name) =>
-                                    Some(format!("{} {} {} {}",
-                                                 name.trans(trcx),
-                                                 match mutbl {
-                                                     MutMutable => "ref_mut",
-                                                     MutImmutable => "ref",
-                                                 },
-                                                 match *opt_lifetime {
-                                                     Some(ref lifetime) =>
-                                                         lifetime.trans(trcx),
-                                                     None => "r_anon_0".into_string(),
-                                                 },
-                                                 self_ty.trans(trcx))),
-                                SelfExplicit(ref ty, ref name) =>
-                                    Some(format!("{} {}",
-                                                 name.trans(trcx),
-                                                 self_ty.trans(trcx))),
-                            };
-                            let offset = match self_arg {
-                                Some(arg) => {
-                                    arg_strs.push(arg);
-                                    1
-                                },
-                                None => 0,
-                            };
-
-                            let impl_clause = match *trait_ref {
-                                Some(ref trait_ref) => {
-                                    let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
-                                    let mut tys = vec![];
-                                    let mut lifes = vec![];
-                                    match last_seg.parameters {
-                                        AngleBracketedParameters(ref params) => {
-                                            for life in params.lifetimes.iter() {
-                                                lifes.push(life.trans(trcx));
-                                            }
-                                            for ty in params.types.iter() {
-                                                tys.push(ty.trans(trcx));
-                                            }
-                                        },
-                                        ParenthesizedParameters(_) =>
-                                            panic!("unsupported ParenthesizedParameters"),
-                                    }
-                                    tys.push(self_ty.trans(trcx));
-
-                                    format!("1 impl {}_{} {} {}",
-                                            mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
-                                            name.trans(trcx),
-                                            lifes.trans(trcx),
-                                            tys.trans(trcx))
-                                },
-                                None => format!("0"),
-                            };
-
-                            let (lifetimes, ty_params) = combine_generics(trcx, impl_generics, generics);
-
-                            arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
-                            format!("fn {} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
-                                    mangled_name,
-                                    lifetimes.trans(trcx),
-                                    ty_params.trans(trcx),
-                                    arg_strs.trans(trcx),
-                                    decl.output.trans(trcx),
-                                    impl_clause,
-                                    decl.output.trans(trcx),
-                                    match style {
-                                        UnsafeFn => "unsafe",
-                                        NormalFn => "block",
-                                    },
-                                    body.stmts.trans(trcx),
-                                    body.expr.as_ref().map(|e| e.trans(trcx))
-                                    .unwrap_or("[unit] simple_literal _method".into_string()))
+                            trans_method(trcx, self, &**method)
                         },
                         TypeImplItem(_) => panic!("unsupported TypeImplItem"),
                     };
@@ -991,10 +908,253 @@ fn mangled_def_name(trcx: &mut TransCtxt, did: DefId) -> String {
     name
 }
 
+fn find_item_ast<'tcx>(tcx: &ty::ctxt<'tcx>, did: DefId) -> Option<&'tcx Item> {
+    if did.krate == LOCAL_CRATE {
+        match tcx.map.get(did.node) {
+            ast_map::NodeItem(ast) => Some(ast),
+            _ => panic!("expected NodeItem"),
+        }
+    } else {
+        let result = csearch::maybe_get_item_ast(
+            tcx, did,
+            |a,b,c,d| astencode::decode_inlined_item(a, b, c, d));
+        let item = match result {
+            csearch::not_found => return None,
+            csearch::found(item) => item,
+            csearch::found_parent(_, item) => item,
+        };
+        match item {
+            &IIItem(ref ast) => Some(&**ast),
+            _ => panic!("expected IIItem"),
+        }
+    }
+}
+
+fn find_trait_item_ast<'tcx>(tcx: &ty::ctxt<'tcx>, did: DefId) -> Option<&'tcx TraitItem> {
+    if did.krate == LOCAL_CRATE {
+        match tcx.map.get(did.node) {
+            ast_map::NodeTraitItem(ast) => Some(ast),
+            _ => panic!("expected NodeTraitItem"),
+        }
+    } else {
+        let result = csearch::maybe_get_item_ast(
+            tcx, did,
+            |a,b,c,d| astencode::decode_inlined_item(a, b, c, d));
+        let item = match result {
+            csearch::not_found => return None,
+            csearch::found(item) => item,
+            csearch::found_parent(_, item) => item,
+        };
+        match item {
+            &IITraitItem(_, ref ast) => Some(ast),
+            _ => panic!("expected IITraitItem"),
+        }
+    }
+}
+
+fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String {
+    let mangled_name = mangled_def_name(trcx, local_def(method.id));
+
+    /*
+    if filter_fn.contains(&mangled_name) {
+        return format!("");
+    };
+    */
+
+    let (impl_generics, trait_ref, self_ty, items) = match trait_.node {
+        ItemImpl(ref a, ref b, ref c, ref d) => (a, b, c, d),
+        _ => panic!("expected ItemImpl"),
+    };
+
+    let (name, generics, _, exp_self, style, decl, body, _) = match method.node {
+        MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
+        MethMac(_) => panic!("unexpected MethMac"),
+    };
+
+    let mut arg_strs = vec![];
+
+
+
+    let self_arg = match exp_self.node {
+        SelfStatic => None,
+        SelfValue(ref name) =>
+            Some(format!("{} {}",
+                         name.trans(trcx),
+                         self_ty.trans(trcx))),
+        SelfRegion(ref opt_lifetime, mutbl, ref name) =>
+            Some(format!("{} {} {} {}",
+                         name.trans(trcx),
+                         match mutbl {
+                             MutMutable => "ref_mut",
+                             MutImmutable => "ref",
+                         },
+                         match *opt_lifetime {
+                             Some(ref lifetime) =>
+                                 lifetime.trans(trcx),
+                             None => "r_anon_0".into_string(),
+                         },
+                         self_ty.trans(trcx))),
+        SelfExplicit(ref ty, ref name) =>
+            Some(format!("{} {}",
+                         name.trans(trcx),
+                         self_ty.trans(trcx))),
+    };
+    let offset = match self_arg {
+        Some(arg) => {
+            arg_strs.push(arg);
+            1
+        },
+        None => 0,
+    };
+
+    let impl_clause = match *trait_ref {
+        Some(ref trait_ref) => {
+            let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
+            let mut tys = vec![];
+            let mut lifes = vec![];
+            match last_seg.parameters {
+                AngleBracketedParameters(ref params) => {
+                    for life in params.lifetimes.iter() {
+                        lifes.push(life.trans(trcx));
+                    }
+                    for ty in params.types.iter() {
+                        tys.push(ty.trans(trcx));
+                    }
+                },
+                ParenthesizedParameters(_) =>
+                    panic!("unsupported ParenthesizedParameters"),
+            }
+            tys.push(self_ty.trans(trcx));
+
+            format!("1 impl {}_{} {} {}",
+                    mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
+                    name.trans(trcx),
+                    lifes.trans(trcx),
+                    tys.trans(trcx))
+        },
+        None => format!("0"),
+    };
+
+    let (lifetimes, ty_params) = combine_generics(trcx, impl_generics, generics);
+
+    arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
+    format!("fn {} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+            mangled_name,
+            lifetimes.trans(trcx),
+            ty_params.trans(trcx),
+            arg_strs.trans(trcx),
+            decl.output.trans(trcx),
+            impl_clause,
+            decl.output.trans(trcx),
+            match style {
+                UnsafeFn => "unsafe",
+                NormalFn => "block",
+            },
+            body.stmts.trans(trcx),
+            body.expr.as_ref().map(|e| e.trans(trcx))
+            .unwrap_or("[unit] simple_literal _method".into_string()))
+}
+
+fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
+    let mut names = trcx.observed_abstract_fns.iter()
+                        .map(|(k,v)| (k.clone(), v.clone()))
+                        .collect::<Vec<_>>();
+    names.sort();
+    let names = names;
+
+
+    for (name, (trait_did, method_did)) in names.into_iter() {
+        let (trait_generics, method_generics, inputs, output) = {
+            let trait_defs = trcx.tcx.trait_defs.borrow();
+            let impl_or_trait_items = trcx.tcx.impl_or_trait_items.borrow();
+
+            let opt_trait = trait_defs.get(&trait_did);
+            let opt_method = impl_or_trait_items.get(&method_did);
+
+            let trait_ = match opt_trait {
+                None => panic!("can't find trait for {}", name),
+                Some(ref t) => &**t,
+            };
+            let method = match opt_method {
+                None => panic!("can't find method for {}", name),
+                Some(x) => match x {
+                    &ty::MethodTraitItem(ref m) => &**m,
+                    _ => panic!("expected MethodTraitItem"),
+                }
+            };
+
+            (trait_.generics.clone(),
+             method.generics.clone(),
+             method.fty.sig.inputs.clone(),
+             method.fty.sig.output.clone())
+        };
+
+        let mut args = Vec::new();
+        for (i, arg) in inputs.iter().enumerate() {
+            args.push(format!("arg{} {}", i, arg.trans(trcx)));
+        }
+
+        let mut regions = Vec::new();
+        /*
+        for region in trait_generics.regions.iter() {
+            regions.push(format!("{}{}",
+                                 region.space.trans(trcx),
+                                 region.index));
+        }
+        */
+        for region in method_generics.regions.iter() {
+            regions.push(format!("{}{}",
+                                 region.space.trans(trcx),
+                                 region.index));
+        }
+
+        let mut types = Vec::new();
+        /*
+        for ty_param in trait_generics.types.iter() {
+            types.push(format!("{}{}",
+                               ty_param.space.trans(trcx),
+                               ty_param.index));
+        }
+        */
+        for ty_param in method_generics.types.iter() {
+            types.push(format!("{}{}",
+                               ty_param.space.trans(trcx),
+                               ty_param.index));
+        }
+
+        let return_ty = match output {
+            ty::FnConverging(ty) => ty.trans(trcx),
+            ty::FnDiverging => format!("bottom"),
+        };
+
+        println!("abstract_fn {} {} {} args {} return {}",
+                 name,
+                 regions.trans(trcx),
+                 types.trans(trcx),
+                 args.trans(trcx),
+                 return_ty);
+
+
+        /*
+        println!("abstract_fn {}: trait={}, method={}",
+                 name, trait_did, method_did);
+        println!("  trait ast: {}", find_item_ast(trcx.tcx, trait_did).is_some());
+        println!("  method ast: {}", find_item_ast(trcx.tcx, method_did).is_some());
+        println!("  method item: {}", trcx.tcx.impl_or_trait_items.borrow().get(&method_did).is_some());
+        */
+    }
+}
+
 
 pub fn process(tcx: &ty::ctxt, filter_fn : HashSet<String>) {
     let krate = tcx.map.krate();
-    let mut trcx = TransCtxt { tcx: tcx };
-    let mut visitor = TransVisitor { trcx: &mut trcx, filter_fn: filter_fn };
-    visit::walk_crate(&mut visitor, krate);
+    let mut trcx = TransCtxt {
+        tcx: tcx,
+        observed_abstract_fns: HashMap::new(),
+    };
+    {
+        let mut visitor = TransVisitor { trcx: &mut trcx, filter_fn: filter_fn };
+        visit::walk_crate(&mut visitor, krate);
+    }
+    print_abstract_fn_decls(&mut trcx);
 }

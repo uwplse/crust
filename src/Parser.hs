@@ -77,6 +77,9 @@ data VariantDef = VariantDef Name [Ty]
 data FnDef = FnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) Expr
   deriving (Eq, Show, Data, Typeable)
 
+data AbstractFnDef = AbstractFnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty
+  deriving (Eq, Show, Data, Typeable)
+
 data ArgDecl = ArgDecl Name Ty
   deriving (Eq, Show, Data, Typeable)
 
@@ -136,6 +139,7 @@ data Item =
     | IEnum EnumDef
     | IConst ConstDef
     | IFn FnDef
+    | IAbstractFn AbstractFnDef
     | IMeta String
   deriving (Eq, Show, Data, Typeable)
 
@@ -194,6 +198,15 @@ fnDef = do
     f <- f <$> return implClause
     exactWord "body"
     f <$> expr
+
+abstractFnDef = do
+    exactWord "abstract_fn"
+    f <- AbstractFnDef <$> name <*> counted lifetimeParam <*> counted tyParam
+    exactWord "args"
+    f <- f <$> counted argDecl
+    exactWord "return"
+    f <$> ty
+
 argDecl = ArgDecl <$> name <*> ty
 
 expr = Expr <$> ty <*> expr_
@@ -244,6 +257,7 @@ item = choice
     , IEnum <$> enumDef
     , IConst <$> constDef
     , IFn <$> fnDef
+    , IAbstractFn <$> abstractFnDef
     ]
 
 program = many item
@@ -306,6 +320,12 @@ instance Pp FnDef where
          "return", pp retTy,
          pp implClause,
          "body", pp body]
+
+instance Pp AbstractFnDef where
+    pp' (AbstractFnDef name lifetimeParams tyParams args retTy) =
+        ["abstract_fn", pp name, pp lifetimeParams, pp tyParams,
+         "args", pp args,
+         "return", pp retTy]
 
 instance Pp ArgDecl where
     pp' (ArgDecl a b) = map pp [pp a, pp b]
@@ -372,5 +392,6 @@ instance Pp Item where
                     IEnum a -> pp a
                     IConst a -> pp a
                     IFn a -> pp a
+                    IAbstractFn a -> pp a
                     IMeta s -> s
         in [pp a, "\n"]

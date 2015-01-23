@@ -100,6 +100,14 @@ ppFnDef (FnDef name lps tps args retTy implClause body) = do
                 tell "/* " >> ppImplClause implClause >> tell " */ "
         ppExpr body
 
+ppAbstractFnDef :: (MonadReader Int m, MonadWriter String m) => AbstractFnDef -> m ()
+ppAbstractFnDef (AbstractFnDef name lps tps args retTy) = do
+    line $ do
+        tell "/* abstract */ fn " >> tell name
+        listNe angles (map ppLifetime lps ++ map tell tps)
+        parens $ commaSep $ map ppArgDecl args
+        tell " -> " >> ppTy retTy >> tell ";"
+
 ppArgDecl :: (MonadReader Int m, MonadWriter String m) => ArgDecl -> m ()
 ppArgDecl (ArgDecl name ty) = tell name >> tell ": " >> ppTy ty
 
@@ -143,7 +151,7 @@ ppExpr (Expr ty e) = case e of
         inline (tell "unsafe {") (tell "}") $ mapM ppStmt stmts >> line (ppExpr expr)
     EAssign lhs rhs -> ppExpr lhs >> tell " = " >> ppExpr rhs
     EReturn expr -> tell "return " >> ppExpr expr
-        
+
 ppPat (Pattern ty p) = case p of
     PVar name -> tell name
     PConst name -> tell name
@@ -165,6 +173,7 @@ ppItem (IStruct s) = ppStructDef s
 ppItem (IEnum e) = ppEnumDef e
 ppItem (IConst c) = ppConstDef c
 ppItem (IFn f) = ppFnDef f
+ppItem (IAbstractFn f) = ppAbstractFnDef f
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m
 
 runPp :: (ReaderT Int (Writer String) ()) -> String
