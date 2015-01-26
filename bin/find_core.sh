@@ -12,6 +12,6 @@ if [ "$RUSTC_LOC" = "" ]; then
 fi
 
 RUST_BIN=$(dirname $RUSTC_LOC)
-RUST_LIB=$(find $RUST_BIN/../lib -mindepth 2 -maxdepth 2 -type d)/lib
+RUST_LIB=$(find $RUST_BIN/../lib -mindepth 1 -type d -name lib)
 
 cp $RUST_LIB/libcore-4e7c5e5c.rlib $ROOT_DIR/../lib/

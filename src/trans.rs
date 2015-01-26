@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use rustc::metadata::csearch;
 use rustc::middle::astencode;
+use rustc::middle::region;
 use rustc::middle::subst::ParamSpace::*;
 use rustc::middle::subst::ParamSpace;
 use rustc::middle::subst;
 use rustc::middle::ty;
-use rustc::middle::typeck::{MethodCall, MethodCallee, MethodOrigin};
-use rustc::middle::typeck;
+use rustc::middle::ty::{MethodCall, MethodCallee, MethodOrigin};
+//use rustc::middle::typeck;
 use rustc::util::ppaux::Repr;
 use syntax::ast::*;
 use syntax::ast_map;
@@ -107,24 +108,24 @@ impl Trans for String {
 
 impl Trans for Ident {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        self.as_str().into_string()
+        format!("{}", self.as_str())
     }
 }
 
 impl Trans for Name {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        self.as_str().into_string()
+        format!("{}", self.as_str())
     }
 }
 
 impl Trans for ParamSpace {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        match *self {
-            TypeSpace => "t_".into_string(),
-            SelfSpace => "s_".into_string(),
-            AssocSpace => "a_".into_string(),
-            FnSpace => "f_".into_string(),
-        }
+        format!("{}",
+                match *self {
+                    TypeSpace => "t_",
+                    SelfSpace => "s_",
+                    FnSpace => "f_",
+                })
     }
 }
 
@@ -165,7 +166,7 @@ impl TransExtra<ParamSpace> for TyParam {
 }
 */
 
-impl Trans for subst::Substs {
+impl<'tcx> Trans for subst::Substs<'tcx> {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         format!("{} {}",
                 self.regions.trans(trcx),
@@ -186,7 +187,8 @@ impl Trans for FunctionRetTy {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         match *self {
             Return(ref t) => t.trans(trcx),
-            NoReturn(_) => "bottom".into_string(),
+            NoReturn(_) => format!("bottom"),
+            DefaultReturn(_) => format!("unit"),
         }
     }
 }
@@ -205,7 +207,7 @@ impl Trans for Arg {
         let name = match self.pat.node {
             PatIdent(_, span_ident, _) => {
                 // TODO: check that span_ident doesn't refer to a nullary enum variant
-                span_ident.node.as_str().into_string()
+                format!("{}", span_ident.node.as_str())
             },
             _ => panic!("unsupported Pat_ variant in Arg"),
         };
@@ -215,7 +217,7 @@ impl Trans for Arg {
 
 impl Trans for Ty {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        match trcx.tcx.ast_ty_to_ty_cache.borrow().find(&self.id) {
+        match trcx.tcx.ast_ty_to_ty_cache.borrow().get(&self.id) {
             Some(&ty::atttce_resolved(t)) => t.trans(trcx),
             //_ => panic!("no ast_ty_to_ty_cache entry for {}", self),
             _ => format!("[[no_ty_to_ty {}]]", self.repr(trcx.tcx)),
@@ -223,23 +225,23 @@ impl Trans for Ty {
     }
 }
 
-impl Trans for ty::t {
+impl<'tcx> Trans for ty::Ty<'tcx> {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         use rustc::middle::ty::sty::*;
-        let s = match ty::get(*self).sty {
-            ty_bool => "bool".into_string(),
+        let s = match self.sty {
+            ty_bool => format!("bool"),
             // ty_char
             ty_int(ity) => format!("int {}",
                                    match ity {
-                                       TyI64 => 64u,
-                                       TyI32 | TyI => 32,
+                                       TyI64 => 64us,
+                                       TyI32 | TyIs(_) => 32,
                                        TyI16 => 16,
                                        TyI8 => 8,
                                    }),
             ty_uint(uty) => format!("uint {}",
                                     match uty {
-                                        TyU64 => 64u,
-                                        TyU32 | TyU => 32,
+                                        TyU64 => 64us,
+                                        TyU32 | TyUs(_) => 32,
                                         TyU16 => 16,
                                         TyU8 => 8,
                                     }),
@@ -249,7 +251,7 @@ impl Trans for ty::t {
                                                 mangled_def_name(trcx, did),
                                                 substs.trans(trcx)),
             // ty_uniq
-            ty_str => "str".into_string(),
+            ty_str => format!("str"),
             // ty_vec
             ty_ptr(mt) => format!("{} {}",
                                   match mt.mutbl {
@@ -264,7 +266,7 @@ impl Trans for ty::t {
                                           },
                                           r.trans(trcx),
                                           mt.ty.trans(trcx)),
-            ty_bare_fn(_) => "fn".into_string(),
+            ty_bare_fn(_, _) => format!("fn"),
             // ty_closure
             // ty_trait
             // TODO: handle substs
@@ -272,7 +274,7 @@ impl Trans for ty::t {
                                                   mangled_def_name(trcx, did),
                                                   substs.trans(trcx)),
             // ty_unboxed_closure
-            ty_tup(ref ts) if ts.len() == 0 => "unit".into_string(),
+            ty_tup(ref ts) if ts.len() == 0 => format!("unit"),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(trcx)),
             ty_param(ref param) => {
                 format!("var {}{}",
@@ -282,7 +284,7 @@ impl Trans for ty::t {
             // ty_open
             // ty_infer
             // ty_err
-            _ => panic!("unrecognized type: {}", self.repr(trcx.tcx)),
+            _ => panic!("unrecognized type: {:?}", self),
 
         };
         format!("[{}]", s)
@@ -296,10 +298,15 @@ impl Trans for ty::Region {
                 format!("r_named_0_{}", id)
                 //format!("r{}{}", space.trans(trcx), idx)
             },
-            ty::ReLateBound(binder_id, ref br) => br.trans_extra(trcx, Some(binder_id)),
+            ty::ReLateBound(db_idx, ref br) => {
+                br.trans_extra(trcx, None)
+            },
             ty::ReFree(ref fr) => fr.bound_region.trans_extra(trcx, None),
-            ty::ReStatic => "r_static".into_string(),
-            ty::ReScope(id) => format!("r_scope_{}", id),
+            ty::ReStatic => format!("r_static"),
+            ty::ReScope(extent) => {
+                let region::CodeExtent::Misc(id) = extent;
+                format!("r_scope_{}", id)
+            },
             _ => panic!("unsupported Region variant"),
         }
     }
@@ -324,7 +331,7 @@ impl TransExtra<Option<NodeId>> for ty::BoundRegion {
                 "[[BrNamed]]".into_string()
             },
             */
-            _ => "[[bad BoundRegion]]".into_string(), //panic!("unsupported BoundRegion variant"),
+            _ => panic!("unsupported BoundRegion variant"),
         }
     }
 }
@@ -338,7 +345,7 @@ impl Trans for Block {
                 },
                 self.stmts.trans(trcx),
                 self.expr.as_ref().map(|e| e.trans(trcx))
-                    .unwrap_or("[unit] simple_literal _Block".into_string()))
+                    .unwrap_or(format!("[unit] simple_literal _Block")))
     }
 }
 
@@ -358,7 +365,7 @@ impl Trans for Decl {
         match self.node {
             DeclLocal(ref local) => local.trans(trcx),
             // TODO: handle inner items
-            DeclItem(_) => "expr ([unit] simple_literal _DeclItem)".into_string(),
+            DeclItem(_) => format!("expr ([unit] simple_literal _DeclItem)"),
         }
     }
 }
@@ -368,7 +375,7 @@ impl Trans for Local {
         let name = match self.pat.node {
             PatIdent(_, span_ident, _) => {
                 // TODO: check that span_ident doesn't refer to a nullary enum variant
-                span_ident.node.as_str().into_string()
+                format!("{}", span_ident.node.as_str())
             },
             _ => panic!("unsupported Pat_ variant in Local"),
         };
@@ -393,9 +400,9 @@ impl Trans for Lifetime {
         use rustc::middle::resolve_lifetime::DefRegion::*;
         match *trcx.tcx.named_region_map.get(&self.id)
                   .expect("missing DefRegion") {
-            DefStaticRegion => "r_static".into_string(),
+            DefStaticRegion => format!("r_static"),
             DefEarlyBoundRegion(_, _, id) |
-            DefLateBoundRegion(_, _, id) =>
+            DefLateBoundRegion(_, id) =>
                 format!("r_named_{}_{}", LOCAL_CRATE, id),
             DefFreeRegion(..) => panic!("unsupported DefFreeRegion"),
         }
@@ -420,7 +427,7 @@ impl Trans for Expr {
                     let name = mangled_def_name(trcx, did);
                     let substs = match trcx.tcx.item_substs.borrow().get(&func.id) {
                         Some(item_substs) => item_substs.substs.trans(trcx),
-                        None => "0 0".into_string(),
+                        None => format!("0 0"),
                     };
                     format!("call {} {} {}",
                             name,
@@ -429,7 +436,7 @@ impl Trans for Expr {
                 }
             },
             ExprMethodCall(name, ref tys, ref args) => {
-                let call = typeck::MethodCall::expr(self.id);
+                let call = MethodCall::expr(self.id);
                 let map = trcx.tcx.method_map.borrow();
                 let callee = &map[call];
                 let name = match callee.origin {
@@ -458,18 +465,18 @@ impl Trans for Expr {
                         callee.substs.trans(trcx),
                         args.trans(trcx))
             },
-            ExprTup(ref xs) if xs.len() == 0 => "simple_literal _".into_string(),
+            ExprTup(ref xs) if xs.len() == 0 => format!("simple_literal _"),
             ExprTup(ref xs) => format!("tuple_literal {}", xs.trans(trcx)),
             ExprBinary(op, ref a, ref b) => {
-                match trcx.tcx.method_map.borrow().get(&typeck::MethodCall::expr(self.id)) {
+                match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => match callee.origin {
-                        typeck::MethodStatic(did) => {
+                        ty::MethodStatic(did) => {
                             format!("[[ExprBinary: overloaded binop]]")
                         },
                         _ => panic!("bad origin for callee in ExprBinary"),
                     },
                     None => {
-                        format!("binop {} {} {}",
+                        format!("binop {:?} {} {}",
                                 op,
                                 a.trans(trcx),
                                 b.trans(trcx))
@@ -477,9 +484,9 @@ impl Trans for Expr {
                 }
             },
             ExprUnary(op, ref a) => {
-                match trcx.tcx.method_map.borrow().get(&typeck::MethodCall::expr(self.id)) {
+                match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => match callee.origin {
-                        typeck::MethodStatic(did) => {
+                        ty::MethodStatic(did) => {
                             format!("[[ExprUnary: overloaded binop]]")
                         },
                         _ => panic!("bad origin for callee in ExprUnary"),
@@ -487,7 +494,7 @@ impl Trans for Expr {
                     None => {
                         match op {
                             UnDeref => format!("deref {}", a.trans(trcx)),
-                            _ => format!("unop {} {}",
+                            _ => format!("unop {:?} {}",
                                          op,
                                          a.trans(trcx)),
                         }
@@ -510,7 +517,7 @@ impl Trans for Expr {
                         cond.trans(trcx),
                         ty.trans(trcx),
                         then.trans(trcx),
-                        opt_else.as_ref().map_or("[unit] simple_literal _ExprIf".into_string(),
+                        opt_else.as_ref().map_or(format!("[unit] simple_literal _ExprIf"),
                                                  |e| e.trans(trcx)))
             },
                 
@@ -538,7 +545,7 @@ impl Trans for Expr {
                         l.trans(trcx),
                         r.trans(trcx)),
             // ExprAssignOp
-            ExprField(ref expr, field, _) =>
+            ExprField(ref expr, field) =>
                 format!("field {} {}",
                         expr.trans(trcx),
                         field.node.as_str()),
@@ -556,7 +563,7 @@ impl Trans for Expr {
                         DefLocal(..) =>
                             format!("var {}",
                                     path.segments[path.segments.len() - 1]
-                                        .identifier.as_str().into_string()),
+                                        .identifier.as_str()),
                         DefStruct(did) =>
                             format!("struct_literal 0"),
                         d => format!("const {}",
@@ -571,7 +578,7 @@ impl Trans for Expr {
             ExprRet(ref opt_expr) =>
                 format!("return {}",
                         opt_expr.as_ref().map(|e| e.trans(trcx))
-                                .unwrap_or("[unit] simple_literal _ExprRet".into_string())),
+                                .unwrap_or(format!("[unit] simple_literal _ExprRet"))),
             // ExprInlineAsm
             // ExprMac
             ExprStruct(ref name, ref fields, ref opt_base) => {
@@ -623,7 +630,7 @@ fn adjust_expr(trcx: &mut TransCtxt,
                 Some(ty::AutoPtr(region, mutbl, ref autoref)) => {
                     assert!(autoref.is_none());
                     let mt = ty::mt { ty: result_ty, mutbl: mutbl };
-                    result_ty = ty::mk_t(trcx.tcx, ty::ty_rptr(region, mt));
+                    result_ty = ty::mk_t(trcx.tcx, ty::ty_rptr(trcx.tcx.mk_region(region), mt));
                     result = format!("({} addr_of {})",
                                      result_ty.trans(trcx),
                                      result);
@@ -641,18 +648,18 @@ fn adjust_expr(trcx: &mut TransCtxt,
 
             //assert!(adr.autoref.is_none());
         },
-        ty::AdjustAddEnv(_) => panic!("unsupported AdjustAddEnv"),
+        ty::AdjustReifyFnPointer(_) => panic!("unsupported AdjustAddEnv"),
     }
 
     result
 }
 
-fn deref_once(trcx: &mut TransCtxt,
-              expr: &Expr,
-              level: uint,
-              expr_str: String,
-              expr_ty: ty::t) -> (String, ty::t) {
-    match ty::get(expr_ty).sty {
+fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
+                   expr: &Expr,
+                   level: usize,
+                   expr_str: String,
+                   expr_ty: ty::Ty<'tcx>) -> (String, ty::Ty<'tcx>) {
+    match expr_ty.sty {
         ty::ty_ptr(ty::mt { ty, .. }) |
         ty::ty_rptr(_, ty::mt { ty, .. }) => {
             let new_expr_str = format!("({} deref {})",
@@ -664,7 +671,7 @@ fn deref_once(trcx: &mut TransCtxt,
     }
 }
 
-fn find_variant(trcx: &mut TransCtxt, id: NodeId) -> Option<(String, uint)> {
+fn find_variant(trcx: &mut TransCtxt, id: NodeId) -> Option<(String, usize)> {
     use rustc::middle::def::*;
 
     let def_map = trcx.tcx.def_map.borrow();
@@ -677,7 +684,7 @@ fn find_variant(trcx: &mut TransCtxt, id: NodeId) -> Option<(String, uint)> {
     match *def {
         DefVariant(enum_did, variant_did, _is_structure) => {
             let info = ty::enum_variant_with_id(trcx.tcx, enum_did, variant_did);
-            Some((mangled_def_name(trcx, variant_did), info.disr_val as uint))
+            Some((mangled_def_name(trcx, variant_did), info.disr_val as usize))
         },
         _ => None,
     }
@@ -712,7 +719,7 @@ impl Trans for Arm {
 impl Trans for Pat {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         let variant = match self.node {
-            PatWild(PatWildSingle) => "wild".into_string(),
+            PatWild(PatWildSingle) => format!("wild"),
             PatIdent(_mode, name, None) => {
                 if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
                     format!("enum {} {} 0",
@@ -750,7 +757,7 @@ impl Trans for Pat {
 impl Trans for StructField {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         format!("{} {}",
-                self.node.ident().unwrap().as_str().into_string(),
+                self.node.ident().unwrap().as_str(),
                 self.node.ty.trans(trcx))
     }
 }
@@ -829,22 +836,25 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                             decl.trans(trcx),
                             decl.output.trans(trcx),
                             match style {
-                                UnsafeFn => "unsafe",
-                                NormalFn => "block",
+                                Unsafety::Unsafe => "unsafe",
+                                Unsafety::Normal => "block",
                             },
                             body.stmts.trans(trcx),
                             body.expr.as_ref().map(|e| e.trans(trcx))
-                                .unwrap_or("[unit] simple_literal _ItemFn".into_string()))
+                                .unwrap_or(format!("[unit] simple_literal _ItemFn")))
                 }
             },
-            ItemImpl(ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
+            ItemImpl(_, _, ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
                 let mut result = String::new();
                 for item in items.iter() {
                     let part = match *item {
                         MethodImplItem(ref method) => {
                             trans_method(trcx, self, &**method)
                         },
-                        TypeImplItem(_) => panic!("unsupported TypeImplItem"),
+                        TypeImplItem(_) => {
+                            // nothing to translate
+                            String::new()
+                        },
                     };
                     result.push_str(part.as_slice());
                     result.push_str("\n");
@@ -857,7 +867,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                         ty.trans(trcx),
                         expr.trans(trcx))
             },
-            _ => "".into_string(),
+            _ => format!(""),
         }
     }
 }
@@ -873,7 +883,7 @@ fn combine_generics(trcx: &mut TransCtxt, impl_g: &Generics, fn_g: &Generics) ->
 }
 
 fn clean_path_elem(s: &str, out: &mut String) {
-    let mut depth = 0u;
+    let mut depth = 0us;
     for c in s.chars() {
         if c == '<' {
             depth += 1;
@@ -908,6 +918,7 @@ fn mangled_def_name(trcx: &mut TransCtxt, did: DefId) -> String {
     name
 }
 
+/*
 fn find_item_ast<'tcx>(tcx: &ty::ctxt<'tcx>, did: DefId) -> Option<&'tcx Item> {
     if did.krate == LOCAL_CRATE {
         match tcx.map.get(did.node) {
@@ -951,6 +962,7 @@ fn find_trait_item_ast<'tcx>(tcx: &ty::ctxt<'tcx>, did: DefId) -> Option<&'tcx T
         }
     }
 }
+*/
 
 fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String {
     let mangled_name = mangled_def_name(trcx, local_def(method.id));
@@ -962,7 +974,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
     */
 
     let (impl_generics, trait_ref, self_ty, items) = match trait_.node {
-        ItemImpl(ref a, ref b, ref c, ref d) => (a, b, c, d),
+        ItemImpl(_, _, ref a, ref b, ref c, ref d) => (a, b, c, d),
         _ => panic!("expected ItemImpl"),
     };
 
@@ -991,7 +1003,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                          match *opt_lifetime {
                              Some(ref lifetime) =>
                                  lifetime.trans(trcx),
-                             None => "r_anon_0".into_string(),
+                             None => format!("r_anon_0"),
                          },
                          self_ty.trans(trcx))),
         SelfExplicit(ref ty, ref name) =>
@@ -1047,12 +1059,12 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
             impl_clause,
             decl.output.trans(trcx),
             match style {
-                UnsafeFn => "unsafe",
-                NormalFn => "block",
+                Unsafety::Unsafe => "unsafe",
+                Unsafety::Normal => "block",
             },
             body.stmts.trans(trcx),
             body.expr.as_ref().map(|e| e.trans(trcx))
-            .unwrap_or("[unit] simple_literal _method".into_string()))
+                .unwrap_or(format!("[unit] simple_literal _method")))
 }
 
 fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
@@ -1085,8 +1097,8 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
 
             (trait_.generics.clone(),
              method.generics.clone(),
-             method.fty.sig.inputs.clone(),
-             method.fty.sig.output.clone())
+             method.fty.sig.0.inputs.clone(),
+             method.fty.sig.0.output.clone())
         };
 
         let mut args = Vec::new();

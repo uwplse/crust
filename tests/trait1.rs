@@ -17,8 +17,9 @@ impl T for S {
     }
 }
 
-impl Add<S, S> for S {
-    fn add(&self, other: &S) -> S {
+impl Add<S> for S {
+    type Output = S;
+    fn add(self, other: S) -> S {
         S { x: self.x + other.x }
     }
 }

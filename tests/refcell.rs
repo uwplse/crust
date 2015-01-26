@@ -14,10 +14,11 @@
 
 #![crate_type = "lib"]
 #![no_std]
-#![feature(phase, lang_items, unsafe_destructor)]
+#![feature(lang_items, unsafe_destructor)]
 
-#[phase(plugin, link)] extern crate core;
-use core::prelude::{Copy, Drop, Deref, DerefMut};
+#[macro_use] extern crate core;
+use core::prelude::{Copy, Drop};
+use core::ops::{Deref, DerefMut};
 //use core::prelude::{Option, Some, None};
 //use core::kinds::marker;
 //use core::cell::UnsafeCell;
@@ -162,7 +163,8 @@ impl<'b, T> Drop for Ref<'b, T> {
     }
 }
 
-impl<'b, T> Deref<T> for Ref<'b, T> {
+impl<'b, T> Deref for Ref<'b, T> {
+    type Target = T;
     fn deref<'a>(&'a self) -> &'a T {
         unsafe { &*self._parent.value.get() }
     }
@@ -183,13 +185,14 @@ impl<'b, T> Drop for RefMut<'b, T> {
     }
 }
 
-impl<'b, T> Deref<T> for RefMut<'b, T> {
+impl<'b, T> Deref for RefMut<'b, T> {
+    type Target = T;
     fn deref<'a>(&'a self) -> &'a T {
         unsafe { &*self._parent.value.get() }
     }
 }
 
-impl<'b, T> DerefMut<T> for RefMut<'b, T> {
+impl<'b, T> DerefMut for RefMut<'b, T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut T {
         unsafe { &mut *self._parent.value.get() }
     }
