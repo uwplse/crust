@@ -1,3 +1,4 @@
+use std::boxed::BoxAny;
 use std::collections::{HashMap, HashSet};
 
 use rustc::metadata::csearch;
@@ -802,7 +803,20 @@ struct TransVisitor<'b, 'a: 'b, 'tcx: 'a> {
 
 impl<'b, 'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'b, 'a, 'tcx> {
     fn visit_item(&mut self, i: &'v Item) {
-        println!("{}", i.trans_extra(self.trcx, &self.filter_fn));
+        let mut opt_str = None;
+        let result = unsafe {
+            ::std::rt::unwind::try(|| {
+                opt_str = Some(i.trans_extra(self.trcx, &self.filter_fn));
+            })
+        };
+        match result {
+            Ok(()) => println!("{}", opt_str.unwrap()),
+            Err(e) => {
+                if let Ok(msg) = e.downcast::<String>() {
+                    println!("# error: {}", msg);
+                }
+            },
+        }
         visit::walk_item(self, i);
     }
 }
