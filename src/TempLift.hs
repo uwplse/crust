@@ -106,7 +106,12 @@ liftTempsM x = traverse go concat x >>= return . fst
 
     goStmt :: [Decl] -> Stmt -> LifterM Stmt
     goStmt ds (SExpr e) = do
-        sexpr $ applyDecls ds e
+        kind <- getKind (typeOf e)
+        if hasStableLocation e || kind == Copy then
+            sexpr $ applyDecls ds e
+        else do
+            n <- fresh "lifttemp"
+            let_ n $ applyDecls ds e
     goStmt ds (SLet n ty e) = do
         let_ n $ applyDecls ds e
 
