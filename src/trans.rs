@@ -277,6 +277,13 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => format!("unit"),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(trcx)),
+            ty_projection(ref proj) => {
+                format!("abstract {}_{} {}",
+                        mangled_def_name(trcx, proj.trait_ref.def_id),
+                        proj.item_name.trans(trcx),
+                        proj.trait_ref.substs.trans(trcx))
+
+            },
             ty_param(ref param) => {
                 format!("var {}{}",
                         param.space.trans(trcx),
@@ -410,6 +417,35 @@ impl Trans for Lifetime {
     }
 }
 
+fn trans_method_call(trcx: &mut TransCtxt,
+                     callee: &MethodCallee,
+                     args: Vec<String>) -> String {
+    let name = match callee.origin {
+        MethodOrigin::MethodStatic(did) => {
+            mangled_def_name(trcx, did)
+        },
+        MethodOrigin::MethodTypeParam(ref mp) => {
+            let trait_did = mp.trait_ref.def_id;
+            // trait_ref substs are actually the same as the callee substs, so we can
+            // ignore them here.
+            let item_id = trcx.tcx.trait_item_def_ids.borrow()[trait_did][mp.method_num];
+            let method_did = match item_id {
+                ty::ImplOrTraitItemId::MethodTraitItemId(did) => did,
+                ty::ImplOrTraitItemId::TypeTraitItemId(_) =>
+                    panic!("unexpected TypeTraitItemId in method call"),
+            };
+            let name = mangled_def_name(trcx, method_did);
+            trcx.observed_abstract_fns.insert(name.clone(), (trait_did, method_did));
+            name
+        },
+        _ => panic!("unsupported MethodOrigin variant"),
+    };
+    format!("call {} {} {}",
+            name,
+            callee.substs.trans(trcx),
+            args.trans(trcx))
+}
+
 impl Trans for Expr {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         let mut add_ty = true;
@@ -440,41 +476,17 @@ impl Trans for Expr {
                 let call = MethodCall::expr(self.id);
                 let map = trcx.tcx.method_map.borrow();
                 let callee = &map[call];
-                let name = match callee.origin {
-                    MethodOrigin::MethodStatic(did) => {
-                        mangled_def_name(trcx, did)
-                    },
-                    MethodOrigin::MethodTypeParam(ref mp) => {
-                        let trait_did = mp.trait_ref.def_id;
-                        // trait_ref substs are actually the same as the callee substs, so we can
-                        // ignore them here.
-                        let item_id = trcx.tcx.trait_item_def_ids.borrow()[trait_did][mp.method_num];
-                        let method_did = match item_id {
-                            ty::ImplOrTraitItemId::MethodTraitItemId(did) => did,
-                            ty::ImplOrTraitItemId::TypeTraitItemId(_) =>
-                                panic!("unexpected TypeTraitItemId in method call"),
-                        };
-                        let name = mangled_def_name(trcx, method_did);
-                        trcx.observed_abstract_fns.insert(name.clone(), (trait_did, method_did));
-                        name
-                    },
-                    _ => panic!("unsupported MethodOrigin variant"),
-                };
-                assert!(tys.len() == 0);
-                format!("call {} {} {}",
-                        name,
-                        callee.substs.trans(trcx),
-                        args.trans(trcx))
+                let arg_strs = args.iter().map(|x| x.trans(trcx)).collect();
+                assert!(tys.len() == 0); // no idea what `tys` does
+                trans_method_call(trcx, callee, arg_strs)
             },
             ExprTup(ref xs) if xs.len() == 0 => format!("simple_literal _"),
             ExprTup(ref xs) => format!("tuple_literal {}", xs.trans(trcx)),
             ExprBinary(op, ref a, ref b) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
-                    Some(callee) => match callee.origin {
-                        ty::MethodStatic(did) => {
-                            format!("[[ExprBinary: overloaded binop]]")
-                        },
-                        _ => panic!("bad origin for callee in ExprBinary"),
+                    Some(callee) => {
+                        let arg_strs = vec![a.trans(trcx), b.trans(trcx)];
+                        trans_method_call(trcx, callee, arg_strs)
                     },
                     None => {
                         format!("binop {:?} {} {}",
@@ -486,11 +498,9 @@ impl Trans for Expr {
             },
             ExprUnary(op, ref a) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
-                    Some(callee) => match callee.origin {
-                        ty::MethodStatic(did) => {
-                            format!("[[ExprUnary: overloaded binop]]")
-                        },
-                        _ => panic!("bad origin for callee in ExprUnary"),
+                    Some(callee) => {
+                        let arg_strs = vec![a.trans(trcx)];
+                        trans_method_call(trcx, callee, arg_strs)
                     },
                     None => {
                         match op {

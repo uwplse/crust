@@ -53,6 +53,7 @@ data Ty =
     | TFn
     | TUnit
     | TBottom
+    | TAbstract Name [Lifetime] [Ty]
   deriving (Eq, Show, Data, Typeable)
 
 type Lifetime = Name
@@ -61,6 +62,12 @@ type Name = String
 
 type LifetimeParam = Name
 type TyParam = Name
+
+data AbstractTypeDef = AbstractTypeDef Name [LifetimeParam] [TyParam]
+  deriving (Eq, Show, Data, Typeable)
+
+data AssociatedTypeDef = AssociatedTypeDef [LifetimeParam] [TyParam] ImplClause Ty
+  deriving (Eq, Show, Data, Typeable)
 
 data StructDef = StructDef Name [LifetimeParam] [TyParam] [FieldDef] (Maybe Name)
   deriving (Eq, Show, Data, Typeable)
@@ -140,6 +147,8 @@ data Item =
     | IConst ConstDef
     | IFn FnDef
     | IAbstractFn AbstractFnDef
+    | IAbstractType AbstractTypeDef
+    | IAssociatedType AssociatedTypeDef
     | IMeta String
   deriving (Eq, Show, Data, Typeable)
 
@@ -170,12 +179,19 @@ ty = tagged
     , ("fn", return TFn)
     , ("unit", return TUnit)
     , ("bottom", return TBottom)
+    , ("abstract", TAbstract <$> name <*> counted lifetime <*> counted ty)
     ]
 
 lifetime = name
 name = word
 lifetimeParam = name
 tyParam = name
+
+abstractTypeDef = exactWord "abstract_type" >>
+    AbstractTypeDef <$> name <*> counted lifetimeParam <*> counted tyParam
+
+associatedTypeDef = exactWord "associated_type" >>
+    AssociatedTypeDef <$> counted lifetimeParam <*> counted tyParam <*> implClause <*> ty
 
 structDef = exactWord "struct" >>
     StructDef <$> name <*> counted lifetimeParam <*> counted tyParam <*> counted fieldDef <*> optional name
@@ -192,9 +208,7 @@ fnDef = do
     f <- f <$> counted argDecl
     exactWord "return"
     f <- f <$> ty
-    implClause <- optional $ do
-        exactWord "impl"
-        ImplClause <$> name <*> counted lifetime <*> counted ty
+    implClause <- optional $ exactWord "impl" >> implClause
     f <- f <$> return implClause
     exactWord "body"
     f <$> expr
@@ -208,6 +222,8 @@ abstractFnDef = do
     f <$> ty
 
 argDecl = ArgDecl <$> name <*> ty
+
+implClause = ImplClause <$> name <*> counted lifetime <*> counted ty
 
 expr = Expr <$> ty <*> expr_
 expr_ = tagged
@@ -299,7 +315,14 @@ instance Pp Ty where
         TFn ->              ppGo "fn"       []
         TUnit ->            ppGo "unit"     []
         TBottom ->          ppGo "bottom"   []
+        TAbstract a b c ->  ppGo "abstract" [pp a, pp b, pp c]
     pp x = "[" ++ intercalate " " (pp' x) ++ "]"
+
+instance Pp AbstractTypeDef where
+    pp' (AbstractTypeDef a b c) = ppGo "abstract_type" [pp a, pp b, pp c]
+
+instance Pp AssociatedTypeDef where
+    pp' (AssociatedTypeDef a b c d) = ppGo "associated_type" [pp a, pp b, pp c, pp d]
 
 instance Pp StructDef where
     pp' (StructDef a b c d e) = ppGo "struct" [pp a, pp b, pp c, pp d, pp e]
@@ -393,5 +416,7 @@ instance Pp Item where
                     IConst a -> pp a
                     IFn a -> pp a
                     IAbstractFn a -> pp a
+                    IAbstractType a -> pp a
+                    IAssociatedType a -> pp a
                     IMeta s -> s
         in [pp a, "\n"]

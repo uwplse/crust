@@ -25,7 +25,8 @@ impl Add<S> for S {
 }
 
 fn g<A: Add<A>>(x: A, y: A) {
-    x + y;
+    let z = x + y;
+    //<A as Add<A>>::add(x, y);
 }
 
 fn crust_init() -> (S,) { (S { x: 0 },) }
