@@ -274,6 +274,8 @@ item = choice
     , IConst <$> constDef
     , IFn <$> fnDef
     , IAbstractFn <$> abstractFnDef
+    , IAbstractType <$> abstractTypeDef
+    , IAssociatedType <$> associatedTypeDef
     ]
 
 program = many item

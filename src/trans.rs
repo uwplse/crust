@@ -875,9 +875,17 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                         MethodImplItem(ref method) => {
                             trans_method(trcx, self, &**method)
                         },
-                        TypeImplItem(_) => {
-                            // nothing to translate
-                            String::new()
+                        TypeImplItem(ref td) => {
+                            let name_str = td.ident.trans(trcx);
+                            let self_str = self_ty.trans(trcx);
+                            let typ_str = td.typ.trans(trcx);
+                            format!("associated_type {} {} {}",
+                                    impl_generics.trans_extra(trcx, TypeSpace),
+                                    trans_impl_clause(trcx,
+                                                      trait_ref.as_ref().unwrap(),
+                                                      name_str,
+                                                      self_str),
+                                    typ_str)
                         },
                     };
                     result.push_str(part.as_slice());
@@ -1045,28 +1053,13 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
 
     let impl_clause = match *trait_ref {
         Some(ref trait_ref) => {
-            let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
-            let mut tys = vec![];
-            let mut lifes = vec![];
-            match last_seg.parameters {
-                AngleBracketedParameters(ref params) => {
-                    for life in params.lifetimes.iter() {
-                        lifes.push(life.trans(trcx));
-                    }
-                    for ty in params.types.iter() {
-                        tys.push(ty.trans(trcx));
-                    }
-                },
-                ParenthesizedParameters(_) =>
-                    panic!("unsupported ParenthesizedParameters"),
-            }
-            tys.push(self_ty.trans(trcx));
-
-            format!("1 impl {}_{} {} {}",
-                    mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
-                    name.trans(trcx),
-                    lifes.trans(trcx),
-                    tys.trans(trcx))
+            let name_str = name.trans(trcx);
+            let self_str = self_ty.trans(trcx);
+            format!("1 impl {}",
+                    trans_impl_clause(trcx,
+                                      trait_ref,
+                                      name_str,
+                                      self_str))
         },
         None => format!("0"),
     };
@@ -1089,6 +1082,34 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
             body.stmts.trans(trcx),
             body.expr.as_ref().map(|e| e.trans(trcx))
                 .unwrap_or(format!("[unit] simple_literal _method")))
+}
+
+fn trans_impl_clause(trcx: &mut TransCtxt,
+                     trait_ref: &TraitRef,
+                     name: String,
+                     self_ty: String) -> String {
+    let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
+    let mut tys = vec![];
+    let mut lifes = vec![];
+    match last_seg.parameters {
+        AngleBracketedParameters(ref params) => {
+            for life in params.lifetimes.iter() {
+                lifes.push(life.trans(trcx));
+            }
+            for ty in params.types.iter() {
+                tys.push(ty.trans(trcx));
+            }
+        },
+        ParenthesizedParameters(_) =>
+            panic!("unsupported ParenthesizedParameters"),
+    }
+    tys.push(self_ty.trans(trcx));
+
+    format!("{}_{} {} {}",
+            mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
+            name.trans(trcx),
+            lifes.trans(trcx),
+            tys.trans(trcx))
 }
 
 fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
