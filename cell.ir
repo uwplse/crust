@@ -65,8 +65,13 @@ fn UnsafeCell_new<0><1: T>
 #          | "fn"
 #          | "unit"
 #          | "bottom"
+#          | "abstract" name lifetime* type*
 #   lifetime ::= name
 #   name ::= word
+#
+#   abstract_type_def ::= "abstract_type" name name(lifetime_param)* name(type_param)*
+#   associated_type_def ::= "associated_type" name(lifetime_param)* name(type_param)*
+#                               name lifetimes* types* type(result)
 #
 #   struct_def ::= "struct" name(struct) name(lifetime_param)* name(type_param)* field_def* name(drop_fn)?
 #   field_def ::= name(field) type
