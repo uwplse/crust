@@ -235,6 +235,18 @@ class expr_emitter buf t_bindings =
         let mangled_fname = mangle_fn_name fn_name m_args in
         if Intrinsics.is_intrinsic_fn fn_name then
           self#handle_intrinsic fn_name mangled_fname m_args args
+        else if Env.is_abstract_fn fn_name then begin
+          let arg_types = List.map (fun (t,_) -> 
+              ((to_monomorph_c_type t_bindings t) : c_types :> Types.mono_type)
+            ) args in
+          let (mono_args,resolved_name) = Analysis.resolve_abstract_fn fn_name arg_types in
+          let mangled_name' = mangle_fn_name resolved_name @@ List.map (to_monomorph_c_type t_bindings) (mono_args :> Types.r_type list) in
+          begin
+            self#put_all [ mangled_name'; "(" ];
+            self#put_many ", " self#dump_args args;
+            self#put ")"
+          end
+        end 
         else if fn_name = "drop_glue" then
           self#handle_drop fn_name m_args args
         else begin

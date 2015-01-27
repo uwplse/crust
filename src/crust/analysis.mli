@@ -20,5 +20,8 @@ type walk_state = {
 	public_fn : FISet.t
   }
 
+exception ResolutionFailed of string
+
 val run_analysis : unit -> walk_state
 val borrow_analysis : Ir.fn_def -> borrow_info
+val resolve_abstract_fn : string -> Types.mono_type list -> (Types.mono_type list * string)

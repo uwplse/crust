@@ -26,21 +26,33 @@ let is_abstract name = Hashtbl.mem abstract_impl name
 let rec set_env = function 
   | [] -> ()
   | ((`Enum_def {
-		Ir.enum_name = adt_name;
-		_
-	}) as adt)::t
+      Ir.enum_name = adt_name;
+      _
+    }) as adt)::t
   | ((`Struct_def {
-		Ir.struct_name = adt_name;
-		_
-	  }) as adt)::t -> 
-	 Hashtbl.add adt_env adt_name adt;
-	 set_env t
+      Ir.struct_name = adt_name;
+      _
+    }) as adt)::t -> 
+    Hashtbl.add adt_env adt_name adt;
+    set_env t
   | (`Fn f)::t -> 
-	 Hashtbl.add fn_env f.Ir.fn_name f;
-	 set_env t
+    Hashtbl.add fn_env f.Ir.fn_name f;
+    (match f.Ir.fn_impl with
+     | None -> ()
+     | Some { Ir.abstract_name = a_name } ->
+       if Hashtbl.mem abstract_impl a_name then
+         Hashtbl.add abstract_impl a_name @@ f.Ir.fn_name :: (Hashtbl.find abstract_impl a_name)
+       else
+         Hashtbl.add abstract_impl a_name [ f.Ir.fn_name ]
+    );
+    set_env t
+  | `Abstract_Fn _::t ->
+    set_env t
 
 let gcc_mode = ref false;;
 let init_opt = ref false;;
+
+let is_abstract_fn = Hashtbl.mem abstract_impl
 
 let init_inference_filter file_name = 
   let f_in = open_in file_name in

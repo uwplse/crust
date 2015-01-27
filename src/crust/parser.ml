@@ -288,8 +288,8 @@ let parse_fn =
     | _ -> raise (Parse_failure ("parse_impl", tokens))
   in
   fun tokens cb ->
-  match tokens with
-  | "fn"::fn_name::t ->
+    match tokens with
+    | "fn"::fn_name::t ->
 	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return >> (maybe_parse parse_impl) >> parse_body in
 	 parse_function t (fun (((((lifetime,t_params),args),ret_type),impl_info),body) ->
 	  cb (`Fn {
@@ -302,8 +302,10 @@ let parse_fn =
 						 Ir.fn_impl = impl_info
 					   })
 	)
-  | _ -> raise (Parse_failure ("parse_fn", tokens))
-
+    | "abstract_fn"::fn_name::t ->
+      let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return in
+      parse_function t (fun _ -> cb (`Abstract_Fn fn_name))
+    | _ -> raise (Parse_failure ("parse_fn", tokens))
 
 let parse_struct_def tokens cb = match tokens with
   | "struct"::name::t ->
@@ -345,6 +347,7 @@ let parse_enum_def tokens cb = match tokens with
 
 let parse_module tokens cb = 
   match tokens with
+  | "abstract_fn"::_ 
   | "fn"::_ -> parse_fn tokens cb
   | "enum"::_ -> parse_enum_def tokens cb
   | "struct"::_ -> parse_struct_def tokens cb
