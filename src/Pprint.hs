@@ -50,7 +50,6 @@ ppMutbl MImm = return ()
 
 ppTy ty = case ty of
     TVar name -> tell name
-    TAdt name [] [] -> tell name
     TAdt name las tas -> tell name >> listNe angles (map ppLifetime las ++ map ppTy tas)
     TTuple tys -> parens (commaSep $ map ppTy tys)
     TRef life mut ty -> spaceSep $ [tell "&", ppLifetime life, ppMutbl mut, ppTy ty]
@@ -61,8 +60,18 @@ ppTy ty = case ty of
     TFn -> tell "fn"
     TUnit -> tell "()"
     TBottom -> tell "!"
+    TAbstract name las tas -> angles $ tell name >> listNe angles (map ppLifetime las ++ map ppTy tas)
 
 ppLifetime l = tell "'" >> tell l
+
+ppAbstractTypeDef :: (MonadReader Int m, MonadWriter String m) => AbstractTypeDef -> m ()
+ppAbstractTypeDef (AbstractTypeDef name lps tps) =
+    line $ tell "/* abstract */ type " >> tell name >> listNe angles (map tell lps ++ map tell tps) >> tell ";"
+
+ppAssociatedTypeDef :: (MonadReader Int m, MonadWriter String m) => AssociatedTypeDef -> m ()
+ppAssociatedTypeDef (AssociatedTypeDef lps tps impl ty) =
+    line $ tell "/* associated */ type" >> listNe angles (map tell lps ++ map tell tps) >>
+        tell " " >> ppImplClause impl >> tell " = " >> ppTy ty
 
 ppStructDef :: (MonadReader Int m, MonadWriter String m) => StructDef -> m ()
 ppStructDef (StructDef name lps tps fields mDtor) = do
@@ -97,7 +106,7 @@ ppFnDef (FnDef name lps tps args retTy implClause body) = do
             Just implClause -> do
                 nl
                 indent $ indent $ indentation
-                tell "/* " >> ppImplClause implClause >> tell " */ "
+                tell "/* impl " >> ppImplClause implClause >> tell " */ "
         ppExpr body
 
 ppAbstractFnDef :: (MonadReader Int m, MonadWriter String m) => AbstractFnDef -> m ()
@@ -113,11 +122,8 @@ ppArgDecl (ArgDecl name ty) = tell name >> tell ": " >> ppTy ty
 
 ppImplClause :: (MonadReader Int m, MonadWriter String m) => ImplClause -> m ()
 ppImplClause (ImplClause name lifetimes tys) = do
-    let selfTy = last tys
-        otherTys = init tys
-    tell "impl " >> tell name
-    angles $ commaSep (map ppLifetime lifetimes ++ map ppTy otherTys)
-    tell " for " >> ppTy selfTy 
+    tell name
+    angles $ commaSep (map ppLifetime lifetimes ++ map ppTy tys)
 
 ppExpr :: (MonadReader Int m, MonadWriter String m) => Expr -> m ()
 ppExpr (Expr ty e) = case e of
@@ -174,6 +180,8 @@ ppItem (IEnum e) = ppEnumDef e
 ppItem (IConst c) = ppConstDef c
 ppItem (IFn f) = ppFnDef f
 ppItem (IAbstractFn f) = ppAbstractFnDef f
+ppItem (IAbstractType t) = ppAbstractTypeDef t
+ppItem (IAssociatedType t) = ppAssociatedTypeDef t
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m
 
 runPp :: (ReaderT Int (Writer String) ()) -> String

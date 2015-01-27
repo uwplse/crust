@@ -277,6 +277,13 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => format!("unit"),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(trcx)),
+            ty_projection(ref proj) => {
+                format!("abstract {}_{} {}",
+                        mangled_def_name(trcx, proj.trait_ref.def_id),
+                        proj.item_name.trans(trcx),
+                        proj.trait_ref.substs.trans(trcx))
+
+            },
             ty_param(ref param) => {
                 format!("var {}{}",
                         param.space.trans(trcx),
@@ -410,6 +417,35 @@ impl Trans for Lifetime {
     }
 }
 
+fn trans_method_call(trcx: &mut TransCtxt,
+                     callee: &MethodCallee,
+                     args: Vec<String>) -> String {
+    let name = match callee.origin {
+        MethodOrigin::MethodStatic(did) => {
+            mangled_def_name(trcx, did)
+        },
+        MethodOrigin::MethodTypeParam(ref mp) => {
+            let trait_did = mp.trait_ref.def_id;
+            // trait_ref substs are actually the same as the callee substs, so we can
+            // ignore them here.
+            let item_id = trcx.tcx.trait_item_def_ids.borrow()[trait_did][mp.method_num];
+            let method_did = match item_id {
+                ty::ImplOrTraitItemId::MethodTraitItemId(did) => did,
+                ty::ImplOrTraitItemId::TypeTraitItemId(_) =>
+                    panic!("unexpected TypeTraitItemId in method call"),
+            };
+            let name = mangled_def_name(trcx, method_did);
+            trcx.observed_abstract_fns.insert(name.clone(), (trait_did, method_did));
+            name
+        },
+        _ => panic!("unsupported MethodOrigin variant"),
+    };
+    format!("call {} {} {}",
+            name,
+            callee.substs.trans(trcx),
+            args.trans(trcx))
+}
+
 impl Trans for Expr {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         let mut add_ty = true;
@@ -440,41 +476,17 @@ impl Trans for Expr {
                 let call = MethodCall::expr(self.id);
                 let map = trcx.tcx.method_map.borrow();
                 let callee = &map[call];
-                let name = match callee.origin {
-                    MethodOrigin::MethodStatic(did) => {
-                        mangled_def_name(trcx, did)
-                    },
-                    MethodOrigin::MethodTypeParam(ref mp) => {
-                        let trait_did = mp.trait_ref.def_id;
-                        // trait_ref substs are actually the same as the callee substs, so we can
-                        // ignore them here.
-                        let item_id = trcx.tcx.trait_item_def_ids.borrow()[trait_did][mp.method_num];
-                        let method_did = match item_id {
-                            ty::ImplOrTraitItemId::MethodTraitItemId(did) => did,
-                            ty::ImplOrTraitItemId::TypeTraitItemId(_) =>
-                                panic!("unexpected TypeTraitItemId in method call"),
-                        };
-                        let name = mangled_def_name(trcx, method_did);
-                        trcx.observed_abstract_fns.insert(name.clone(), (trait_did, method_did));
-                        name
-                    },
-                    _ => panic!("unsupported MethodOrigin variant"),
-                };
-                assert!(tys.len() == 0);
-                format!("call {} {} {}",
-                        name,
-                        callee.substs.trans(trcx),
-                        args.trans(trcx))
+                let arg_strs = args.iter().map(|x| x.trans(trcx)).collect();
+                assert!(tys.len() == 0); // no idea what `tys` does
+                trans_method_call(trcx, callee, arg_strs)
             },
             ExprTup(ref xs) if xs.len() == 0 => format!("simple_literal _"),
             ExprTup(ref xs) => format!("tuple_literal {}", xs.trans(trcx)),
             ExprBinary(op, ref a, ref b) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
-                    Some(callee) => match callee.origin {
-                        ty::MethodStatic(did) => {
-                            format!("[[ExprBinary: overloaded binop]]")
-                        },
-                        _ => panic!("bad origin for callee in ExprBinary"),
+                    Some(callee) => {
+                        let arg_strs = vec![a.trans(trcx), b.trans(trcx)];
+                        trans_method_call(trcx, callee, arg_strs)
                     },
                     None => {
                         format!("binop {:?} {} {}",
@@ -486,11 +498,9 @@ impl Trans for Expr {
             },
             ExprUnary(op, ref a) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
-                    Some(callee) => match callee.origin {
-                        ty::MethodStatic(did) => {
-                            format!("[[ExprUnary: overloaded binop]]")
-                        },
-                        _ => panic!("bad origin for callee in ExprUnary"),
+                    Some(callee) => {
+                        let arg_strs = vec![a.trans(trcx)];
+                        trans_method_call(trcx, callee, arg_strs)
                     },
                     None => {
                         match op {
@@ -865,9 +875,17 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                         MethodImplItem(ref method) => {
                             trans_method(trcx, self, &**method)
                         },
-                        TypeImplItem(_) => {
-                            // nothing to translate
-                            String::new()
+                        TypeImplItem(ref td) => {
+                            let name_str = td.ident.trans(trcx);
+                            let self_str = self_ty.trans(trcx);
+                            let typ_str = td.typ.trans(trcx);
+                            format!("associated_type {} {} {}",
+                                    impl_generics.trans_extra(trcx, TypeSpace),
+                                    trans_impl_clause(trcx,
+                                                      trait_ref.as_ref().unwrap(),
+                                                      name_str,
+                                                      self_str),
+                                    typ_str)
                         },
                     };
                     result.push_str(part.as_slice());
@@ -1035,28 +1053,13 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
 
     let impl_clause = match *trait_ref {
         Some(ref trait_ref) => {
-            let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
-            let mut tys = vec![];
-            let mut lifes = vec![];
-            match last_seg.parameters {
-                AngleBracketedParameters(ref params) => {
-                    for life in params.lifetimes.iter() {
-                        lifes.push(life.trans(trcx));
-                    }
-                    for ty in params.types.iter() {
-                        tys.push(ty.trans(trcx));
-                    }
-                },
-                ParenthesizedParameters(_) =>
-                    panic!("unsupported ParenthesizedParameters"),
-            }
-            tys.push(self_ty.trans(trcx));
-
-            format!("1 impl {}_{} {} {}",
-                    mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
-                    name.trans(trcx),
-                    lifes.trans(trcx),
-                    tys.trans(trcx))
+            let name_str = name.trans(trcx);
+            let self_str = self_ty.trans(trcx);
+            format!("1 impl {}",
+                    trans_impl_clause(trcx,
+                                      trait_ref,
+                                      name_str,
+                                      self_str))
         },
         None => format!("0"),
     };
@@ -1079,6 +1082,34 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
             body.stmts.trans(trcx),
             body.expr.as_ref().map(|e| e.trans(trcx))
                 .unwrap_or(format!("[unit] simple_literal _method")))
+}
+
+fn trans_impl_clause(trcx: &mut TransCtxt,
+                     trait_ref: &TraitRef,
+                     name: String,
+                     self_ty: String) -> String {
+    let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
+    let mut tys = vec![];
+    let mut lifes = vec![];
+    match last_seg.parameters {
+        AngleBracketedParameters(ref params) => {
+            for life in params.lifetimes.iter() {
+                lifes.push(life.trans(trcx));
+            }
+            for ty in params.types.iter() {
+                tys.push(ty.trans(trcx));
+            }
+        },
+        ParenthesizedParameters(_) =>
+            panic!("unsupported ParenthesizedParameters"),
+    }
+    tys.push(self_ty.trans(trcx));
+
+    format!("{}_{} {} {}",
+            mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
+            name.trans(trcx),
+            lifes.trans(trcx),
+            tys.trans(trcx))
 }
 
 fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
