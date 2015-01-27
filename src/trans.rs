@@ -478,7 +478,7 @@ impl Trans for Expr {
                     },
                     None => {
                         format!("binop {:?} {} {}",
-                                op,
+                                op.node,
                                 a.trans(trcx),
                                 b.trans(trcx))
                     },
