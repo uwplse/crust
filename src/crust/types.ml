@@ -26,14 +26,32 @@ type 'a mono_r_type = [
    }
 
 type mono_type = mono_type mono_r_type;;
+
+type 'a abstract_type = {
+  a_name : string;
+  a_lifetimes: lifetime list;
+  a_params : 'a list
+}
+
   
 type r_type = [
   | `T_Var of type_param
+  | `Abstract of r_type abstract_type
   | r_type mono_r_type
   ]
 				
 type mono_adt_type = mono_type adt_type
 type poly_adt_type = r_type adt_type
+
+type associated_type = {
+  abstract_name : string;
+  ty_param : type_param list;
+  ty_lifetimes : lifetime list;
+  ty_args : r_type list;
+  ty_output : r_type
+}
+
+
 let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun t_binding t ->
   match t with
   | `Adt_type a ->
@@ -47,7 +65,14 @@ let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun 
   | `Bottom -> `Bottom
   | `Ptr t' -> `Ptr (to_monomorph t_binding t')
   | `Tuple tl -> `Tuple (List.map (to_monomorph t_binding) tl)
+  | `Abstract a ->
+    let m_args = List.map (to_monomorph t_binding) a.a_params in
+    resolve_abstract_type a.a_name m_args
+and resolve_abstract_type abstract_name m_args =
+  (* stub *)
+  `Unit
 
+type type_binding = (string * mono_type) list
 
 let type_binding tv ty = 
   List.map2 (fun t_name t -> (t_name, t)) tv ty

@@ -132,6 +132,15 @@ and parse_type tokens cb =
 				   cb (`Ptr_Mut r_type) rest
 				  )
   | "fn"::_ -> failwith "Function types not AT ALL supported"
+  | "abstract"::name::t ->
+    let parse_fn = parse_lifetimes >> (parse_n parse_type) in
+    parse_fn t (fun (lifetimes, types) ->
+        cb (`Abstract {
+            Types.a_name = name;
+            Types.a_lifetimes = lifetimes;
+            Types.a_params = types
+        })
+      )
   | _ -> parse_simple_type tokens cb
 
 let parse_binop tokens cb = match tokens with
@@ -345,12 +354,33 @@ let parse_enum_def tokens cb = match tokens with
 			 )
   | _ -> assert false
 
+let parse_assoc_type tokens cb =
+  match tokens with
+  | "associated_type"::rest ->
+    let parse_fn = 
+      (parse_lifetimes) >> (parse_type_params) >>
+      consume_name >> (parse_lifetimes) >> (parse_n parse_type) >>
+      (parse_type) 
+    in
+    parse_fn tokens (fun (((((lifetimes,t_params),name),_),input_types),ret_type) ->
+        cb (`Assoc_type {
+          Types.abstract_name = name;
+          Types.ty_param = t_params;
+          Types.ty_lifetimes = lifetimes;
+          Types.ty_args = input_types;
+          Types.ty_output = ret_type
+        })
+      )
+  | _ -> (raise (Parse_failure ("parse_assoc_type", tokens)))
+
 let parse_module tokens cb = 
   match tokens with
   | "abstract_fn"::_ 
   | "fn"::_ -> parse_fn tokens cb
   | "enum"::_ -> parse_enum_def tokens cb
   | "struct"::_ -> parse_struct_def tokens cb
+  | "abstract_type"::_ -> failwith "not really supported yet"
+  | "associated_type"::_ -> parse_assoc_type tokens cb
   | _ -> (raise (Parse_failure ("parse_module",tokens)))
 
 let parse_string s = 

@@ -103,10 +103,11 @@ type enum_def = {
 type type_expr = [
   | `Enum_def of enum_def
   | `Struct_def of struct_def
-  ]
+]
 
 type module_expr = [
   | type_expr
   | `Fn of fn_def
   | `Abstract_Fn of string
+  | `Assoc_type of Types.associated_type
   ]

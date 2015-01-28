@@ -75,6 +75,7 @@ let rec type_contains_loop src_types = function
     (let contains = List.map (type_contains_loop src_types) tl in
      List.exists (fun x -> x) contains
     )
+  | `Abstract _ -> false (* not really true *)
 
 let rec type_contains src_types target  = 
   match target with
@@ -82,6 +83,7 @@ let rec type_contains src_types target  =
   | `Tuple tl -> 
     let contains = List.map (type_contains_loop src_types) tl in
     List.exists (fun x -> x) contains
+  | `Abstract _ -> false
   | _ -> false
 
 let find_constructors () = 
@@ -637,6 +639,7 @@ type borrow_info = [
 
 let find_lifetime ty =
   let rec find_lifetime_loop path nested = function
+    | `Abstract _ -> []
     | `Ref_Mut (l,t) ->
       (l,nested,true,path)::(find_lifetime_loop path true t)
     | `Ref (l,t) -> 

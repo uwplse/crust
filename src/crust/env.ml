@@ -46,8 +46,10 @@ let rec set_env = function
          Hashtbl.add abstract_impl a_name [ f.Ir.fn_name ]
     );
     set_env t
+  | `Assoc_type _::t 
   | `Abstract_Fn _::t ->
     set_env t
+
 
 let gcc_mode = ref false;;
 let init_opt = ref false;;

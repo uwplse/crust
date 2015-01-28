@@ -27,10 +27,27 @@ type 'a mono_r_type = [
 
 type mono_type = mono_type mono_r_type;;
 
+type 'a abstract_type = {
+  a_name : string;
+  a_lifetimes: lifetime list;
+  a_params : 'a list
+}
+
 type r_type = [
   | `T_Var of type_param
   | r_type mono_r_type
+  | `Abstract of r_type abstract_type
   ]
+
+
+type associated_type = {
+  abstract_name : string;
+  ty_param : type_param list;
+  ty_lifetimes : lifetime list;
+  ty_args : r_type list;
+  ty_output : r_type
+}
+
 
 type mono_adt_type = mono_type adt_type
 type poly_adt_type = r_type adt_type
@@ -40,3 +57,4 @@ val type_binding : type_param list -> 'a list -> (type_param * 'a) list
 val pp_t :  r_type -> string
 val rust_tuple_name : string
 
+type type_binding = (string * mono_type) list
