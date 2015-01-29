@@ -134,7 +134,6 @@ class type_matcher = object(self)
   method match_types = fun match_state t_binding to_match ->
     self#p_match_types match_state t_binding [] to_match
   method resolve_abstract_type abstract_ty (mono_ty_args : Types.mono_type list) = 
-     (*prerr_endline @@ "Resolving abstract type: " ^ abstract_ty;*)
     let candidates = Env.EnvMap.find Env.associated_types abstract_ty in
     let match_state = new list_match_state false mono_ty_args in
     let instantiations = List.fold_left (fun accum c ->
@@ -149,8 +148,6 @@ class type_matcher = object(self)
     | [t] -> t
     | _ -> failwith "ambiguous type resolution" (* possible? *)
   method to_monomorph t_binding t = 
-(*    prerr_endline @@ "Monomorphizing: " ^ (Types.pp_t t);
-    prerr_endline @@ "\t with args: " ^ (Types.pp_tb t_binding);*)
     match t with
     | `Adt_type a ->
       let mono_params = List.map (self#to_monomorph t_binding) a.Types.type_param in
@@ -313,8 +310,6 @@ let sort_types a b =
   | `T_Var _,_ -> 1
   | _,`T_Var _ -> -1
   | _,_ -> 0 in
-(*  prerr_endline @@ "comparing: " ^ (Types.pp_t a) ^ " " ^ (Types.pp_t b);
-  prerr_endline @@ "result -> " ^ (string_of_int to_ret);*)
   to_ret
 
 let rev_app f x y = f y x
@@ -323,7 +318,6 @@ let get_inst type_univ to_match =
   let free_vars = SSet.elements @@ List.fold_left get_free_vars SSet.empty to_match in
   let phantom_args = List.map (fun t_var -> `T_Var t_var) free_vars in
   let to_match = List.sort sort_types @@ to_match @ phantom_args in
-(*  prerr_endline @@ "Attempting match with " ^ (String.concat ", " @@ List.map Types.pp_t to_match);*)
   matcher#get_inst type_univ to_match
 
 let to_monomorph = matcher#to_monomorph

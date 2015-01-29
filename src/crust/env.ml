@@ -57,7 +57,6 @@ let rec set_env = function
   | `Abstract_Fn _::t ->
     set_env t
 
-
 let gcc_mode = ref false;;
 let init_opt = ref false;;
 
@@ -81,3 +80,4 @@ let get_adt_drop t_name =
   match t_def with
   | `Enum_def e -> e.Ir.drop_fn
   | `Struct_def e -> e.Ir.drop_fn
+
