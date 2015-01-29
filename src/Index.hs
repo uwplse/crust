@@ -27,6 +27,10 @@ subst (lp, tp) (la, ta) t = goTy t
 
     goLife n = case M.lookup n lifeMap of Just l -> l; Nothing -> n
 
+data AnyFnDef =
+      FConcrete FnDef
+    | FAbstract AbstractFnDef
+  deriving (Eq, Show, Data, Typeable)
 
 data TypeDef =
       TStruct StructDef
@@ -45,12 +49,15 @@ ty_tyParams (TEnum (EnumDef _ _ ps _ _)) = ps
 ty_dtor (TStruct (StructDef _ _ _ _ d)) = d
 ty_dtor (TEnum (EnumDef _ _ _ _ d)) = d
 
-fn_lifetimeParams (FnDef _ ps _ _ _ _ _) = ps
-fn_tyParams (FnDef _ _ ps _ _ _ _) = ps
-fn_retTy (FnDef _ _ _ _ r _ _) = r
+fn_lifetimeParams (FConcrete (FnDef _ ps _ _ _ _ _)) = ps
+fn_lifetimeParams (FAbstract (AbstractFnDef _ ps _ _ _)) = ps
+fn_tyParams (FConcrete (FnDef _ _ ps _ _ _ _)) = ps
+fn_tyParams (FAbstract (AbstractFnDef _ _ ps _ _)) = ps
+fn_retTy (FConcrete (FnDef _ _ _ _ r _ _)) = r
+fn_retTy (FAbstract (AbstractFnDef _ _ _ _ r)) = r
 
 data Index = Index
-    { i_fns :: M.Map Name FnDef
+    { i_fns :: M.Map Name AnyFnDef
     , i_types :: M.Map Name TypeDef
     , i_consts :: M.Map Name ConstDef
     }
@@ -61,7 +68,8 @@ mkIndex items = Index fns types consts
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
 
-    onFn (IFn x@(FnDef name _ _ _ _ _ _)) = Just (name, x)
+    onFn (IFn x@(FnDef name _ _ _ _ _ _)) = Just (name, FConcrete x)
+    onFn (IAbstractFn x@(AbstractFnDef name _ _ _ _)) = Just (name, FAbstract x)
     onFn _ = Nothing
 
     onType (IStruct x@(StructDef name _ _ _ _)) = Just (name, TStruct x)
@@ -71,10 +79,9 @@ mkIndex items = Index fns types consts
     onConst (IConst x@(ConstDef name _ _)) = Just (name, x)
     onConst _ = Nothing
 
-dropGlue = ("drop_glue", def)
-  where def = FnDef "drop_glue" [] ["T"]
-                [ArgDecl "self" (TRef "r_anon" MMut $ TVar "T")]
-                TUnit Nothing (Expr TUnit $ ESimpleLiteral "drop_glue")
+dropGlue = ("drop_glue", FAbstract def)
+  where def = AbstractFnDef "drop_glue" [] ["T"]
+                [ArgDecl "self" (TRef "r_anon" MMut $ TVar "T")] TUnit
 
 
 type CtxM a = Reader Index a
@@ -98,6 +105,18 @@ getConst name = do
     case mx of
         Just x -> return x
         Nothing -> error $ "unknown const: " ++ name
+
+getConcreteFn name = do
+    fn <- getFn name
+    case fn of
+        FConcrete x -> return x
+        FAbstract _ -> error $ "type " ++ name ++ " is abstract, not concrete"
+
+getAbstractFn name = do
+    fn <- getFn name
+    case fn of
+        FAbstract x -> return x
+        FConcrete _ -> error $ "type " ++ name ++ " is concrete, not abstract"
 
 getStruct name = do
     ty <- getType name

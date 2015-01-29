@@ -5,9 +5,9 @@ all: crust lib/libcore-4e7c5e5c.rlib
 
 crust:
 	$(MAKE) -C src
-	cp ./src/rbmc ./bin
-	cp ./src/Preprocess ./bin
-	cp ./src/crust/_build/crust.native ./bin
+	cp --preserve=timestamps ./src/rbmc ./bin
+	cp --preserve=timestamps ./src/Preprocess ./bin
+	cp --preserve=timestamps ./src/crust/_build/crust.native ./bin
 
 lib/libcore-4e7c5e5c.rlib: 
 	mkdir lib/ > /dev/null
