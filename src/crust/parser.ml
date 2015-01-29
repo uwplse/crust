@@ -26,7 +26,8 @@ let consume_to_end tokens parse_fn cb =
   let rec consume_loop t accum =
 	match t with
 	| [] -> cb (List.rev accum)
-	| _ -> parse_fn t (fun item rest -> consume_loop rest (item::accum))
+	| _ -> parse_fn t (fun item rest -> 
+     consume_loop rest (item::accum))
   in
   consume_loop tokens []
 
@@ -357,19 +358,19 @@ let parse_enum_def tokens cb = match tokens with
 let parse_assoc_type tokens cb =
   match tokens with
   | "associated_type"::rest ->
-    let parse_fn = 
+    let p_fn = 
       (parse_lifetimes) >> (parse_type_params) >>
       consume_name >> (parse_lifetimes) >> (parse_n parse_type) >>
       (parse_type) 
     in
-    parse_fn tokens (fun (((((lifetimes,t_params),name),_),input_types),ret_type) ->
+    p_fn rest (fun (((((lifetimes,t_params),name),_),input_types),ret_type) t ->
         cb (`Assoc_type {
           Types.abstract_name = name;
           Types.ty_param = t_params;
           Types.ty_lifetimes = lifetimes;
           Types.ty_args = input_types;
           Types.ty_output = ret_type
-        })
+        }) t
       )
   | _ -> (raise (Parse_failure ("parse_assoc_type", tokens)))
 

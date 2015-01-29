@@ -10,18 +10,13 @@ module FunctionInstantiation = struct
   let compare = Pervasives.compare
 end
 
-module MonoType = struct
-  type t = Types.mono_type
-  let compare = Pervasives.compare
-end
-
 (* total laziness! *)
 open Types
 open Ir
 
 module FISet = Set.Make(FunctionInstantiation)
 module TISet = Set.Make(TypeInstantiation)
-module MTSet = Set.Make(MonoType)
+module MTSet = TypeUtil.MTSet
 
 (* function composition (not monads)
  * WARNING: abuse of notation ;)
@@ -96,257 +91,32 @@ let find_constructors () =
       else accum
     ) Env.fn_env accum
 
-type type_binding = (string * Types.mono_type) list
-
-type match_result = [
-  | `Bind of type_binding list
-  | `Match
-  | `Mismatch
-]
-
-type inst_result = [
-  | `Mismatch
-  | `Inst of type_binding list
-]
-
-type _ query_param = 
-  | Tuple : int -> (Types.mono_type list) query_param
-  | Mut_Ptr : Types.mono_type query_param
-  | Ptr : Types.mono_type query_param
-  | Adt : string -> (Types.mono_type list) query_param
-
-let find_types : type a.MTSet.t -> a query_param -> a list = 
-  fun set query ->
-    match query with
-    | Tuple n -> MTSet.fold (fun t accum ->
-        match t with
-        | `Tuple tl when (List.length tl) = n ->
-          tl::accum
-        | _ -> accum
-      ) set []
-    | Mut_Ptr -> MTSet.fold (fun t accum  ->
-        match t with
-        | `Ptr_Mut t 
-        | `Ref_Mut (_,t) ->
-          t::accum
-        | _ -> accum
-      ) set []
-    | Ptr -> MTSet.fold (fun t accum  ->
-        match t with
-        | `Ptr t
-        | `Ref (_,t) ->
-          t::accum
-        | _ -> accum
-      ) set []
-    | Adt name -> MTSet.fold (fun t accum ->
-        match t with
-        | `Adt_type p when p.Types.type_name = name ->
-          p.Types.type_param::accum
-        | _ -> accum
-      ) set []
-
-class virtual ['a] match_state (synth_types : bool) = object
-  method virtual next_state : 'a match_state
-  method virtual get_candidates : MTSet.t
-  method synth_types = synth_types
-end
-
-class set_match_state synth_type t_set = object(self)
-  method next_state = (self :> set_match_state)
-  method get_candidates = t_set
-  inherit [MTSet.t] match_state synth_type
-end
-
-class list_match_state synth_type t_list = object(self)
-  method next_state = match t_list with
-    | [] -> (self :> list_match_state)
-    | _::t -> new list_match_state synth_type t
-  method get_candidates = match t_list with
-    | [] -> MTSet.empty
-    | h::_ -> MTSet.singleton h
-  inherit [Types.mono_type list] match_state synth_type
-end
-
-let rec uniq_list l = match l with
-  | h::h'::t when h = h' ->
-    uniq_list (h'::t)
-  | h::t -> h::(uniq_list t)
-  | [] -> []
-
-
-(* Not until 4.02 :( *)
-let sort_uniq l = 
-  let l = List.sort Pervasives.compare l in
-  uniq_list l
-
-(* extend me as needed *)
-let primitive_types = 
-  MTSet.(
-    empty
-    |> add (`Int 64)
-    |> add (`Int 32)
-    |> add (`Int 16)
-    |> add (`Int 8)
-    |> add (`UInt 64)
-    |> add (`UInt 32)
-    |> add (`UInt 16)
-    |> add (`UInt 8)
-    |> add `Bool
-    |> add `Unit
-  );;
-
-(* I originally wrote this class because I had this idea that
-   sub-classes would fill in the handling of certain types.
-
-   This didn't pan out and all these methods could be made into
-   functions, but I like them packaged up like this *)
-class type_matcher = object(self)
-  method get_inst t_set m = 
-    self#match_types (new set_match_state true t_set) [] m
-  method is_isnt t_list m = 
-    self#match_types (new list_match_state false t_list) [] m
-  method match_types = fun match_state t_binding to_match ->
-    self#p_match_types match_state t_binding [] to_match
-  method private p_match_types = fun state t_binding t_accum to_match ->
-    match to_match with 
-    (* we found a possible instantiation wooooo! *)
-    | [] -> `Inst [t_accum]
-    | h::t -> 
-      match (self#match_type state t_binding h : match_result) with
-      | `Mismatch -> `Mismatch
-      | `Match -> let next_state = state#next_state in
-        self#p_match_types next_state t_binding t_accum t
-      (* We found multiple possible choices for the current type,
-         		* recurse on all possible choices
-         		*)
-      | `Bind b_choices ->
-        let next_state = state#next_state in
-        (* matches is a list of (complete!) bindings that we could construct
-           		   * with any possible choice of (partial) binding choices
-           		   *)
-        let matches = List.fold_left (fun (accum : type_binding list) b_choice ->
-            let new_binding = b_choice @ t_binding in
-            let type_accum = b_choice @ t_accum in
-            match self#p_match_types next_state new_binding type_accum t with
-            (* each concrete choice at this step can
-               							lead to multiple possible
-               							instantiations *)
-            | `Inst complete_binding ->
-              complete_binding @ accum
-            | `Mismatch -> accum
-          ) [] b_choices in
-        begin
-          match matches with
-          | [] -> `Mismatch
-          | l -> `Inst l
-        end
-  method match_single_type state t_binding (t_list : Types.mono_type list) t_set t = 
-    let s_state = new set_match_state false (List.fold_right MTSet.add t_list MTSet.empty) in
-    let bindings = match self#match_type s_state t_binding t with
-      | `Mismatch -> []
-      | `Match -> [[]]
-      | `Bind l -> l
-    in
-    let bindings = 
-      if state#synth_types then
-        let set_match_state = new set_match_state false t_set in
-        match self#match_type set_match_state t_binding t with
-        | `Mismatch -> bindings
-        | `Match -> [] :: bindings
-        | `Bind l -> l @ bindings
-      else
-        bindings
-    in
-    match (sort_uniq bindings) with
-    | [] -> `Mismatch
-    | [[]] -> `Match
-    | l -> `Bind l
-  method match_many_type synth_types t_binding candidate_list t_set tl =
-    let insts = List.fold_left (fun accum inst_candidate ->
-        let t_state = new list_match_state synth_types inst_candidate in
-        let match_result = self#match_types t_state t_binding tl in
-        match match_result with
-        | `Mismatch -> accum
-        | `Inst l -> l @ accum
-      ) [] candidate_list in
-    let all_insts = 
-      if synth_types then
-        let s_match_state = new set_match_state true t_set in
-        match self#match_types s_match_state t_binding tl with
-        | `Mismatch -> insts
-        | `Inst synth_inst -> insts @ synth_inst
-      else
-        insts
-    in
-    begin
-      match (sort_uniq all_insts) with
-      | [] -> `Mismatch
-      | [[]] -> `Match
-      | l -> `Bind l
-    end
-  method match_type state t_binding (to_match : Types.r_type) = 
-    let t_set = state#get_candidates in
-    match to_match with
-    | #simple_type when state#synth_types -> `Match
-    | #simple_type as s -> 
-      if MTSet.mem s t_set then
-        (`Match : match_result)
-      else
-        `Mismatch
-    | `Tuple tl ->
-      let tuple_length = List.length tl in
-      let existing_tuples = find_types t_set (Tuple tuple_length) in
-      self#match_many_type state#synth_types t_binding existing_tuples t_set tl
-    | `Bottom -> `Mismatch
-    | `Adt_type p -> 
-      let adt_name = p.Types.type_name in
-      let type_param = p.Types.type_param in
-      let instances = find_types t_set (Adt adt_name) in
-      self#match_many_type false t_binding instances t_set type_param
-    | `T_Var t when List.mem_assoc t t_binding ->
-      let resolved_type = List.assoc t t_binding in
-      self#match_type state t_binding (resolved_type : Types.mono_type :> Types.r_type)
-    | `T_Var t_var ->
-      let t_set = if state#synth_types then MTSet.union primitive_types t_set else t_set in
-      let binding_choices = MTSet.fold (fun t accum ->
-          [(t_var,t)]::accum
-        ) t_set [] in
-      `Bind binding_choices
-    | `Ptr t
-    | `Ref (_,t) ->
-      self#match_single_type state t_binding (find_types t_set Ptr) t_set t
-    | `Ref_Mut (_,t)
-    | `Ptr_Mut t ->
-      self#match_single_type state t_binding (find_types t_set Mut_Ptr) t_set t
-end
-
-
-let resolve_abstract_fn = 
-  let matcher = new type_matcher in
+let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
   fun abstract_name param_args ->
-    let abstract_impls = Env.EnvMap.find Env.abstract_impl abstract_name in
-    let possible_insts = 
-      List.fold_left (fun accum fn_name ->
-          let impl_def = Env.EnvMap.find Env.fn_env fn_name in
-          let arg_types = List.map snd impl_def.Ir.fn_args in
-          match matcher#is_isnt param_args arg_types with
-          | `Mismatch -> accum
-          | `Inst l -> (match l with
-              | [t] ->
-                let targ_bindings = List.map ((rev_app List.assoc) t) impl_def.Ir.fn_tparams in
-                (targ_bindings,impl_def.Ir.fn_name)::accum
-              | _ -> assert false
-            )
-        ) [] abstract_impls in
-    match possible_insts with 
-    | [t] -> t
-    | [] -> 
-      raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
-    | _ -> 
-      let inst_dump = String.concat "/" @@ List.map snd possible_insts in
-      let fail_args = arg_str param_args in
-      raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
+  let abstract_impls = Env.EnvMap.find Env.abstract_impl abstract_name in
+  let possible_insts = 
+    List.fold_left (fun accum fn_name ->
+        let impl_def = Env.EnvMap.find Env.fn_env fn_name in
+        let arg_types = List.map snd impl_def.Ir.fn_args in
+        match TypeUtil.is_inst param_args arg_types with
+        | `Mismatch -> accum
+        | `Inst l -> (match l with
+            | [t] ->
+              let targ_bindings = List.map ((rev_app List.assoc) t) impl_def.Ir.fn_tparams in
+              (targ_bindings,impl_def.Ir.fn_name)::accum
+            | _ -> assert false
+          )
+      ) [] abstract_impls in
+  match possible_insts with 
+  | [t] -> t
+  | [] -> 
+    raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
+  | _ -> 
+    let inst_dump = String.concat "/" @@ List.map snd possible_insts in
+    let fail_args = arg_str param_args in
+    raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
+
 
 
 let rec walk_type : walk_state -> Types.mono_type -> walk_state = fun w_state t ->
@@ -379,7 +149,7 @@ and walk_type_def w_state adt_def m_params =
   match adt_def with
   | `Struct_def sd -> 
     let new_bindings = gen_binding sd.s_tparam in
-    let a = (snd >>= (Types.to_monomorph new_bindings) >>= (rev_app walk_type)) in
+    let a = (snd >>= (TypeUtil.to_monomorph new_bindings) >>= (rev_app walk_type)) in
     let fold = rev_app a in
     let w_state = List.fold_left fold w_state sd.struct_fields in
     begin
@@ -389,11 +159,11 @@ and walk_type_def w_state adt_def m_params =
     end
   | `Enum_def ed ->
     let new_bindings = gen_binding ed.e_tparam in
-    let m = List.map (fun v -> List.map (Types.to_monomorph new_bindings) v.variant_fields) ed.variants in
+    let m = List.map (fun v -> List.map (TypeUtil.to_monomorph new_bindings) v.variant_fields) ed.variants in
     let w_state  = List.fold_left (List.fold_left walk_type) w_state m in
     begin match ed.Ir.drop_fn with | Some df -> walk_fn w_state df m_params | None -> w_state end
 and inst_walk_type t_bindings w_state t = 
-  let m_type = Types.to_monomorph t_bindings t in
+  let m_type = TypeUtil.to_monomorph t_bindings t in
   walk_type w_state m_type
 and walk_expr t_bindings w_state (expr : Ir.expr) = 
   let w_state = inst_walk_type t_bindings w_state (fst expr) in
@@ -403,11 +173,11 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
     let w_state = (List.fold_left (walk_statement t_bindings) w_state stmt) in
     walk_expr t_bindings w_state e
   | `Call (fn_name,_,t_params,args) ->
-    let m_args = List.map (Types.to_monomorph t_bindings) t_params in
+    let m_args = List.map (TypeUtil.to_monomorph t_bindings) t_params in
     let w_state = List.fold_left (walk_expr t_bindings) w_state args in
     let w_state = List.fold_left walk_type w_state m_args in
     if Env.is_abstract_fn fn_name then
-      let mono_args = List.map (fst >>= (Types.to_monomorph t_bindings)) args in
+      let mono_args = List.map (fst >>= (TypeUtil.to_monomorph t_bindings)) args in
       let (resolved_margs, c_name) = resolve_abstract_fn fn_name mono_args in
       walk_fn w_state c_name resolved_margs
     else 
@@ -478,7 +248,7 @@ and walk_fn_def w_state fn_def m_args =
     w_state
   else
     let t_bindings = Types.type_binding fn_def.Ir.fn_tparams m_args in
-    let ret_type = Types.to_monomorph t_bindings fn_def.Ir.ret_type in
+    let ret_type = TypeUtil.to_monomorph t_bindings fn_def.Ir.ret_type in
     let w_state = add_fn_instance w_state f_inst in
     let w_state =  walk_type w_state ret_type in
     walk_expr t_bindings w_state fn_def.Ir.fn_body
@@ -507,17 +277,20 @@ let walk_public_fn fn_def f_state m_args =
       let w_state = f_state.w_state in
       let t_binding = Types.type_binding fn_def.Ir.fn_tparams m_args in
       let w_state = add_public_fn w_state f_inst in
-      let mono_ret_type = (Types.to_monomorph t_binding fn_def.Ir.ret_type) in
+      let mono_ret_type = (TypeUtil.to_monomorph t_binding fn_def.Ir.ret_type) in
       let w_state = match mono_ret_type with
         | #simple_type -> w_state (* we don't need to track this crap at runtime *)
         | _ -> add_public_type w_state mono_ret_type 
       in
       let w_state' = walk_fn_def w_state fn_def m_args in
       { f_state with w_state = w_state' }
-    with ResolutionFailed _ -> { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
+    with 
+    | ResolutionFailed _ -> { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
+    | TypeUtil.TyResolutionFailed -> {
+        f_state with fail_inst = FISet.add f_inst f_state.fail_inst
+      }
 
 let get_inst = 
-  let matcher = new type_matcher in
   fun t_set fn_def ->
     let arg_types = List.map snd fn_def.Ir.fn_args |> 
                     List.sort (fun a b ->
@@ -528,7 +301,7 @@ let get_inst =
                         | _,_ -> 0
                       )
     in
-    match matcher#get_inst t_set arg_types with
+    match TypeUtil.get_inst t_set arg_types with
     | `Inst t_bindings -> 
       Some (List.map (fun t_binding ->
           List.map (t_binding |> rev_app List.assoc) fn_def.Ir.fn_tparams
@@ -591,7 +364,7 @@ let run_analysis () =
        | [] -> ()
        | _ -> failwith "crust_init cannot be polymorphic");
       match crust_init_def.Ir.ret_type with
-      | `Tuple tl -> (Some crust_init_def,List.map (Types.to_monomorph []) tl)
+      | `Tuple tl -> (Some crust_init_def,List.map (TypeUtil.to_monomorph []) tl)
       | t -> failwith @@ "crust_init must return a tuple, found: " ^ (Types.pp_t t)
     end
   in

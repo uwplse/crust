@@ -98,7 +98,7 @@ let rec c_type_of_monomorph (ct : Types.mono_type) =
   | `Bottom -> `Bottom
 
 let to_monomorph_c_type (t_bindings : (string * c_types) list) t = 
-  c_type_of_monomorph (Types.to_monomorph (t_bindings :> (string * Types.mono_type) list) t)
+  c_type_of_monomorph (TypeUtil.to_monomorph (t_bindings :> (string * Types.mono_type) list) t)
 
 let int_sizes = [ 8; 16; 32; 64 ];;
 

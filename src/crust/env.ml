@@ -20,6 +20,7 @@ let adt_env = Hashtbl.create 10;;
 let fn_env = Hashtbl.create 10;;
 let type_infr_filter = Hashtbl.create 10;;
 let abstract_impl = Hashtbl.create 10;;
+let associated_types = Hashtbl.create 10;;
 
 let is_abstract name = Hashtbl.mem abstract_impl name
 
@@ -41,12 +42,18 @@ let rec set_env = function
      | None -> ()
      | Some { Ir.abstract_name = a_name } ->
        if Hashtbl.mem abstract_impl a_name then
-         Hashtbl.add abstract_impl a_name @@ f.Ir.fn_name :: (Hashtbl.find abstract_impl a_name)
+         Hashtbl.replace abstract_impl a_name @@ f.Ir.fn_name :: (Hashtbl.find abstract_impl a_name)
        else
          Hashtbl.add abstract_impl a_name [ f.Ir.fn_name ]
     );
     set_env t
-  | `Assoc_type _::t 
+  | `Assoc_type ({ Types.abstract_name = a_name; _ } as a)::t ->
+    (if Hashtbl.mem associated_types a_name then 
+      Hashtbl.replace associated_types a_name @@ a::(Hashtbl.find associated_types a_name)
+    else
+      Hashtbl.add associated_types a_name [ a ]
+    );
+    set_env t
   | `Abstract_Fn _::t ->
     set_env t
 

@@ -22,3 +22,5 @@ val init_inference_filter : string -> unit
 (* convenience function *)
 val get_adt_drop : string -> string option
 val is_abstract_fn : string -> bool
+
+val associated_types : Types.associated_type list EnvMap.t

@@ -51,7 +51,7 @@ type associated_type = {
   ty_output : r_type
 }
 
-
+(*
 let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun t_binding t ->
   match t with
   | `Adt_type a ->
@@ -71,7 +71,7 @@ let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun 
 and resolve_abstract_type abstract_name m_args =
   (* stub *)
   `Unit
-
+  *)
 type type_binding = (string * mono_type) list
 
 let type_binding tv ty = 
@@ -80,8 +80,8 @@ let type_binding tv ty =
 let rec pp_t (to_pp : r_type) = match to_pp with
   | `Bottom -> "!"
   | `T_Var t -> "var " ^ t
-  | `Int _ -> "int"
-  | `UInt _ -> "uint"
+  | `Int s -> "int" ^ (string_of_int s)
+  | `UInt s -> "uint" ^ (string_of_int s)
   | `Unit -> "()"
   | `Bool -> "bool"
   | `Ptr t
@@ -92,6 +92,17 @@ let rec pp_t (to_pp : r_type) = match to_pp with
   | `Adt_type p -> 
 	 if p.type_param = [] then p.type_name 
 	 else p.type_name ^ "<" ^ (String.concat "," @@ List.map pp_t p.type_param) ^ ">"
+  | `Abstract a ->
+    "<" ^ a.a_name ^ "<" ^ (
+      String.concat "," @@ List.map pp_t a.a_params
+    ) ^">>"
 
+let pp_tb tb = 
+  "{ " ^
+  (String.concat "," @@
+   List.map (fun (t_var, t_type) ->
+       t_var ^ " -> " ^ (pp_t (t_type : mono_type :> r_type))
+     ) tb
+  ) ^ " }"
 
 let rust_tuple_name = "__rust_tuple"

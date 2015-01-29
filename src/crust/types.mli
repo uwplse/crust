@@ -51,10 +51,11 @@ type associated_type = {
 
 type mono_adt_type = mono_type adt_type
 type poly_adt_type = r_type adt_type
-val to_monomorph : (string * mono_type) list -> r_type -> mono_type
+(*val to_monomorph : (string * mono_type) list -> r_type -> mono_type*)
 val type_binding : type_param list -> 'a list -> (type_param * 'a) list
 
 val pp_t :  r_type -> string
+val pp_tb : (string * mono_type) list -> string
 val rust_tuple_name : string
 
 type type_binding = (string * mono_type) list
