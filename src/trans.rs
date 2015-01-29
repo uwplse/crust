@@ -23,6 +23,7 @@ use syntax::visit;
 struct TransCtxt<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
     observed_abstract_fns: HashMap<String, (DefId, DefId)>,
+    observed_abstract_types: HashMap<String, DefId>,
 }
 
 trait Trans {
@@ -252,7 +253,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                                 mangled_def_name(trcx, did),
                                                 substs.trans(trcx)),
             // ty_uniq
-            ty_str => format!("str"),
+            //ty_str => format!("str"),
             // ty_vec
             ty_ptr(mt) => format!("{} {}",
                                   match mt.mutbl {
@@ -267,7 +268,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                           },
                                           r.trans(trcx),
                                           mt.ty.trans(trcx)),
-            ty_bare_fn(_, _) => format!("fn"),
+            //ty_bare_fn(_, _) => format!("fn"),
             // ty_closure
             // ty_trait
             // TODO: handle substs
@@ -278,11 +279,16 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
             ty_tup(ref ts) if ts.len() == 0 => format!("unit"),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(trcx)),
             ty_projection(ref proj) => {
-                format!("abstract {}_{} {}",
-                        mangled_def_name(trcx, proj.trait_ref.def_id),
-                        proj.item_name.trans(trcx),
-                        proj.trait_ref.substs.trans(trcx))
+                let trait_did = proj.trait_ref.def_id;
+                let name = format!("{}_{}",
+                                   mangled_def_name(trcx, proj.trait_ref.def_id),
+                                   proj.item_name.trans(trcx));
 
+                trcx.observed_abstract_types.insert(name.clone(), trait_did);
+
+                format!("abstract {} {}",
+                        name,
+                        proj.trait_ref.substs.trans(trcx))
             },
             ty_param(ref param) => {
                 format!("var {}{}",
@@ -947,7 +953,31 @@ fn mangled_def_name(trcx: &mut TransCtxt, did: DefId) -> String {
         }
     }
     name.pop();
-    name
+
+    sanitize_ident(&*name)
+}
+
+fn sanitize_ident(s: &str) -> String {
+    let mut last_i = 0;
+    let mut result = String::with_capacity(s.len());
+    for (i, c) in s.chars().enumerate() {
+        if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' {
+            continue;
+        }
+        result.push_str(s.slice(last_i, i));
+
+        let n = c as u32;
+        if n <= 0xff {
+            result.push_str(&*format!("_x{:02x}", n));
+        } else if n <= 0xffff {
+            result.push_str(&*format!("_u{:04x}", n));
+        } else {
+            result.push_str(&*format!("_U{:08x}", n));
+        }
+        last_i = i + 1;
+    }
+    result.push_str(s.slice_from(last_i));
+    result
 }
 
 /*
@@ -1152,13 +1182,6 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
         }
 
         let mut regions = Vec::new();
-        /*
-        for region in trait_generics.regions.iter() {
-            regions.push(format!("{}{}",
-                                 region.space.trans(trcx),
-                                 region.index));
-        }
-        */
         for region in method_generics.regions.iter() {
             regions.push(format!("{}{}",
                                  region.space.trans(trcx),
@@ -1166,13 +1189,6 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
         }
 
         let mut types = Vec::new();
-        /*
-        for ty_param in trait_generics.types.iter() {
-            types.push(format!("{}{}",
-                               ty_param.space.trans(trcx),
-                               ty_param.index));
-        }
-        */
         for ty_param in method_generics.types.iter() {
             types.push(format!("{}{}",
                                ty_param.space.trans(trcx),
@@ -1190,15 +1206,46 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
                  types.trans(trcx),
                  args.trans(trcx),
                  return_ty);
+    }
+}
 
+fn print_abstract_type_decls(trcx: &mut TransCtxt) {
+    let mut names = trcx.observed_abstract_types.iter()
+                        .map(|(k,v)| (k.clone(), v.clone()))
+                        .collect::<Vec<_>>();
+    names.sort();
+    let names = names;
 
-        /*
-        println!("abstract_fn {}: trait={}, method={}",
-                 name, trait_did, method_did);
-        println!("  trait ast: {}", find_item_ast(trcx.tcx, trait_did).is_some());
-        println!("  method ast: {}", find_item_ast(trcx.tcx, method_did).is_some());
-        println!("  method item: {}", trcx.tcx.impl_or_trait_items.borrow().get(&method_did).is_some());
-        */
+    for (name, trait_did) in names.into_iter() {
+        let trait_generics = {
+            let trait_defs = trcx.tcx.trait_defs.borrow();
+            let opt_trait = trait_defs.get(&trait_did);
+            let trait_ = match opt_trait {
+                None => panic!("can't find trait for {}", name),
+                Some(ref t) => &**t,
+            };
+
+            trait_.generics.clone()
+        };
+
+        let mut regions = Vec::new();
+        for region in trait_generics.regions.iter() {
+            regions.push(format!("{}{}",
+                                 region.space.trans(trcx),
+                                 region.index));
+        }
+
+        let mut types = Vec::new();
+        for ty_param in trait_generics.types.iter() {
+            types.push(format!("{}{}",
+                               ty_param.space.trans(trcx),
+                               ty_param.index));
+        }
+
+        println!("abstract_type {} {} {}",
+                 name,
+                 regions.trans(trcx),
+                 types.trans(trcx));
     }
 }
 
@@ -1208,10 +1255,12 @@ pub fn process(tcx: &ty::ctxt, filter_fn : HashSet<String>) {
     let mut trcx = TransCtxt {
         tcx: tcx,
         observed_abstract_fns: HashMap::new(),
+        observed_abstract_types: HashMap::new(),
     };
     {
         let mut visitor = TransVisitor { trcx: &mut trcx, filter_fn: filter_fn };
         visit::walk_crate(&mut visitor, krate);
     }
     print_abstract_fn_decls(&mut trcx);
+    print_abstract_type_decls(&mut trcx);
 }
