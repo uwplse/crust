@@ -27,6 +27,13 @@ type 'a mono_r_type = [
 
 type mono_type = mono_type mono_r_type;;
 
+(* we don't actually use this *)
+type abstract_type_def = {
+  a_type_name : string;
+  a_lifetime_params : lifetime list;
+  a_type_params : type_param list
+}
+
 type 'a abstract_type = {
   a_name : string;
   a_lifetimes: lifetime list;

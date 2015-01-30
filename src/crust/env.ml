@@ -54,6 +54,7 @@ let rec set_env = function
       Hashtbl.add associated_types a_name [ a ]
     );
     set_env t
+  | `Abstract_Type _::t
   | `Abstract_Fn _::t ->
     set_env t
 

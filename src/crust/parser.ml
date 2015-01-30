@@ -374,13 +374,26 @@ let parse_assoc_type tokens cb =
       )
   | _ -> (raise (Parse_failure ("parse_assoc_type", tokens)))
 
+let parse_abstract_type tokens cb = 
+  match tokens with
+  | "abstract_type"::name::t ->
+    let parse_fn = parse_lifetimes >> parse_type_params in
+    parse_fn t (fun (lifetimes,tp) rest ->
+        cb (`Abstract_Type {
+            Types.a_type_name = name;
+            Types.a_lifetime_params = lifetimes;
+            Types.a_type_params = tp
+          }) rest
+      )
+  | _ -> raise (Parse_failure ("parse_abstract_type",tokens))
+
 let parse_module tokens cb = 
   match tokens with
   | "abstract_fn"::_ 
   | "fn"::_ -> parse_fn tokens cb
   | "enum"::_ -> parse_enum_def tokens cb
   | "struct"::_ -> parse_struct_def tokens cb
-  | "abstract_type"::_ -> failwith "not really supported yet"
+  | "abstract_type"::_ -> parse_abstract_type tokens cb
   | "associated_type"::_ -> parse_assoc_type tokens cb
   | _ -> (raise (Parse_failure ("parse_module",tokens)))
 

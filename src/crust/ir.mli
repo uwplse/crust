@@ -110,4 +110,5 @@ type module_expr = [
   | `Fn of fn_def
   | `Abstract_Fn of string
   | `Assoc_type of Types.associated_type
+  | `Abstract_Type of Types.abstract_type_def
   ]
