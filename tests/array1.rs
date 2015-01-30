@@ -5,7 +5,7 @@ extern crate core;
 
 use Option::{Some, None};
 use core::prelude::{Copy, Drop};
-use core::ptr::{RawPtr, RawMutPtr};
+use core::ptr::{PtrExt, MutPtrExt};
 
 // Hacky workaround to avoid needing compiled versions of liblibc and liballoc
 //extern crate alloc;
@@ -90,3 +90,5 @@ impl<T> Drop for Array<T> {
         unsafe { alloc::heap::deallocate(self.ptr as *mut u8, size, align) };
     }
 }
+
+fn crust_init() -> (Array<u32>,) { (Array::new(10),) }

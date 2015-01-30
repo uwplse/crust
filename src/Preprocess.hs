@@ -36,6 +36,7 @@ main = do
             fixAbort $
             fixBottom $
             fixAddress $
+            --scrub ix $ 
             items
     putStrLn $ concatMap pp items'
 
@@ -89,6 +90,24 @@ fixBottom = everywhere (mkT go)
   where
     go TBottom = TUnit
     go t = t
+
+scrub ix items = scrubbed'
+  where
+    scrubbed = filter isValid items
+    scrubbed' =
+        if length scrubbed < length items
+            then trace ("scrub removed " ++ show (length items - length scrubbed)) $
+                 scrub ix scrubbed
+            else scrubbed
+
+    isValid = everything (&&) (True `mkQ` goTy `extQ` goExpr)
+
+    goTy (TAdt name _ _) = name `M.member` i_types ix
+    goTy _ = True
+
+    goExpr (ECall name _ _ _) = name `M.member` i_fns ix
+    goExpr (EConst name) = name `M.member` i_consts ix
+    goExpr _ = True
 
 
 mkCast e t = Expr t (ECast e t)

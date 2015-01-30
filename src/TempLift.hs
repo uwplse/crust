@@ -12,6 +12,8 @@ import Parser
 import Index
 import Builder
 
+import Debug.Trace
+
 
 hasStableLocation (Expr _ (EVar _)) = True
 hasStableLocation (Expr _ (EField e _)) = hasStableLocation e
@@ -60,9 +62,9 @@ takeDecls = do
     modify $ set_ls_decls []
     return $ reverse decls
 
-collectDecls :: (a -> LifterM a) -> ([Decl] -> a -> LifterM (a, [Decl]))
-collectDecls f ds x = do
-    x' <- f x
+collectDecls :: [Decl] -> LifterM a -> LifterM (a, [Decl])
+collectDecls ds x = do
+    x' <- x
     ds' <- takeDecls
     return (x', ds ++ ds')
 
@@ -97,7 +99,7 @@ mkTr = extTr (\a d -> return (d, a))
 liftTempsM :: Data a => a -> LifterM a
 liftTempsM x = traverse go concat x >>= return . fst
   where
-    go = mkTr (consumeDecls goStmt) `extTr` (collectDecls goExpr)
+    go = mkTr (consumeDecls goStmt) `extTr` goExpr
 
     applyDecls decls e = do
         case decls of
@@ -115,20 +117,23 @@ liftTempsM x = traverse go concat x >>= return . fst
     goStmt ds (SLet n ty e) = do
         let_ n $ applyDecls ds e
 
-    goExpr :: Expr -> LifterM Expr
-    goExpr (Expr ty (EAddrOf e))
-      | not $ hasStableLocation e = do
+    goExpr :: [Decl] -> Expr -> LifterM (Expr, [Decl])
+    goExpr ds (Expr ty (EAddrOf e))
+      | not $ hasStableLocation e = collectDecls ds $ do
         kind <- getKind (typeOf e)
         if kind == Copy then return e else do
         n <- fresh "lifttemp"
         addDecl n e
         return $ Expr ty $ EAddrOf $ Expr (typeOf e) $ EVar n
-    goExpr (Expr _ (EField e _))
-      | not $ hasStableLocation e = do
+    goExpr ds (Expr _ (EField e _))
+      | not $ hasStableLocation e = collectDecls ds $ do
         kind <- getKind (typeOf e)
         if kind == Copy then return e else do
         error $ "can't yet handle accessing a field of a temporary"
+    goExpr ds (Expr ty (EBlock ss e)) = collectDecls [] $ do
+        e' <- applyDecls ds e
+        return $ Expr ty $ EBlock ss e'
     -- TODO: scrutinee of a match is sometimes a temporary that needs lifting
-    goExpr e = return e
+    goExpr ds e = collectDecls ds $ return e
 
 liftTemps ix x = runLifterM ix $ liftTempsM x
