@@ -314,8 +314,8 @@ let sort_types a b =
 
 let rev_app f x y = f y x
 
-let get_inst type_univ to_match = 
-  let free_vars = SSet.elements @@ List.fold_left get_free_vars SSet.empty to_match in
+let get_inst type_univ free_vars to_match = 
+(*  let free_vars = SSet.elements @@ List.fold_left get_free_vars SSet.empty to_match in*)
   let phantom_args = List.map (fun t_var -> `T_Var t_var) free_vars in
   let to_match = List.sort sort_types @@ to_match @ phantom_args in
   matcher#get_inst type_univ to_match
