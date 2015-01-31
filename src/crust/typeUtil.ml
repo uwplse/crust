@@ -300,24 +300,46 @@ let rec get_free_vars accum t =
 
 let matcher = new type_matcher;;
 
+let rec has_abstract (t : Types.r_type) = 
+  match t with
+  | `T_Var _ -> false
+  | #Types.simple_type -> false
+  | `Bottom -> false
+  | `Adt_type { Types.type_param = tl; _ }
+  | `Tuple tl -> 
+    List.exists has_abstract tl
+  | `Abstract _ -> true
+  | `Ref_Mut (_,t)
+  | `Ref (_,t)
+  | `Ptr t
+  | `Ptr_Mut t ->
+    has_abstract t
+
 let sort_types a b = 
-  let to_ret = 
-  match (a,b) with
-  | `T_Var _,`T_Var _ -> 0
-  | `Abstract _,` Abstract _ -> 0
-  | _,`Abstract _ -> -1
-  | `Abstract _,_ -> 1
-  | `T_Var _,_ -> 1
-  | _,`T_Var _ -> -1
-  | _,_ -> 0 in
-  to_ret
+  let has_abstract_a = has_abstract a in
+  let has_abstract_b = has_abstract b in
+  match (has_abstract_a,has_abstract_b) with
+  | true,true -> 0
+  | false,true -> -1
+  | true,false -> 1
+  | _,_ ->
+    match (a,b) with
+    | `T_Var _,`T_Var _ -> 0
+    | `T_Var _,_ -> 1
+    | _,`T_Var _ -> -1
+    | _,_ -> 0
+
 
 let rev_app f x y = f y x
 
 let get_inst type_univ free_vars to_match = 
-(*  let free_vars = SSet.elements @@ List.fold_left get_free_vars SSet.empty to_match in*)
-  let phantom_args = List.map (fun t_var -> `T_Var t_var) free_vars in
-  let to_match = List.sort sort_types @@ to_match @ phantom_args in
+  let to_match = 
+    if List.exists has_abstract to_match then
+      let phantom_args = List.map (fun t_var -> `T_Var t_var) free_vars in
+      List.sort sort_types @@ to_match @ phantom_args
+    else
+      to_match
+  in
   matcher#get_inst type_univ to_match
 
 let to_monomorph = matcher#to_monomorph
