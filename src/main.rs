@@ -121,5 +121,5 @@ pub fn compile_input(sess: session::Session,
                                                        id,
                                                        rustc_resolve::MakeGlobMap::No);
 
-    trans::process(&analysis.ty_cx, filter_fn);
+    trans::process(&analysis.ty_cx, filter_fn, analysis.name.clone());
 }

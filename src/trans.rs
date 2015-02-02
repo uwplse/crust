@@ -24,6 +24,7 @@ struct TransCtxt<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
     observed_abstract_fns: HashMap<String, (DefId, DefId)>,
     observed_abstract_types: HashMap<String, DefId>,
+    crate_name: String,
 }
 
 trait Trans {
@@ -782,7 +783,7 @@ impl Trans for StructField {
 impl Trans for Variant {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         format!("{} {}",
-                self.node.name.trans(trcx),
+                mangled_def_name(trcx, local_def(self.node.id)),
                 self.node.kind.trans(trcx))
     }
 }
@@ -850,7 +851,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
             },
             ItemEnum(ref def, ref g) => {
                 format!("enum {} {} {} {};",
-                        self.ident.trans(trcx),
+                        mangled_def_name(trcx, local_def(self.id)),
                         g.trans_extra(trcx, TypeSpace),
                         def.variants.trans(trcx),
                         ty::ty_dtor(trcx.tcx, local_def(self.id)).trans(trcx))
@@ -901,7 +902,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
             },
             ItemConst(ref ty, ref expr) => {
                 format!("const {} {} {}",
-                        self.ident.trans(trcx),
+                        mangled_def_name(trcx, local_def(self.id)),
                         ty.trans(trcx),
                         expr.trans(trcx))
             },
@@ -940,6 +941,8 @@ fn clean_path_elem(s: &str, out: &mut String) {
 fn mangled_def_name(trcx: &mut TransCtxt, did: DefId) -> String {
     let mut name = String::new();
     if did.krate == LOCAL_CRATE {
+        name.push_str(&*trcx.crate_name);
+        name.push_str("_");
         trcx.tcx.map.with_path(did.node, |mut elems| {
             for elem in elems {
                 clean_path_elem(elem.name().as_str(), &mut name);
@@ -1250,12 +1253,13 @@ fn print_abstract_type_decls(trcx: &mut TransCtxt) {
 }
 
 
-pub fn process(tcx: &ty::ctxt, filter_fn : HashSet<String>) {
+pub fn process(tcx: &ty::ctxt, filter_fn : HashSet<String>, crate_name: String) {
     let krate = tcx.map.krate();
     let mut trcx = TransCtxt {
         tcx: tcx,
         observed_abstract_fns: HashMap::new(),
         observed_abstract_types: HashMap::new(),
+        crate_name: crate_name,
     };
     {
         let mut visitor = TransVisitor { trcx: &mut trcx, filter_fn: filter_fn };
