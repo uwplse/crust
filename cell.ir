@@ -61,7 +61,9 @@ fn UnsafeCell_new<0><1: T>
 #          | "ptr_mut" type
 #          | "int" word(bits)
 #          | "uint" word(bits)
+#          | "float" word(bits)
 #          | "bool"
+#          | "char"
 #          | "fn"
 #          | "unit"
 #          | "bottom"

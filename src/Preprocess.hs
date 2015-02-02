@@ -7,6 +7,7 @@ import Data.Generics
 import Data.List (intercalate, isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe
+import System.Environment
 import Text.Parsec hiding (label, State)
 
 import Lexer
@@ -23,9 +24,19 @@ dumpIr msg ir = trace text ir
   where text = "\n\n --- IR Dump (" ++ msg ++ ") ---\n\n" ++ runPp (mapM_ ppItem ir)
 
 main = do
+    args <- getArgs
+    let (shouldScrub, pprintOnly) = case args of
+            ["--scrub"] -> (True, False)
+            ["--pprint"] -> (False, True)
+            [] -> (False, False)
+            _ -> error $ "bad command line arguments: " ++ show args
+
     items <- parseContents item
-    let ix = mkIndex items
-    let items' =
+    if pprintOnly then evaluate (dumpIr "pprint" $ items) >> return () else do
+
+    let items' = if shouldScrub then scrub items else items
+    let ix = mkIndex items'
+    let items'' =
             dumpIr "final" $
             renameLocals $
             addCleanup ix $
@@ -36,9 +47,8 @@ main = do
             fixAbort $
             fixBottom $
             fixAddress $
-            --scrub ix $ 
-            items
-    putStrLn $ concatMap pp items'
+            items'
+    putStrLn $ concatMap pp items''
 
 fixAddress = everywhere (mkT stripAddr)
   where
@@ -91,18 +101,23 @@ fixBottom = everywhere (mkT go)
     go TBottom = TUnit
     go t = t
 
-scrub ix items = scrubbed'
+scrub items = scrubbed'
   where
+    ix = mkIndex items
+
     scrubbed = filter isValid items
     scrubbed' =
         if length scrubbed < length items
-            then trace ("scrub removed " ++ show (length items - length scrubbed)) $
-                 scrub ix scrubbed
+            then trace ("scrub removed " ++ show (length items - length scrubbed) ++
+                        " / " ++ show (length items)) $
+                 scrub scrubbed
             else scrubbed
 
     isValid = everything (&&) (True `mkQ` goTy `extQ` goExpr)
 
     goTy (TAdt name _ _) = name `M.member` i_types ix
+    goTy (TFloat _) = False
+    goTy TChar = False
     goTy _ = True
 
     goExpr (ECall name _ _ _) = name `M.member` i_fns ix

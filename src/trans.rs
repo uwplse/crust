@@ -1,8 +1,10 @@
+use std::any::Any;
 use std::boxed::BoxAny;
 use std::collections::{HashMap, HashSet};
 
 use rustc::metadata::csearch;
 use rustc::middle::astencode;
+use rustc::middle::def;
 use rustc::middle::region;
 use rustc::middle::subst::ParamSpace::*;
 use rustc::middle::subst::ParamSpace;
@@ -22,7 +24,7 @@ use syntax::visit;
 
 struct TransCtxt<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
-    observed_abstract_fns: HashMap<String, (DefId, DefId)>,
+    observed_abstract_fns: HashMap<String, DefId>,
     observed_abstract_types: HashMap<String, DefId>,
     crate_name: String,
 }
@@ -233,7 +235,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
         use rustc::middle::ty::sty::*;
         let s = match self.sty {
             ty_bool => format!("bool"),
-            // ty_char
+            ty_char => format!("char"),
             ty_int(ity) => format!("int {}",
                                    match ity {
                                        TyI64 => 64us,
@@ -248,7 +250,11 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                         TyU16 => 16,
                                         TyU8 => 8,
                                     }),
-            // ty_float
+            ty_float(fty) => format!("float {}",
+                                     match fty {
+                                         TyF64 => 64us,
+                                         TyF32 => 32,
+                                     }),
             // TODO: handle substs
             ty_enum(did, ref substs) => format!("adt {} {}",
                                                 mangled_def_name(trcx, did),
@@ -442,7 +448,7 @@ fn trans_method_call(trcx: &mut TransCtxt,
                     panic!("unexpected TypeTraitItemId in method call"),
             };
             let name = mangled_def_name(trcx, method_did);
-            trcx.observed_abstract_fns.insert(name.clone(), (trait_did, method_did));
+            trcx.observed_abstract_fns.insert(name.clone(), method_did);
             name
         },
         _ => panic!("unsupported MethodOrigin variant"),
@@ -467,12 +473,21 @@ impl Trans for Expr {
                             var_idx,
                             args.trans(trcx))
                 } else {
-                    let did = trcx.tcx.def_map.borrow()[func.id].def_id();
+                    let (did, is_abstract) = match trcx.tcx.def_map.borrow()[func.id] {
+                        def::DefStaticMethod(did, prov) => match prov {
+                            def::MethodProvenance::FromTrait(_) => (did, true),
+                            _ => (did, false),
+                        },
+                        def => (def.def_id(), false),
+                    };
                     let name = mangled_def_name(trcx, did);
                     let substs = match trcx.tcx.item_substs.borrow().get(&func.id) {
                         Some(item_substs) => item_substs.substs.trans(trcx),
                         None => format!("0 0"),
                     };
+                    if is_abstract {
+                        trcx.observed_abstract_fns.insert(name.clone(), did);
+                    }
                     format!("call {} {} {}",
                             name,
                             substs,
@@ -818,22 +833,44 @@ struct TransVisitor<'b, 'a: 'b, 'tcx: 'a> {
     filter_fn: HashSet<String>
 }
 
+fn try_str<F: FnOnce() -> String>(f: F, what: &str) -> String {
+    let mut opt_str = None;
+    let mut opt_f = Some(f);
+    let result = unsafe {
+        ::std::rt::unwind::try(|| {
+            let f = opt_f.take().unwrap();
+            opt_str = Some(f());
+        })
+    };
+    match result {
+        Ok(()) => {
+            opt_str.unwrap()
+        },
+        Err(e) => {
+            fn read(mut e: Box<Any>) -> String {
+                match e.downcast::<String>() {
+                    Ok(msg) => return *msg,
+                    Err(e_) => e = e_,
+                }
+
+                match e.downcast::<&'static str>() {
+                    Ok(msg) => return String::from_str(*msg),
+                    Err(e_) => e = e_,
+                }
+
+                format!("(unknown error type: {:?}", e.get_type_id())
+            }
+            format!("# error with {}: {}", what, read(e))
+        },
+    }
+}
+
 impl<'b, 'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'b, 'a, 'tcx> {
     fn visit_item(&mut self, i: &'v Item) {
-        let mut opt_str = None;
-        let result = unsafe {
-            ::std::rt::unwind::try(|| {
-                opt_str = Some(i.trans_extra(self.trcx, &self.filter_fn));
-            })
-        };
-        match result {
-            Ok(()) => println!("{}", opt_str.unwrap()),
-            Err(e) => {
-                if let Ok(msg) = e.downcast::<String>() {
-                    println!("# error: {}", msg);
-                }
-            },
-        }
+        let name = mangled_def_name(self.trcx, local_def(i.id));
+        let s = try_str(|| i.trans_extra(self.trcx, &self.filter_fn),
+                        &*name);
+        println!("{}", s);
         visit::walk_item(self, i);
     }
 }
@@ -880,19 +917,23 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 for item in items.iter() {
                     let part = match *item {
                         MethodImplItem(ref method) => {
-                            trans_method(trcx, self, &**method)
+                            let name = mangled_def_name(trcx, local_def(method.id));
+                            try_str(|| trans_method(trcx, self, &**method), &*name)
                         },
                         TypeImplItem(ref td) => {
-                            let name_str = td.ident.trans(trcx);
-                            let self_str = self_ty.trans(trcx);
-                            let typ_str = td.typ.trans(trcx);
-                            format!("associated_type {} {} {}",
-                                    impl_generics.trans_extra(trcx, TypeSpace),
-                                    trans_impl_clause(trcx,
-                                                      trait_ref.as_ref().unwrap(),
-                                                      name_str,
-                                                      self_str),
-                                    typ_str)
+                            let name = mangled_def_name(trcx, local_def(td.id));
+                            try_str(|| {
+                                let name_str = td.ident.trans(trcx);
+                                let self_str = self_ty.trans(trcx);
+                                let typ_str = td.typ.trans(trcx);
+                                format!("associated_type {} {} {}",
+                                        impl_generics.trans_extra(trcx, TypeSpace),
+                                        trans_impl_clause(trcx,
+                                                          trait_ref.as_ref().unwrap(),
+                                                          name_str,
+                                                          self_str),
+                                        typ_str)
+                            }, &*name)
                         },
                     };
                     result.push_str(part.as_slice());
@@ -1153,18 +1194,12 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
     let names = names;
 
 
-    for (name, (trait_did, method_did)) in names.into_iter() {
-        let (trait_generics, method_generics, inputs, output) = {
+    for (name, method_did) in names.into_iter() {
+        let (method_generics, inputs, output) = {
             let trait_defs = trcx.tcx.trait_defs.borrow();
             let impl_or_trait_items = trcx.tcx.impl_or_trait_items.borrow();
-
-            let opt_trait = trait_defs.get(&trait_did);
             let opt_method = impl_or_trait_items.get(&method_did);
 
-            let trait_ = match opt_trait {
-                None => panic!("can't find trait for {}", name),
-                Some(ref t) => &**t,
-            };
             let method = match opt_method {
                 None => panic!("can't find method for {}", name),
                 Some(x) => match x {
@@ -1173,8 +1208,7 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
                 }
             };
 
-            (trait_.generics.clone(),
-             method.generics.clone(),
+            (method.generics.clone(),
              method.fty.sig.0.inputs.clone(),
              method.fty.sig.0.output.clone())
         };

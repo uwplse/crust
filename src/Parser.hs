@@ -49,7 +49,9 @@ data Ty =
     | TPtr Mutbl Ty
     | TInt Int
     | TUint Int
+    | TFloat Int
     | TBool
+    | TChar
     | TFn
     | TUnit
     | TBottom
@@ -175,7 +177,9 @@ ty = tagged
     , ("ptr_mut", TPtr <$> return MMut <*> ty)
     , ("int", TInt <$> int)
     , ("uint", TUint <$> int)
+    , ("float", TFloat <$> int)
     , ("bool", return TBool)
+    , ("char", return TChar)
     , ("fn", return TFn)
     , ("unit", return TUnit)
     , ("bottom", return TBottom)
@@ -313,7 +317,9 @@ instance Pp Ty where
         TPtr MMut a ->      ppGo "ptr_mut"  [pp a]
         TInt a ->           ppGo "int"      [pp a]
         TUint a ->          ppGo "uint"     [pp a]
+        TFloat a ->         ppGo "float"     [pp a]
         TBool ->            ppGo "bool"     []
+        TChar ->            ppGo "char"     []
         TFn ->              ppGo "fn"       []
         TUnit ->            ppGo "unit"     []
         TBottom ->          ppGo "bottom"   []

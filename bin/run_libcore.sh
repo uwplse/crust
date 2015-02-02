@@ -30,7 +30,7 @@ if [[ "$THIS_DIR/rbmc" -nt "libcore.ir" ]]; then
     $THIS_DIR/rbmc $RBMC_FLAGS "$LIBCORE_SRC" >libcore.ir || true
 fi
 echo "running Preprocess"
-<libcore.ir sed -e '/^#/s/.*//' | $THIS_DIR/../src/Preprocess >libcore2.ir
+<libcore.ir sed -e '/^#/s/.*//' | $THIS_DIR/../src/Preprocess --scrub >libcore2.ir
 echo "running crust.native"
 <libcore2.ir $THIS_DIR/../src/crust/crust.native -optional-init -gcc - >libcore.c
 echo "running gcc"

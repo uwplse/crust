@@ -56,7 +56,9 @@ ppTy ty = case ty of
     TPtr mut ty -> spaceSep $ [tell "*", ppMutbl mut, ppTy ty]
     TInt size -> tell $ "i" ++ show size
     TUint size -> tell $ "u" ++ show size
+    TFloat size -> tell $ "f" ++ show size
     TBool -> tell "bool"
+    TChar -> tell "char"
     TFn -> tell "fn"
     TUnit -> tell "()"
     TBottom -> tell "!"
