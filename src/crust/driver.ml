@@ -333,6 +333,9 @@ module DriverF(COMP : Compilation) = struct
       let slot_value = stack_symbol ^ "." ^ slot_field in
       let i_value = stack_symbol ^ "." ^ i_field in
       let immutable_value = stack_symbol ^ "." ^ immutable_field in
+      let is_live = self#array_ref live_state i_value in
+      self#put_all [ "if("; is_live; " != 0) " ];
+      self#open_block ();
       let borrowed_p = [ "if("; borrowed_from_value ; " != "; no_borrow_symbol ; " && " ] in
       begin
         self#put_all @@ borrowed_p @ [ immutable_value ; " == " ; immutable_borrow_symbol; ") " ];
@@ -351,6 +354,8 @@ module DriverF(COMP : Compilation) = struct
       end;
       self#emit_array_assign live_state i_value "0";
       List.iteri (self#emit_drop_call type_value slot_value) public_types;
+      self#newline ();
+      self#close_block ();
       self#newline ();
       self#put_all [ stack_ptr_symbol; "--;"];
       self#newline ();
@@ -561,9 +566,6 @@ module DriverF(COMP : Compilation) = struct
             end
         in
         unfold_tuple args @@ `Tuple (i,b)
-
-
-
 
     method private find_aliasing_types () = 
       let pointer_types = List.fold_left (fun accum s ->
