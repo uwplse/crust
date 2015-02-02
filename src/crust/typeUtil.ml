@@ -126,6 +126,25 @@ exception TyResolutionFailed;;
 
    This didn't pan out and all these methods could be made into
    functions, but I like them packaged up like this *)
+
+let dump_tset t_set = 
+  "{ " ^
+  (String.concat ", " @@ MTSet.fold (fun t accum -> 
+       (Types.pp_t (t : Types.mono_type :> Types.r_type))::accum
+     ) t_set [])
+  ^ " }"
+
+let dump_tlist t_list = 
+  "[ " ^ 
+  (String.concat ", " @@ List.map (fun x -> Types.pp_t x) t_list) ^ " ]"
+
+let print_tlist t_list = 
+  prerr_endline @@ dump_tlist t_list
+
+let print_tset t_set = 
+  prerr_endline @@ dump_tset t_set
+
+
 class type_matcher = object(self)
   method get_inst t_set m = 
     self#match_types (new set_match_state true t_set) [] m
@@ -333,14 +352,19 @@ let sort_types a b =
 let rev_app f x y = f y x
 
 let get_inst type_univ free_vars to_match = 
-  let to_match = 
-    if List.exists has_abstract to_match then
-      let phantom_args = List.map (fun t_var -> `T_Var t_var) free_vars in
-      List.sort sort_types @@ to_match @ phantom_args
-    else
-      to_match
-  in
-  matcher#get_inst type_univ to_match
+  let appears_in = List.fold_left get_free_vars SSet.empty to_match in
+  let all_free = List.fold_right SSet.add free_vars SSet.empty in
+  if not (SSet.is_empty @@ SSet.diff all_free appears_in) then
+    `Mismatch
+  else
+    let to_match = 
+      if List.exists has_abstract to_match then
+        let phantom_args = List.map (fun t_var -> `T_Var t_var) free_vars in
+        List.sort sort_types @@ to_match @ phantom_args
+      else
+        to_match
+    in
+    matcher#get_inst type_univ to_match
 
 let to_monomorph = matcher#to_monomorph
 let is_inst = matcher#is_inst

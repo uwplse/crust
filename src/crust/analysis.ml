@@ -243,6 +243,7 @@ and walk_fn w_state fn_name m_args  =
     | _ -> failwith "Invalid type arity of drop_glue"
   else walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
 and walk_fn_def w_state fn_def m_args = 
+  prerr_endline @@ "walking :" ^ fn_def.Ir.fn_name;
   let f_inst = fn_def.fn_name,m_args in
   if FISet.mem f_inst w_state.fn_inst then
     w_state
@@ -294,6 +295,13 @@ let get_inst t_set fn_def =
     let arg_types = List.map snd fn_def.Ir.fn_args in
     match TypeUtil.get_inst t_set fn_def.Ir.fn_tparams arg_types with
     | `Inst t_bindings -> 
+(*      prerr_endline @@  "found instantiation for " ^ fn_def.Ir.fn_name;
+      List.iter (fun t_binding ->
+          let to_print = "{ " ^ (String.concat ", " @@ List.map (fun (t_name,t) ->
+              t_name ^ " -> " ^ (Types.pp_t (t : Types.mono_type :> Types.r_type))
+                ) t_binding) ^ "}" in
+          prerr_endline to_print
+        ) t_bindings;*)
       Some (List.map (fun t_binding ->
           List.map (t_binding |> rev_app List.assoc) fn_def.Ir.fn_tparams
         ) t_bindings)
@@ -303,10 +311,16 @@ let has_inst w_state f_name =
   FISet.exists (fun (f_name',_) -> 
       f_name = f_name') w_state.fn_inst
 
+let pattern_list = ref [];;
+
 let rec find_fn find_state = 
   let old_size = state_size find_state.w_state in
   let find_state = Env.EnvMap.fold (fun fn_name fn_def f_state ->
-      if (SSet.mem fn_name f_state.constructor_fn) && has_inst f_state.w_state fn_name then
+      if not (List.exists (fun patt ->
+          Str.string_match patt fn_name 0
+        ) !pattern_list) then
+        f_state
+      else if (SSet.mem fn_name f_state.constructor_fn) && has_inst f_state.w_state fn_name then
         f_state
       else if SSet.mem fn_name f_state.restrict_fn then
         f_state
@@ -493,3 +507,23 @@ let borrow_analysis fn_def =
     else
       snd @@ List.hd mapped_args
   end
+
+let init_fn_filter f_name = 
+  let in_chan = open_in f_name in
+  let patterns = 
+    let rec slurp_file accum = 
+      try
+        let line = input_line in_chan in
+        if line = "" then
+          slurp_file accum
+        else
+          slurp_file (line::accum)
+      with End_of_file -> close_in in_chan; accum
+    in
+    slurp_file []
+  in
+  pattern_list := List.map (fun patt ->
+      let patt = Str.global_replace (Str.regexp_string "*") ".+" patt in
+      let patt = "^" ^ patt ^ "$" in
+      Str.regexp patt
+    ) patterns
