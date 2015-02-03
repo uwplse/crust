@@ -218,7 +218,7 @@ fnDef = do
     f <- f <$> counted argDecl
     exactWord "return"
     f <- f <$> ty
-    implClause <- optional $ exactWord "impl" >> implClause
+    implClause <- optional $ implClause
     f <- f <$> return implClause
     exactWord "body"
     f <$> expr

@@ -142,7 +142,42 @@ let i_list = arith_intrinsics @ [
   { i_name = "core_intrinsics_min_align_of";
     i_params = [ "_" ];
     i_body = Inline "((size_t)1)"
-  }
+  };
+  {
+    i_name = "core_intrinsics_bswap16";
+    i_params = [ "_" ];
+    i_body = Inline "((uint16_t)__builtin_bswap16((int16_t){arg1}, (int16_t){arg2}))"
+  };
+  {
+    i_name = "core_intrinsics_bswap32";
+    i_params = [ "_" ];
+    i_body = Inline "((uint32_t)__builtin_bswap32((int32_t){arg1}, (int32_t){arg2}))"
+  };
+  {
+    i_name = "core_intrinsics_bswap64";
+    i_params = [ "_" ];
+    i_body = Inline "((uint64_t)__builtin_bswap64((int64_t){arg1}, (int64_t){arg2}))"
+  };
+  {
+    i_name = "core_intrinsics_powif32";
+    i_params = [ "_" ];
+    i_body = Inline "(__builtin_powfi({arg1}, {arg2}))"
+  };
+  {
+    i_name = "core_intrinsics_powif64";
+    i_params = [ "_" ];
+    i_body = Inline "(__builtin_powi({arg1}, {arg2}))"
+  };
+  {
+    i_name = "core_ops_f32__Rem_rem_fmodf";
+    i_params = [ "_" ];
+    i_body = Inline "(fmodf({arg1}, {arg2}))"
+  };
+  {
+    i_name = "core_ops_f64__Rem_rem_fmod";
+    i_params = [ "_" ];
+    i_body = Inline "(fmod({arg1}, {arg2}))"
+  };
 ]
 
 let intrinsic_hash = Hashtbl.create 10;;

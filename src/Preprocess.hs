@@ -24,6 +24,12 @@ import Debug.Trace
 dumpIr msg ir = trace text ir
   where text = "\n\n --- IR Dump (" ++ msg ++ ") ---\n\n" ++ runPp (mapM_ ppItem ir)
 
+data Config = Config
+    { c_scrub :: Bool
+    , c_pprint :: Bool
+    , c_remove_extern :: Bool
+    }
+
 main = do
     args <- getArgs
     let (shouldScrub, pprintOnly) = case args of

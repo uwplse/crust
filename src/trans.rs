@@ -1157,7 +1157,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
         Some(ref trait_ref) => {
             let name_str = name.trans(trcx);
             let self_str = self_ty.trans(trcx);
-            format!("1 impl {}",
+            format!("1 {}",
                     trans_impl_clause(trcx,
                                       trait_ref,
                                       name_str,

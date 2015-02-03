@@ -2,6 +2,7 @@
 #![no_std]
 #![feature(unsafe_destructor)]
 extern crate core;
+extern crate alloc;
 
 use core::option::Option::{self, Some, None};
 use core::prelude::{Copy, Drop};
@@ -10,6 +11,7 @@ use core::ptr::{PtrExt, MutPtrExt};
 // Hacky workaround to avoid needing compiled versions of liblibc and liballoc
 //extern crate alloc;
 
+/*
 mod alloc {
     pub mod heap {
         pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
@@ -22,6 +24,7 @@ mod alloc {
         }
     }
 }
+*/
 
 fn panic() -> ! {
     unsafe { core::intrinsics::abort() };

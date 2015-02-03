@@ -17,6 +17,7 @@ $digit+         { out $ INT . read }
 $word+          { out $ WORD }
 .               ;
 \n              ;
+"#" .*          ;
 
 {
 
