@@ -13,6 +13,11 @@ type borrow_info = [
   | `NoBorrow
 ]
 
+type move_info = [
+  | `Move_val of int
+  | `Move_tuple of int * (move_info list)
+]
+
 type walk_state = {
 	type_inst : TISet.t;
 	fn_inst : FISet.t;
@@ -26,3 +31,4 @@ val run_analysis : unit -> walk_state
 val borrow_analysis : Ir.fn_def -> borrow_info
 val resolve_abstract_fn : string -> Types.mono_type list -> (Types.mono_type list * string)
 val init_fn_filter : string -> unit
+val move_analysis : Types.mono_type list -> move_info list

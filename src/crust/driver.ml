@@ -56,7 +56,7 @@ module DriverF(COMP : Compilation) = struct
     val immutable_borrow_symbol = "IMMUTABLE"
     val mutable_borrow_symbol = "MUTABLE"
 
-    method emit_driver (public_fn : (string * COMP.c_types list) list) = 
+    method emit_driver (public_fn : (string * COMP.c_types list * Analysis.move_info list) list) = 
       self#emit_consts ();
       self#emit_nondets ();
       self#emit_stack_def ();
@@ -458,7 +458,42 @@ module DriverF(COMP : Compilation) = struct
                  |> List.map (COMP.to_monomorph_c_type t_bindings)
       in
       (ret_type, args)
-    method private emit_action action_variable iteration (fn_name,m_args) =
+
+    method private handle_move_info arg_results move_info cb = 
+      match move_info with
+      | [] -> ()
+      | h::t ->
+        let arg_value = match h with | `Move_val i | `Move_tuple (i,_) -> List.nth arg_results i in
+        match h with
+        | `Move_val i -> begin
+            match arg_value with
+            | ComplexRef _ -> ()
+            | Primitive _
+            | Tuple _ -> assert false
+            | Complex (arg_index,ty) ->
+              cb arg_index ty
+          end
+        | `Move_tuple (i,sub_fields) -> begin
+            match arg_value with
+            | ComplexRef _ -> assert false (* pretty sure this is impossible *)
+            | Primitive _ -> assert false (* VERY sure this is impossible *)
+            | Complex (arg_index,ty) -> 
+              cb arg_index ty
+            | Tuple (_,tl) ->
+              self#handle_move_info tl sub_fields cb
+          end;
+          self#handle_move_info arg_results t cb
+
+    method private emit_move_constraints arg_results move_info = 
+      self#handle_move_info arg_results move_info (fun arg_ind ty ->
+          self#emit_borrow_constraint arg_ind ty `Mutable)
+
+    method private emit_invalidate_moved arg_results move_info = 
+      self#handle_move_info arg_results move_info (fun arg_ind ty ->
+          self#emit_array_assign live_state (self#slot_call arg_ind ty) "0"
+        )
+
+    method private emit_action action_variable iteration (fn_name,m_args,move_info) =
       let (ret_type,arg_types) = self#resolve_types fn_name m_args in
       let action_index = iteration + 1 in
       self#put_all [ " else if("; action_variable ; " == " ; (string_of_int action_index); ") " ];
@@ -466,6 +501,7 @@ module DriverF(COMP : Compilation) = struct
       let save_return = match ret_type with #Types.simple_type -> false | _ -> true in
       let f_name = COMP.mangle_fn_name fn_name m_args in
       let arg_results = List.map self#resolve_arg arg_types in
+      self#emit_move_constraints arg_results move_info;
       let arg_strings = List.map (function
           | Complex (src_var,t) ->
             let arr_name = Hashtbl.find tvalue_array_cache t in
@@ -507,6 +543,7 @@ module DriverF(COMP : Compilation) = struct
           self#newline ()
         end
       end;
+      self#emit_invalidate_moved arg_results move_info;
       self#close_block ()
 
     method private emit_stack = 

@@ -446,15 +446,32 @@ let rec uniq_list = function
   | h::t ->
     h::(uniq_list t)
 
-let find_dup_inst : (string * (Types.mono_type list)) list -> (string * c_types list) list = 
-  fun insts ->
-    let simple_inst = 
-      List.map (fun (n,m_args) ->
-          (n,(List.map c_type_of_monomorph m_args))
-        ) insts
-    in
-    List.sort Pervasives.compare simple_inst
-    |> uniq_list
+let find_dup_pf_inst insts = 
+(*  let rec print_move l = match l with
+    | `Move_val i -> string_of_int i
+    | `Move_tuple (i,sub) ->
+      "{" ^ (string_of_int i) ^ "[" ^ (String.concat "," @@ List.map print_move sub) ^ "]}"
+  in*)
+  let simple_inst =
+    List.map (fun (n,m_args) ->
+        (* XXX(jtoman): awful awful awful, move this somewhere else!!! *)
+        let fn_def = Env.EnvMap.find Env.fn_env n in
+        let mono_args = List.map (TypeUtil.to_monomorph @@ Types.type_binding fn_def.Ir.fn_tparams m_args) @@ List.map snd fn_def.Ir.fn_args in
+        let move_info = Analysis.move_analysis mono_args in
+        (n,(List.map c_type_of_monomorph m_args),move_info)
+      ) insts
+  in
+  List.sort Pervasives.compare simple_inst
+  |> uniq_list
+
+let find_dup_inst insts = 
+  let simple_inst = 
+    List.map (fun (n,m_args) ->
+        (n,(List.map c_type_of_monomorph m_args))
+      ) insts
+  in
+  List.sort Pervasives.compare simple_inst
+  |> uniq_list
 
 module CTypeInst = struct
   type t = string * (c_types list)
@@ -528,7 +545,7 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
   let f_list = find_dup_inst @@ Analysis.FISet.elements f_set in
   let (pt_list : c_types list) = List.sort Pervasives.compare @@ List.map c_type_of_monomorph @@ Analysis.MTSet.elements pub_type_set in
   let pt_list = uniq_list pt_list in
-  let pf_list = find_dup_inst @@ Analysis.FISet.elements pub_fn_set in
+  let pf_list = find_dup_pf_inst @@ Analysis.FISet.elements pub_fn_set in
   emit_common_typedefs out_channel;
   begin
     if !Env.gcc_mode then begin

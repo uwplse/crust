@@ -17,6 +17,6 @@ end
 
 module DriverF(C : Compilation) : sig
   class driver_emission : Buffer.t -> C.c_types list -> object
-      method emit_driver : (string * C.c_types list) list -> unit
+      method emit_driver : (string * C.c_types list * Analysis.move_info list) list -> unit
     end
 end

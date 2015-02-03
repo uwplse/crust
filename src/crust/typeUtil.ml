@@ -368,3 +368,13 @@ let get_inst type_univ free_vars to_match =
 
 let to_monomorph = matcher#to_monomorph
 let is_inst = matcher#is_inst
+
+let rec is_move_type : Types.mono_type -> bool = function
+  | `Ptr _ 
+  | `Ptr_Mut _ -> false
+  | `Tuple tl -> List.for_all is_move_type tl
+  | `Adt_type _ -> true
+  | `Ref (_,t) -> false
+  | `Ref_Mut (_,t) -> true
+  | #Types.simple_type -> false
+  | `Bottom -> false

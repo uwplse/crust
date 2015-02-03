@@ -243,7 +243,7 @@ and walk_fn w_state fn_name m_args  =
     | _ -> failwith "Invalid type arity of drop_glue"
   else walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
 and walk_fn_def w_state fn_def m_args = 
-  prerr_endline @@ "walking :" ^ fn_def.Ir.fn_name;
+(*  prerr_endline @@ "walking :" ^ fn_def.Ir.fn_name;*)
   let f_inst = fn_def.fn_name,m_args in
   if FISet.mem f_inst w_state.fn_inst then
     w_state
@@ -311,7 +311,7 @@ let has_inst w_state f_name =
   FISet.exists (fun (f_name',_) -> 
       f_name = f_name') w_state.fn_inst
 
-let pattern_list = ref [];;
+let pattern_list = ref [Str.regexp ""];;
 
 let rec find_fn find_state = 
   let old_size = state_size find_state.w_state in
@@ -361,6 +361,19 @@ let run_analysis () =
       | _ -> accum
     ) Env.adt_env @@ build_nopub_fn ()
   in
+  (*let crust_init_patt = Str.regexp "crust_init$" in
+  let found_init_fn = Env.EnvMap.fold (fun fn_name _ accum ->
+      try
+        let _ = Str.search_forward crust_init_patt fn_name 0 in
+        fn_name::accum
+      with Not_found -> accum
+    ) Env.EnvMap.fn_name in
+  let (init_fn,has_init) = 
+    match found_init_fn with
+    | [] -> ("",false)
+    | [h] -> (h,true)
+    | _ -> failwith @@ "troublingly many init functions found! " ^ (String.concat ", " found_init_fn)
+  in*)
   let (init_def,seed_types) =
     if !Env.init_opt && not (Env.EnvMap.mem Env.fn_env "crust_init") then (None,[])
     else begin
@@ -507,6 +520,29 @@ let borrow_analysis fn_def =
     else
       snd @@ List.hd mapped_args
   end
+
+type move_info = [
+  | `Move_val of int
+  | `Move_tuple of int * (move_info list)
+]
+
+let rec move_analysis m_args =
+  let rec move_aux i accum r = 
+    match r with
+    | [] -> accum
+    | t::rest ->
+      if TypeUtil.is_move_type t then
+        let m = 
+          match t with 
+          | `Tuple tl -> `Move_tuple (i,(move_analysis tl))
+          | _ -> `Move_val i
+        in
+        move_aux (succ i) (m::accum) rest
+      else
+        move_aux (succ i) accum rest
+  in
+  move_aux 0 [] m_args
+
 
 let init_fn_filter f_name = 
   let in_chan = open_in f_name in

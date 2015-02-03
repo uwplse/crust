@@ -13,3 +13,4 @@ val to_monomorph: (string * Types.mono_type) list -> Types.r_type -> Types.mono_
 val get_inst : MTSet.t -> Types.type_param list -> Types.r_type list -> inst_result
 val is_inst : Types.mono_type list -> Types.r_type list -> inst_result
 
+val is_move_type : Types.mono_type -> bool
