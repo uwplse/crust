@@ -119,6 +119,14 @@ ppAbstractFnDef (AbstractFnDef name lps tps args retTy) = do
         parens $ commaSep $ map ppArgDecl args
         tell " -> " >> ppTy retTy >> tell ";"
 
+ppExternFnDef :: (MonadReader Int m, MonadWriter String m) => ExternFnDef -> m ()
+ppExternFnDef (ExternFnDef abi name lps tps args retTy) = do
+    line $ do
+        tell "extern \"" >> tell abi >> tell "\" fn " >> tell name
+        listNe angles (map ppLifetime lps ++ map tell tps)
+        parens $ commaSep $ map ppArgDecl args
+        tell " -> " >> ppTy retTy >> tell ";"
+
 ppArgDecl :: (MonadReader Int m, MonadWriter String m) => ArgDecl -> m ()
 ppArgDecl (ArgDecl name ty) = tell name >> tell ": " >> ppTy ty
 
@@ -182,6 +190,7 @@ ppItem (IEnum e) = ppEnumDef e
 ppItem (IConst c) = ppConstDef c
 ppItem (IFn f) = ppFnDef f
 ppItem (IAbstractFn f) = ppAbstractFnDef f
+ppItem (IExternFn f) = ppExternFnDef f
 ppItem (IAbstractType t) = ppAbstractTypeDef t
 ppItem (IAssociatedType t) = ppAssociatedTypeDef t
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m

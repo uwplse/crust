@@ -38,6 +38,7 @@ main = do
     let ix = mkIndex items'
     let items'' =
             dumpIr "final" $
+            filter (not . isExternFn) $
             renameLocals $
             addCleanup ix $
             renameLocals $
@@ -49,6 +50,9 @@ main = do
             fixAddress $
             items'
     putStrLn $ concatMap pp items''
+
+isExternFn (IExternFn _) = True
+isExternFn _ = False
 
 fixAddress = everywhere (mkT stripAddr)
   where

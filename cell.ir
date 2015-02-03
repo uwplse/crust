@@ -86,7 +86,9 @@ fn UnsafeCell_new<0><1: T>
 #                   [ "impl" name(abstract_fn) lifetime(trait_args)* type(self_plus_trait_args)* ]?
 #                   "body" expr
 #   abstract_fn_def ::= "abstract_fn" name(fn) name(lifetime_param)* name(type_param)*
-#                   "args" arg_decl*  "return" type
+    #                   "args" arg_decl*  "return" type
+#   extern_fn_def ::= "extern_fn" abi name(fn) name(lifetime_param)* name(type_param)*
+    #                   "args" arg_decl*  "return" type
 #   arg_decl ::= name(arg) type 
 #
 #   expr ::= type expr_variant
