@@ -4,8 +4,9 @@ import Control.Exception (evaluate)
 import Control.Monad
 import Data.Char (toLower)
 import Data.Generics
-import Data.List (intercalate, isPrefixOf)
+import Data.List (intercalate, isPrefixOf, isSuffixOf)
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Maybe
 import System.Environment
 import Text.Parsec hiding (label, State)
@@ -47,9 +48,54 @@ main = do
             ifFix $
             fixAbort $
             fixBottom $
+            fixSpecialFn $
             fixAddress $
             items'
     putStrLn $ concatMap pp items''
+
+
+fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ everywhere (mkT fixInit) $ everywhere (mkT renameAbortCall) items
+  where
+    aborts :: S.Set String
+    aborts = everything S.union (S.empty `mkQ` collectAborts) items
+    collectAborts (FnDef f_name _ _ _ _ _ _)
+      | isSuffixOf "_crust_abort" f_name = S.singleton f_name
+    collectAborts _ = S.empty
+   
+    canonAbort = S.findMin aborts
+    
+    renameAbortCall (ECall r l t e)
+      | isSuffixOf "_crust_abort" r =
+          ECall "crust_abort" l t e
+    renameAbortCall e = e
+    
+    renameAbort (FnDef f_name lp tp arg rt impl e)
+      | f_name == canonAbort =
+          (FnDef "crust_abort" lp tp arg rt impl e)
+    renameAbort e = e
+
+    renameAbortDef = if S.null aborts then (\x -> x) else renameAbort
+    
+    inits :: S.Set String
+    inits = everything S.union (S.empty `mkQ` collectInits) items
+    collectInits (FnDef f_name _ _ _ _ _ _) | isSuffixOf "crust_init" f_name = S.singleton f_name
+    collectInits _ = S.empty
+
+    isAbort (IFn (FnDef f_name _ _ _ _ _ _)) = isSuffixOf "_crust_abort" f_name
+    isAbort _ = False
+
+    renameInit (FnDef f_name lp tp arg rt impl e)
+      | f_name == S.findMin inits = FnDef "crust_init" lp tp arg rt impl e
+    renameInit e = e
+
+    fixInit = if S.null inits then \x -> x
+              else if (S.size inits) == 1 then
+                     renameInit
+                   else
+                     error "Multiple crust_init's found!"
+
+
+                                                    
 
 isExternFn (IExternFn _) = True
 isExternFn _ = False
