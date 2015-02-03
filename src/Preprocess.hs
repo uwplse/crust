@@ -94,9 +94,6 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
                    else
                      error "Multiple crust_init's found!"
 
-
-                                                    
-
 isExternFn (IExternFn _) = True
 isExternFn _ = False
 
@@ -166,8 +163,6 @@ scrub items = scrubbed'
     isValid = everything (&&) (True `mkQ` goTy `extQ` goExpr)
 
     goTy (TAdt name _ _) = name `M.member` i_types ix
-    goTy (TFloat _) = False
-    goTy TChar = False
     goTy _ = True
 
     goExpr (ECall name _ _ _) = name `M.member` i_fns ix
