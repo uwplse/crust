@@ -947,6 +947,34 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                         ty.trans(trcx),
                         expr.trans(trcx))
             },
+            ItemForeignMod(ref fm) => {
+                let abi_str = format!("{:?}", fm.abi);
+                let mut result = String::new();
+                for item in fm.items.iter() {
+                    let part = match item.node {
+                        ForeignItemFn(ref decl, ref generics) => {
+                            let name = mangled_def_name(trcx, local_def(item.id));
+                            try_str(|| {
+                                format!("extern_fn {} {} {} {}",
+                                        abi_str,
+                                        name,
+                                        generics.trans_extra(trcx, FnSpace),
+                                        decl.trans(trcx))
+                            }, &*name)
+                        },
+                        ForeignItemStatic(ref ty, is_mutbl) => {
+                            let name = mangled_def_name(trcx, local_def(item.id));
+                            try_str(|| {
+                                panic!("can't translate ForeignItemStatic");
+                            }, &*name)
+                        },
+                    };
+                    result.push_str(part.as_slice());
+                    result.push_str("\n");
+                }
+                result
+
+            },
             _ => format!(""),
         }
     }

@@ -30,6 +30,7 @@ subst (lp, tp) (la, ta) t = goTy t
 data AnyFnDef =
       FConcrete FnDef
     | FAbstract AbstractFnDef
+    | FExtern ExternFnDef
   deriving (Eq, Show, Data, Typeable)
 
 data TypeDef =
@@ -51,10 +52,13 @@ ty_dtor (TEnum (EnumDef _ _ _ _ d)) = d
 
 fn_lifetimeParams (FConcrete (FnDef _ ps _ _ _ _ _)) = ps
 fn_lifetimeParams (FAbstract (AbstractFnDef _ ps _ _ _)) = ps
+fn_lifetimeParams (FExtern (ExternFnDef _ _ ps _ _ _)) = ps
 fn_tyParams (FConcrete (FnDef _ _ ps _ _ _ _)) = ps
 fn_tyParams (FAbstract (AbstractFnDef _ _ ps _ _)) = ps
+fn_tyParams (FExtern (ExternFnDef _ _ _ ps _ _)) = ps
 fn_retTy (FConcrete (FnDef _ _ _ _ r _ _)) = r
 fn_retTy (FAbstract (AbstractFnDef _ _ _ _ r)) = r
+fn_retTy (FExtern (ExternFnDef _ _ _ _ _ r)) = r
 
 data Index = Index
     { i_fns :: M.Map Name AnyFnDef
@@ -70,6 +74,7 @@ mkIndex items = Index fns types consts
 
     onFn (IFn x@(FnDef name _ _ _ _ _ _)) = Just (name, FConcrete x)
     onFn (IAbstractFn x@(AbstractFnDef name _ _ _ _)) = Just (name, FAbstract x)
+    onFn (IExternFn x@(ExternFnDef _ name _ _ _ _)) = Just (name, FExtern x)
     onFn _ = Nothing
 
     onType (IStruct x@(StructDef name _ _ _ _)) = Just (name, TStruct x)

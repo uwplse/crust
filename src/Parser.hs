@@ -62,6 +62,7 @@ type Lifetime = Name
 
 type Name = String
 
+type Abi = Name
 type LifetimeParam = Name
 type TyParam = Name
 
@@ -87,6 +88,9 @@ data FnDef = FnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause
   deriving (Eq, Show, Data, Typeable)
 
 data AbstractFnDef = AbstractFnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty
+  deriving (Eq, Show, Data, Typeable)
+
+data ExternFnDef = ExternFnDef Abi Name [LifetimeParam] [TyParam] [ArgDecl] Ty
   deriving (Eq, Show, Data, Typeable)
 
 data ArgDecl = ArgDecl Name Ty
@@ -149,6 +153,7 @@ data Item =
     | IConst ConstDef
     | IFn FnDef
     | IAbstractFn AbstractFnDef
+    | IExternFn ExternFnDef
     | IAbstractType AbstractTypeDef
     | IAssociatedType AssociatedTypeDef
     | IMeta String
@@ -188,6 +193,7 @@ ty = tagged
 
 lifetime = name
 name = word
+abi = name
 lifetimeParam = name
 tyParam = name
 
@@ -220,6 +226,14 @@ fnDef = do
 abstractFnDef = do
     exactWord "abstract_fn"
     f <- AbstractFnDef <$> name <*> counted lifetimeParam <*> counted tyParam
+    exactWord "args"
+    f <- f <$> counted argDecl
+    exactWord "return"
+    f <$> ty
+
+externFnDef = do
+    exactWord "extern_fn"
+    f <- ExternFnDef <$> abi <*> name <*> counted lifetimeParam <*> counted tyParam
     exactWord "args"
     f <- f <$> counted argDecl
     exactWord "return"
@@ -278,6 +292,7 @@ item = choice
     , IConst <$> constDef
     , IFn <$> fnDef
     , IAbstractFn <$> abstractFnDef
+    , IExternFn <$> externFnDef
     , IAbstractType <$> abstractTypeDef
     , IAssociatedType <$> associatedTypeDef
     ]
@@ -358,6 +373,12 @@ instance Pp AbstractFnDef where
          "args", pp args,
          "return", pp retTy]
 
+instance Pp ExternFnDef where
+    pp' (ExternFnDef abi name lifetimeParams tyParams args retTy) =
+        ["extern_fn", pp abi, pp name, pp lifetimeParams, pp tyParams,
+         "args", pp args,
+         "return", pp retTy]
+
 instance Pp ArgDecl where
     pp' (ArgDecl a b) = map pp [pp a, pp b]
 
@@ -424,6 +445,7 @@ instance Pp Item where
                     IConst a -> pp a
                     IFn a -> pp a
                     IAbstractFn a -> pp a
+                    IExternFn a -> pp a
                     IAbstractType a -> pp a
                     IAssociatedType a -> pp a
                     IMeta s -> s

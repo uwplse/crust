@@ -3,7 +3,7 @@
 #![feature(unsafe_destructor)]
 extern crate core;
 
-use Option::{Some, None};
+use core::option::Option::{self, Some, None};
 use core::prelude::{Copy, Drop};
 use core::ptr::{PtrExt, MutPtrExt};
 
@@ -25,20 +25,6 @@ mod alloc {
 
 fn panic() -> ! {
     unsafe { core::intrinsics::abort() };
-}
-
-enum Option<T> {
-    None,
-    Some(T),
-}
-
-impl<T> Option<T> {
-    fn unwrap(self) -> T {
-        match self {
-            None => panic(),
-            Some(x) => x,
-        }
-    }
 }
 
 
