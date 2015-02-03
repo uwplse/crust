@@ -7,6 +7,8 @@ type simple_type = [
   | `UInt of int
   | `Bool
   | `Unit
+  | `Float of int
+  | `Char
   ]
 					 
 type 'a mono_r_type = [
@@ -90,6 +92,8 @@ let rec pp_t (to_pp : r_type) = match to_pp with
   | `UInt s -> "uint" ^ (string_of_int s)
   | `Unit -> "()"
   | `Bool -> "bool"
+  | `Char -> "char"
+  | `Float i -> "float" ^ (string_of_int i)
   | `Ptr t
   | `Ref (_,t) -> "const " ^ (pp_t t) ^ "*"
   | `Ref_Mut (_,t)

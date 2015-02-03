@@ -18,6 +18,8 @@ let rec (adt_type_name : c_types -> string) = function
   | `Ptr_Mut t -> "const_" ^ (adt_type_name t) ^ "_ptr"
   | `Int n -> "i" ^ string_of_int n
   | `UInt n -> "u" ^ string_of_int n
+  | `Char -> "c"
+  | `Float i -> "f" ^ (string_of_int i)
   | `Bool -> "bool"
   | `Unit -> "unit"
   | `Bottom -> "bottom"
@@ -50,6 +52,8 @@ let rec type_to_string : c_types -> string = function
   | `UInt n -> "rs_u" ^ string_of_int n
   | `Bool -> "rs_bool"
   | `Unit -> "rs_unit"
+  | `Float i -> "rs_f" ^ (string_of_int i)
+  | `Char -> "rs_char"
   | `Ptr t -> "const " ^ (type_to_string t) ^"*"
   | `Ptr_Mut t -> (type_to_string t) ^ "*"
   | `Bottom -> "rs_bottom"
@@ -334,6 +338,8 @@ let simple_type_repr t =
     Printf.sprintf "int%d_t" w
   | `UInt w -> 
     Printf.sprintf "uint%d_t" w
+  | `Float i -> if i = 32 then "float" else if i = 64 then "double" else assert false
+  | `Char -> "uint32_t"
 
 type c_types' = c_types
 
@@ -369,6 +375,9 @@ let emit_common_typedefs out_channel =
   emit_tdef "void" "rs_bottom";
   emit_type `Unit;
   emit_type `Bool;
+  emit_type `Char;
+  emit_type (`Float 32);
+  emit_type (`Float 64);
   List.iter (fun size ->
       emit_type (`UInt size);
       emit_type (`Int size)
@@ -447,11 +456,6 @@ let rec uniq_list = function
     h::(uniq_list t)
 
 let find_dup_pf_inst insts = 
-(*  let rec print_move l = match l with
-    | `Move_val i -> string_of_int i
-    | `Move_tuple (i,sub) ->
-      "{" ^ (string_of_int i) ^ "[" ^ (String.concat "," @@ List.map print_move sub) ^ "]}"
-  in*)
   let simple_inst =
     List.map (fun (n,m_args) ->
         (* XXX(jtoman): awful awful awful, move this somewhere else!!! *)

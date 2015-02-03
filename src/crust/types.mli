@@ -7,6 +7,8 @@ type simple_type = [
   | `UInt of int
   | `Bool
   | `Unit
+  | `Float of int
+  | `Char
   ]
 					 
 type 'a mono_r_type = [

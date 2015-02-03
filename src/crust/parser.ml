@@ -93,6 +93,8 @@ let parse_simple_type tokens cb = match tokens with
   | "bool"::t -> cb `Bool t
   | "var"::t_var::t -> cb (`T_Var t_var) t
   | "bottom"::t -> cb `Bottom t
+  | "float"::w::t -> cb (`Float (int_of_string w)) t
+  | "char"::t -> cb (`Char) t
   | _ -> raise (Unexpected_stream_end "parse_simple_type")
 
 let rec parse_adt_type tokens cb = match tokens with
