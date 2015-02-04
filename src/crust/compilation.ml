@@ -77,8 +77,8 @@ let string_of_binop : Ir.bin_op -> string = function
   | `BiLt -> "<"
   | `BiLe -> "<="
   | `BiNe -> "!="
-  | `BiGe -> ">"
-  | `BiGt -> ">="
+  | `BiGe -> ">="
+  | `BiGt -> ">"
 
 let string_of_unop : Ir.un_op -> string = function
   | `UnNot -> "!"
@@ -535,8 +535,10 @@ let order_types t_list =
 
 (* TODO: config this *)
 let includes = [
+  "stdint.h";
   "stdlib.h";
-  "string.h"
+  "string.h";
+  "stddef.h"
 ]
 
 let dump_includes out_channel = 
@@ -553,10 +555,10 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
   emit_common_typedefs out_channel;
   begin
     if !Env.gcc_mode then begin
-      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n";
-      dump_includes out_channel
+      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n"
     end else ()
   end;
+  dump_includes out_channel;
   List.iter (emit_typedefs out_channel) t_list;
   (
     if Intrinsics.need_iheader (f_list :> (string * Types.r_type list) list)  then

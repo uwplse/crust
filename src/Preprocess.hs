@@ -52,7 +52,7 @@ main = do
             liftTemps ix $
             constElim $
             ifFix $
-            fixAbort $
+--            fixAbort $
             fixBottom $
             fixSpecialFn $
             fixAddress $
@@ -144,10 +144,10 @@ ifFix = everywhere (mkT fixIf)
                  MatchArm (Pattern (TInt 32) (PWild)) e1]
     fixIf x = x
 
-fixAbort = everywhere (mkT go)
-  where
-    go (Expr _ (ECall "core_intrinsics_abort" _ _ _)) = Expr TUnit (ESimpleLiteral "_")
-    go x = x
+-- fixAbort = everywhere (mkT go)
+--   where
+--     go (Expr _ (ECall "core_intrinsics_abort" _ _ _)) = Expr TUnit (ESimpleLiteral "_")
+--     go x = x
 
 fixBottom = everywhere (mkT go)
   where

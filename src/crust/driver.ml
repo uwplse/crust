@@ -667,9 +667,29 @@ module DriverF(COMP : Compilation) = struct
               )
           )
 
+    method private find_ptr_types () =
+      List.filter (function 
+          | `Ptr _ -> true
+          | `Ptr_Mut _ -> true
+          | _ -> false
+        ) public_types
+
+    method private emit_ptr_check_loop t = 
+      let index = "t_index" in
+      let bound = Hashtbl.find tsize_const_cache t in
+      self#emit_for index bound (fun s1 ->
+          let live_flag = self#array_ref live_state @@ self#slot_call s1 t in
+          self#put_all [ "if("; live_flag ; " != 0) " ];
+          self#open_block ();
+          self#put_all [ "*"; (self#array_ref (Hashtbl.find tvalue_array_cache t) s1); ";" ];
+          self#newline ();
+          self#close_block ();
+          self#newline ()
+        )
 
     method private emit_assertions () = 
-      List.iter (self#emit_alias_check_loop) @@ self#find_aliasing_types ()
+      List.iter (self#emit_alias_check_loop) @@ self#find_aliasing_types ();
+      List.iter (self#emit_ptr_check_loop) @@ self#find_ptr_types ();
 
   end
 end

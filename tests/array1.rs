@@ -26,7 +26,7 @@ mod alloc {
 }
 */
 
-fn panic() -> ! {
+fn crust_abort() -> ! {
     unsafe { core::intrinsics::abort() };
 }
 
@@ -55,7 +55,7 @@ impl<T: Copy> Array<T> {
         // BUG: forgetting check allows out-of-bounds access
         // BUG: casting index to int before checking against len allows out-of-bounds access
         if index >= self.len {
-            panic();
+            crust_abort();
         }
 
         unsafe { &*self.ptr.offset(index as int) }
@@ -64,7 +64,7 @@ impl<T: Copy> Array<T> {
     // BUG: using &'a self instead of &'a mut self allows inappropriate aliasing
     fn get_mut<'a>(&'a mut self, index: uint) -> &'a mut T {
         if index >= self.len {
-            panic();
+            crust_abort();
         }
 
         unsafe { &mut *self.ptr.offset(index as int) }

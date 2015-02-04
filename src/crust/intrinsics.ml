@@ -86,10 +86,20 @@ let i_list = arith_intrinsics @ [
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; return to_ret; }"
   };
-  {
+(*  {
     i_name = "core_intrinsics_offset";
     i_params = ["t1"];
     i_body = Inline "(({t1}*)(((size_t){arg1}) + {arg2}))"
+  }; *)
+  {
+    i_name = "core_intrinsics_offset";
+    i_params = ["t1"];
+    i_body = Inline "({arg1} + {arg2})"
+  };
+  {
+    i_name = "core_intrinsics_abort";
+    i_params = [];
+    i_body = Inline "__CPROVER_assume(0)"
   };
   {
     i_name = "core_intrinsics_move_val_init";
@@ -124,7 +134,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "alloc_heap_deallocate";
     i_params = [];
-    i_body = Inline "free({arg1})"
+    i_body = Inline "(free({arg1}),0)"
   };
   {
     i_name = "alloc_heap_reallocate";
@@ -143,7 +153,7 @@ let i_list = arith_intrinsics @ [
     i_params = [ "_" ];
     i_body = Inline "((size_t)1)"
   };
-  {
+(*  {
     i_name = "core_intrinsics_bswap16";
     i_params = [ "_" ];
     i_body = Inline "((uint16_t)__builtin_bswap16((int16_t){arg1}, (int16_t){arg2}))"
@@ -177,7 +187,7 @@ let i_list = arith_intrinsics @ [
     i_name = "core_ops_f64__Rem_rem_fmod";
     i_params = [ "_" ];
     i_body = Inline "(fmod({arg1}, {arg2}))"
-  };
+  };*)
 ]
 
 let intrinsic_hash = Hashtbl.create 10;;
