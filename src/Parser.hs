@@ -123,6 +123,8 @@ data Expr_ =
     | ECall Name [Lifetime] [Ty] [Expr]
     | EUnsafe [Stmt] Expr
     | EAssign Expr Expr
+    | EAssignOp String Expr Expr
+    | EWhile Expr Expr
     | EReturn Expr
   deriving (Eq, Show, Data, Typeable)
 
@@ -144,7 +146,7 @@ data Pattern_ =
     | PTuple [Pattern]
   deriving (Eq, Show, Data, Typeable)
 
-data Stmt = SExpr Expr | SLet Name Ty Expr
+data Stmt = SExpr Expr | SLet Name Ty Expr | SDecl Name Ty
   deriving (Eq, Show, Data, Typeable)
 
 data ConstDef = ConstDef Name Ty Expr
@@ -269,6 +271,8 @@ expr_ = tagged
     , ("unsafe", EUnsafe <$> counted stmt <*> expr)
     , ("assign", EAssign <$> expr <*> expr)
     , ("return", EReturn <$> expr)
+    , ("while", EWhile <$> expr <*> expr)
+    , ("assign_op", EAssignOp <$> word <*> expr <*> expr)
     ]
 field = Field <$> name <*> expr
 
@@ -287,6 +291,7 @@ pattern_ = tagged
 stmt = tagged
     [ ("expr", SExpr <$> expr)
     , ("let", SLet <$> name <*> ty <*> expr)
+    , ("decl", SDecl <$> name <*> ty)
     ]
 
 constDef = exactWord "const" >>
@@ -418,6 +423,8 @@ instance Pp Expr_ where
         EUnsafe a b ->          ppGo "unsafe"           [pp a, pp b]
         EAssign a b ->          ppGo "assign"           [pp a, pp b]
         EReturn a ->            ppGo "return"           [pp a]
+        EWhile a b ->           ppGo "while"            [pp a,pp b]
+        EAssignOp a b c ->      ppGo "assign_op"        [pp a,pp b,pp c]
 
 instance Pp Field where
     pp' (Field a b) = map pp [pp a, pp b]
@@ -442,6 +449,7 @@ instance Pp Stmt where
     pp' s = case s of
         SExpr e -> ppGo "expr" [pp e]
         SLet n t e -> ppGo "let" [pp n, pp t, pp e]
+        SDecl n t -> ppGo "decl" [pp n,pp t]
 
 instance Pp ConstDef where
     pp' (ConstDef n t e) = ppGo "const" [pp n, pp t, pp e]
