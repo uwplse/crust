@@ -260,8 +260,12 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                                 mangled_def_name(trcx, did),
                                                 substs.trans(trcx)),
             // ty_uniq
-            //ty_str => format!("str"),
-            // ty_vec
+            ty_str => format!("str"),
+            ty_vec(ref ty, None) => format!("vec {}",
+                                            ty.trans(trcx)),
+            ty_vec(ref ty, Some(len)) => format!("fixed_vec {} {}",
+                                                 len,
+                                                 ty.trans(trcx)),
             ty_ptr(mt) => format!("{} {}",
                                   match mt.mutbl {
                                       MutMutable => "ptr_mut",
@@ -583,8 +587,8 @@ impl Trans for Expr {
                         expr.trans(trcx),
                         field.node.as_str()),
             // ExprTupField
-            // ExprIndex
-            // ExprSlice
+            ExprIndex(ref arr, ref idx) => panic!("exprindex"),
+            ExprRange(ref low, ref high) => panic!("exprrange"),
             ExprPath(ref path) => {
                 if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
                     format!("enum_literal {} {} 0",

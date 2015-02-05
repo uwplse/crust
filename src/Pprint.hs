@@ -54,6 +54,9 @@ ppTy ty = case ty of
     TTuple tys -> parens (commaSep $ map ppTy tys)
     TRef life mut ty -> spaceSep $ [tell "&", ppLifetime life, ppMutbl mut, ppTy ty]
     TPtr mut ty -> spaceSep $ [tell "*", ppMutbl mut, ppTy ty]
+    TStr -> tell "str"
+    TVec ty -> brackets $ ppTy ty
+    TFixedVec len ty -> brackets $ ppTy ty >> tell "; " >> tell (show len)
     TInt size -> tell $ "i" ++ show size
     TUint size -> tell $ "u" ++ show size
     TFloat size -> tell $ "f" ++ show size

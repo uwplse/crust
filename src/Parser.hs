@@ -47,6 +47,9 @@ data Ty =
     | TTuple [Ty]
     | TRef Lifetime Mutbl Ty
     | TPtr Mutbl Ty
+    | TStr
+    | TVec Ty
+    | TFixedVec Int Ty
     | TInt Int
     | TUint Int
     | TFloat Int
@@ -180,6 +183,9 @@ ty = tagged
     , ("ref_mut", TRef <$> lifetime <*> return MMut <*> ty)
     , ("ptr", TPtr <$> return MImm <*> ty)
     , ("ptr_mut", TPtr <$> return MMut <*> ty)
+    , ("str", return TStr)
+    , ("vec", TVec <$> ty)
+    , ("fixed_vec", TFixedVec <$> int <*> ty)
     , ("int", TInt <$> int)
     , ("uint", TUint <$> int)
     , ("float", TFloat <$> int)
@@ -330,9 +336,12 @@ instance Pp Ty where
         TRef a MMut b ->    ppGo "ref_mut"  [pp a, pp b]
         TPtr MImm a ->      ppGo "ptr"      [pp a]
         TPtr MMut a ->      ppGo "ptr_mut"  [pp a]
+        TStr ->             ppGo "str"      []
+        TVec a ->           ppGo "vec"      [pp a]
+        TFixedVec a b ->    ppGo "fixed_vec" [pp a, pp b]
         TInt a ->           ppGo "int"      [pp a]
         TUint a ->          ppGo "uint"     [pp a]
-        TFloat a ->         ppGo "float"     [pp a]
+        TFloat a ->         ppGo "float"    [pp a]
         TBool ->            ppGo "bool"     []
         TChar ->            ppGo "char"     []
         TFn ->              ppGo "fn"       []
