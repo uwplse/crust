@@ -149,7 +149,7 @@ ppExpr (Expr ty e) = case e of
             forM fs $ \(Field name val) ->
                 line $ tell name >> tell ": " >> ppExpr val >> tell ","
     EEnumLiteral name _ vals -> tell name >> listNe parens (map ppExpr vals)
-    ETupleLiteral vals -> parens $ spaceSep $ map ppExpr vals
+    ETupleLiteral vals -> parens $ commaSep $ map ppExpr vals
     EMatch expr arms ->
         inline (tell "match " >> ppExpr expr >> tell " {") (tell "}") $
             forM arms $ \(MatchArm pat body) ->
@@ -160,6 +160,10 @@ ppExpr (Expr ty e) = case e of
     EDeref expr -> tell "*" >> ppExpr expr
     EAddrOf expr -> tell "&" >> ppExpr expr
     EIndex arr idx -> ppExpr arr >> brackets (ppExpr idx)
+    ERange low high ->
+        maybe (return ()) ppExpr low >>
+        tell " .. " >>
+        maybe (return ()) ppExpr high
     ECast expr ty -> ppExpr expr >> tell " as " >> ppTy ty
     EBinOp op a b -> parens $ ppExpr a >> tell " `" >> tell op >> tell "` " >> ppExpr b
     EUnOp op a -> parens $ tell "`" >> tell op >> tell "` " >> ppExpr a

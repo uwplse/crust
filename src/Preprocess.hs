@@ -60,7 +60,8 @@ main = do
             fixBottom $
             fixSpecialFn $
             fixAddress $
-            fixIndexExprs ix $
+            desugarRange $
+            desugarIndex ix $
             items'
     putStrLn $ concatMap pp items''
 
@@ -215,7 +216,10 @@ everywhereWithLocationM f x = go Rvalue x
         f loc $ Expr ty' e_'
     goExpr loc e = next loc Rvalue e
 
-fixIndexExprs ix = runIdentity . everywhereWithLocationM (\loc -> Identity . mkT (go loc))
+everywhereWithLocation :: forall a. (Data a) => (forall d. Data d => Location -> d -> d) -> a -> a
+everywhereWithLocation f = runIdentity . everywhereWithLocationM (\loc -> Identity . f loc)
+
+desugarIndex ix = everywhereWithLocation (\loc -> mkT $ go loc)
   where
     go loc (Expr _ (EIndex arr idx)) = mkE ix $ do
         let arrRef = addrOf' mutbl (return arr)
@@ -226,6 +230,18 @@ fixIndexExprs ix = runIdentity . everywhereWithLocationM (\loc -> Identity . mkT
             LvalueMut -> (MMut, "core_ops_IndexMut_index_mut")
             _ -> (MImm, "core_ops_Index_index")
     go loc e = e
+
+desugarRange = everywhere (mkT go)
+  where
+    go (Expr ty (ERange Nothing Nothing)) =
+        Expr ty $ EStructLiteral []
+    go (Expr ty (ERange (Just low) Nothing)) =
+        Expr ty $ EStructLiteral [Field "start" low]
+    go (Expr ty (ERange Nothing (Just high))) =
+        Expr ty $ EStructLiteral [Field "end" high]
+    go (Expr ty (ERange (Just low) (Just high))) =
+        Expr ty $ EStructLiteral [Field "start" low, Field "end" high]
+    go e = e
 
 data RefState = InRef | TopLevel
 
@@ -248,9 +264,9 @@ scrub items = scrubbed'
     goTy (TAdt name _ _) f = (name `M.member` i_types ix,f)
     goTy (TRef l r TStr) _ = (True,InRef)
     goTy (TRef l r (TVec t)) _ = (True,InRef)
-    goTy (TVec _) TopLevel = (False,TopLevel)
+    --goTy (TVec _) TopLevel = (False,TopLevel)
     goTy (TVec _) InRef = (True,InRef)
-    goTy TStr TopLevel = (False,TopLevel)
+    --goTy TStr TopLevel = (False,TopLevel)
     goTy TStr InRef = (True,InRef)
     goTy (TFixedVec _ _) f = (False,f)
     goTy e f = (True,f)

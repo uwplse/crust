@@ -118,6 +118,7 @@ data Expr_ =
     | EDeref Expr
     | EAddrOf Expr
     | EIndex Expr Expr
+    | ERange (Maybe Expr) (Maybe Expr)
     | ECast Expr Ty
     | EBinOp String Expr Expr
     | EUnOp String Expr
@@ -266,6 +267,7 @@ expr_ = tagged
     , ("deref", EDeref <$> expr)
     , ("addr_of", EAddrOf <$> expr)
     , ("index", EIndex <$> expr <*> expr)
+    , ("range", ERange <$> optional expr <*> optional expr)
     , ("cast", ECast <$> expr <*> ty)
     , ("binop", EBinOp <$> word <*> expr <*> expr)
     , ("unop", EUnOp <$> word <*> expr)
@@ -419,6 +421,7 @@ instance Pp Expr_ where
         EDeref a ->             ppGo "deref"            [pp a]
         EAddrOf a ->            ppGo "addr_of"          [pp a]
         EIndex a b ->           ppGo "index"            [pp a, pp b]
+        ERange a b ->           ppGo "range"            [pp a, pp b]
         ECast a b ->            ppGo "cast"             [pp a, pp b]
         EBinOp a b c ->         ppGo "binop"            [pp a, pp b, pp c]
         EUnOp a b ->            ppGo "unop"             [pp a, pp b]

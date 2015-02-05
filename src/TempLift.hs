@@ -124,9 +124,11 @@ liftTempsM x = traverse go concat x >>= return . fst
         n <- fresh "lifttemp"
         addDecl n e
         return $ Expr ty $ EAddrOf $ Expr (typeOf e) $ EVar n
+    {-
     goExpr ds (Expr _ (EField e _))
       | not $ hasStableLocation e = collectDecls ds $ do
         error $ "can't yet handle accessing a field of a temporary"
+        -}
     goExpr ds (Expr ty (EBlock ss e)) = collectDecls [] $ do
         e' <- applyDecls ds e
         return $ Expr ty $ EBlock ss e'

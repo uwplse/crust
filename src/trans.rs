@@ -611,7 +611,9 @@ impl Trans for Expr {
                     },
                 }
             },
-            ExprRange(ref low, ref high) => panic!("exprrange"),
+            ExprRange(ref opt_low, ref opt_high) => {
+                format!("range {} {}", opt_low.trans(trcx), opt_high.trans(trcx))
+            },
             ExprPath(ref path) => {
                 if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
                     format!("enum_literal {} {} 0",
