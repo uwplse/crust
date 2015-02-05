@@ -28,7 +28,7 @@ use core::uint;
 #[unsafe_no_drop_flag]
 #[stable]
 pub struct Vec<T> {
-    ptr: NonZero<*mut T>,
+    ptr: *mut T,
     len: uint,
     cap: uint,
 }
@@ -42,6 +42,7 @@ fn crust_abort() -> ! {
 ////////////////////////////////////////////////////////////////////////////////
 
 impl<T> Vec<T> {
+/*
     #[inline]
     #[stable]
     pub fn new() -> Vec<T> {
@@ -49,16 +50,16 @@ impl<T> Vec<T> {
         // non-null value which is fine since we never call deallocate on the ptr
         // if cap is 0. The reason for this is because the pointer of a slice
         // being NULL would break the null pointer optimization for enums.
-        Vec { ptr: unsafe { NonZero::new(EMPTY as *mut T) }, len: 0, cap: 0 }
+        Vec { ptr: EMPTY as *mut T, len: 0, cap: 0 }
     }
-
+*/
     #[inline]
     #[stable]
     pub fn with_capacity(capacity: uint) -> Vec<T> {
         if mem::size_of::<T>() == 0 {
-            Vec { ptr: unsafe { NonZero::new(EMPTY as *mut T) }, len: 0, cap: uint::MAX }
+            Vec { ptr: EMPTY as *mut T , len: 0, cap: uint::MAX }
         } else if capacity == 0 {
-            Vec::new()
+            Vec { ptr: EMPTY as *mut T, len: 0, cap: 0 }
         } else {
             let size = match capacity.checked_mul(mem::size_of::<T>()) {
                 Some(i) => i,
@@ -70,15 +71,15 @@ impl<T> Vec<T> {
             */
             let ptr = unsafe { allocate(size, mem::min_align_of::<T>()) };
             if ptr.is_null() { /* XXX(jtoman): don't have this intrinsic???
-                                  ::alloc::oom()*/ crust_abort() }
-            Vec { ptr: unsafe { NonZero::new(ptr as *mut T) }, len: 0, cap: capacity }
+                                  ::alloc::oom()*/ crust_abort(); }
+            Vec { ptr: ptr as *mut T, len: 0, cap: capacity }
         }
     }
 
     #[stable]
     pub unsafe fn from_raw_parts(ptr: *mut T, length: uint,
                                  capacity: uint) -> Vec<T> {
-        Vec { ptr: NonZero::new(ptr), len: length, cap: capacity }
+        Vec { ptr: ptr, len: length, cap: capacity }
     }
 
     #[inline]
@@ -100,6 +101,7 @@ impl<T> Vec<T> {
                 Some(i) => i,
                 None => crust_abort()
             };
+            //let new_cap = self.len + additional;
             self.grow_capacity(new_cap);
         }
     }
@@ -108,10 +110,11 @@ impl<T> Vec<T> {
     pub fn reserve_exact(&mut self, additional: uint) {
         if self.cap - self.len < additional {
             match self.len.checked_add(additional) {
-/*                None => panic!("Vec::reserve: `uint` overflow"),*/
-                None => crust_abort(),
-                Some(new_cap) => self.grow_capacity(new_cap)
+                Some(new_cap) => self.grow_capacity(new_cap),
+                None => crust_abort()
             }
+            let new_cap = self.len + additional;
+            self.grow_capacity(new_cap)
         }
     }
 
@@ -122,7 +125,7 @@ impl<T> Vec<T> {
         if self.len == 0 {
             if self.cap != 0 {
                 unsafe {
-                    dealloc(*self.ptr, self.cap)
+                    dealloc(self.ptr, self.cap)
                 }
                 self.cap = 0;
             }
@@ -130,12 +133,12 @@ impl<T> Vec<T> {
             unsafe {
                 // Overflow check is unnecessary as the vector is already at
                 // least this large.
-                let ptr = reallocate(*self.ptr as *mut u8,
+                let ptr = reallocate(self.ptr as *mut u8,
                                      self.cap * mem::size_of::<T>(),
                                      self.len * mem::size_of::<T>(),
                                      mem::min_align_of::<T>()) as *mut T;
-                if ptr.is_null() { /*::alloc::oom()*/ crust_abort() }
-                self.ptr = NonZero::new(ptr);
+                if ptr.is_null() { /*::alloc::oom()*/ crust_abort(); }
+                self.ptr = ptr;
             }
             self.cap = self.len;
         }
@@ -192,7 +195,7 @@ impl<T> Vec<T> {
     #[stable]
     pub fn insert(&mut self, index: uint, element: T) {
         let len = self.len();
-        if(index <= len) { crust_abort() }
+        if(index <= len) { crust_abort(); }
         //assert!(index <= len); transform into crust_panic
         // space for the new element
         self.reserve(1);
@@ -217,7 +220,7 @@ impl<T> Vec<T> {
         let len = self.len();
         //assert!(index < len); // transform to panic
         if(index < len) {
-            crust_abort()
+            crust_abort();
         }
         unsafe { // infallible
             let ret;
@@ -255,15 +258,15 @@ impl<T> Vec<T> {
             let size = max(old_size, 2 * mem::size_of::<T>()) * 2;
             if old_size > size { crust_abort(); /*panic!("capacity overflow")*/ }
             unsafe {
-                let ptr = alloc_or_realloc(*self.ptr, old_size, size);
-                if ptr.is_null() { ::alloc::oom() }
-                self.ptr = NonZero::new(ptr);
+                let ptr = alloc_or_realloc(self.ptr, old_size, size);
+                if ptr.is_null() { /*::alloc::oom()*/ crust_abort(); }
+                self.ptr = ptr;
             }
             self.cap = max(self.cap, 2) * 2;
         }
 
         unsafe {
-            let end = (*self.ptr).offset(self.len as int);
+            let end = (self.ptr).offset(self.len as int);
             ptr::write(&mut *end, value);
             self.len += 1;
         }
@@ -290,7 +293,7 @@ impl<T> Vec<T> {
             // address space running out
             self.len = match self.len.checked_add(other.len()) {
                 Some(i) => i,
-                None  => crust_abort()
+                None => crust_abort()
             };
             //    .expect("length overflow");
             unsafe { other.set_len(0) }
@@ -524,10 +527,10 @@ impl<T> Vec<T> {
 
     // work around for not implementing slice
     unsafe fn as_ptr(&self) -> *const T {
-        (*self.ptr) as *const T
+        self.ptr as *const T
     }
     unsafe fn as_mut_ptr(&mut self) -> *mut T {
-        *self.ptr
+        self.ptr
     }
     unsafe fn get_unchecked_mut(&mut self, offs: usize) -> *mut T {
         self.as_mut_ptr().offset(offs as isize)
@@ -716,15 +719,12 @@ impl<T> Vec<T> {
         if mem::size_of::<T>() == 0 { return }
 
         if capacity > self.cap {
-            let size = match capacity.checked_mul(mem::size_of::<T>()) {
-                Some(i) => i,
-                None => crust_abort()
-            };
+            let size =  capacity * mem::size_of::<T>();
             //                  .expect("capacity overflow");
             unsafe {
-                let ptr = alloc_or_realloc(*self.ptr, self.cap * mem::size_of::<T>(), size);
+                let ptr = alloc_or_realloc(self.ptr, self.cap * mem::size_of::<T>(), size);
                 if ptr.is_null() { ::alloc::oom() }
-                self.ptr = NonZero::new(ptr);
+                self.ptr = ptr;
             }
             self.cap = capacity;
         }
@@ -989,30 +989,24 @@ impl<T: Ord> Ord for Vec<T> {
         self.as_slice().cmp(other.as_slice())
     }
 }
-
+*/
 impl<T> AsSlice<T> for Vec<T> {
-    /// Returns a slice into `self`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// fn foo(slice: &[int]) {}
-    ///
-    /// let vec = vec![1i, 2];
-    /// foo(vec.as_slice());
-    /// ```
     #[inline]
     #[stable]
     fn as_slice<'a>(&'a self) -> &'a [T] {
         unsafe {
             mem::transmute(RawSlice {
-                data: *self.ptr,
+                data: self.ptr,
                 len: self.len
             })
         }
     }
 }
 
+fn crust_init() -> (Vec<u32>,) {
+    (Vec::with_capacity(10),)
+}
+/*
 #[unstable = "recent addition, needs more experience"]
 impl<'a, T: Clone> Add<&'a [T]> for Vec<T> {
     type Output = Vec<T>;

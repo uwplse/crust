@@ -101,7 +101,8 @@ let resolve_abstract_fn =
         let arg_types = List.map snd impl_def.Ir.fn_args in
         match TypeUtil.is_inst param_args arg_types with
         | `Mismatch -> accum
-        | `Inst l -> (match l with
+        | `Inst l -> (*prerr_endline @@ "found something for " ^ fn_name;*)
+          (match l with
             | [t] ->
               let targ_bindings = List.map ((rev_app List.assoc) t) impl_def.Ir.fn_tparams in
               (targ_bindings,impl_def.Ir.fn_name)::accum

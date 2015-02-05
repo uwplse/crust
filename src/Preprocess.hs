@@ -46,6 +46,7 @@ main = do
     let items'' =
             dumpIr "final" $
             filter (not . isExternFn) $
+            fixDST $
             renameLocals $
             addCleanup ix $
             renameLocals $
@@ -58,6 +59,18 @@ main = do
             fixAddress $
             items'
     putStrLn $ concatMap pp items''
+
+fixDST = everywhere (mkT transmuteDST)
+  where
+    transmuteDST (TRef l r TStr) = TTuple [TRef l r (TUint 8), TUint 32]
+    transmuteDST (TRef l r (TVec t)) = TTuple [TRef l r t, TUint 32]
+--    transmuteDST (TVec _) = error "stray vec type"
+--    transmuteDST TStr = error "str str type"
+    transmuteDST (TFixedVec _ _) = error "stray fixed vec type"
+    transmuteDST e = e
+
+
+
 
 
 fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ everywhere (mkT fixInit) $ everywhere (mkT renameAbortCall) items
@@ -154,6 +167,8 @@ fixBottom = everywhere (mkT go)
     go TBottom = TUnit
     go t = t
 
+data RefState = InRef | TopLevel
+
 scrub items = scrubbed'
   where
     ix = mkIndex items
@@ -166,10 +181,19 @@ scrub items = scrubbed'
                  scrub scrubbed
             else scrubbed
 
-    isValid = everything (&&) (True `mkQ` goTy `extQ` goExpr)
+    isValid item =
+      (everythingWithContext TopLevel (&&) ((\s -> (True,s)) `mkQ` goTy) item)
+      && (everything (&&) (True `mkQ` goExpr) item)
 
-    goTy (TAdt name _ _) = name `M.member` i_types ix
-    goTy _ = True
+    goTy (TAdt name _ _) f = (name `M.member` i_types ix,f)
+    goTy (TRef l r TStr) _ = (True,InRef)
+    goTy (TRef l r (TVec t)) _ = (True,InRef)
+    goTy (TVec _) TopLevel = (False,TopLevel)
+    goTy (TVec _) InRef = (True,InRef)
+    goTy TStr TopLevel = (False,TopLevel)
+    goTy TStr InRef = (True,InRef)
+    goTy (TFixedVec _ _) f = (False,f)
+    goTy e f = (True,f)
 
     goExpr (ECall name _ _ _) = name `M.member` i_fns ix
     goExpr (EConst name) = name `M.member` i_consts ix

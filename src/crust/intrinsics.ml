@@ -74,7 +74,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core_intrinsics_transmute";
     i_params = [ "t1"; "u1" ];
-    i_body = Inline "(({u1}){arg1})"
+    i_body = Inline "(*(({u1}*)&{arg1}))"
   };
   {
     i_name = "core_intrinsics_size_of";
