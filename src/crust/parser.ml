@@ -401,7 +401,7 @@ let parse_abstract_type tokens cb =
       )
   | _ -> raise (Parse_failure ("parse_abstract_type",tokens))
 
-let parse_module tokens cb = 
+let rec parse_module tokens cb = 
   match tokens with
   | "abstract_fn"::_ 
   | "fn"::_ -> parse_fn tokens cb
@@ -409,6 +409,10 @@ let parse_module tokens cb =
   | "struct"::_ -> parse_struct_def tokens cb
   | "abstract_type"::_ -> parse_abstract_type tokens cb
   | "associated_type"::_ -> parse_assoc_type tokens cb
+  | "const"::name::t ->
+    (parse_type >> parse_expr) t (fun _ rest ->
+        parse_module rest cb
+      )
   | _ -> (raise (Parse_failure ("parse_module",tokens)))
 
 let parse_string s = 

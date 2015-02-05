@@ -406,9 +406,9 @@ impl Trans for Local {
         };
         let ty = trcx.tcx.node_types.borrow()[self.id].trans(trcx);
         match(self.init) {
-            Some(_) => format!("let {} {} {}",
+            Some(ref i) => format!("let {} {} {}",
                                name, ty,
-                               self.init.as_ref().unwrap().trans(trcx)),
+                               i.trans(trcx)),
             None => format!("decl {} {}", name, ty)
         }
     }
