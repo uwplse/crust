@@ -196,6 +196,7 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
     walk_expr t_bindings w_state e
   | `Return e ->
     walk_expr t_bindings w_state e
+  | `Assign_Op (_,e1,e2)
   | `BinOp (_,e1,e2)
   | `Assignment (e1,e2) ->
     List.fold_left (walk_expr t_bindings) w_state [e1;e2]
@@ -206,12 +207,16 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
   | `Cast (e,t) -> 
     let w_state = inst_walk_type t_bindings w_state t in
     walk_expr t_bindings w_state e
+  | `While (e1,e2) ->
+    List.fold_left (walk_expr t_bindings) w_state [e1;e2]
 and walk_statement t_bindings w_state stmt = 
   match stmt with
   | `Expr e -> walk_expr t_bindings w_state e
   | `Let (_,v_type,expr) -> 
     let w_state = inst_walk_type t_bindings w_state v_type in
     walk_expr t_bindings w_state expr
+  | `Declare (_,v_type) ->
+    inst_walk_type t_bindings w_state v_type
 and walk_match_arm t_bindings w_state (patt,expr) = 
   let w_state = walk_pattern t_bindings w_state patt in
   walk_expr t_bindings w_state expr

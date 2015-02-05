@@ -36,11 +36,13 @@ type simple_expr = [
   | `BinOp of Ir.bin_op * t_simple_expr * t_simple_expr
   | `UnOp of Ir.un_op * t_simple_expr
   | `Cast of t_simple_expr * Types.r_type
+  | `Assign_Op of Ir.bin_op * simple_expr * t_simple_expr
   ]
  and t_simple_expr = Types.r_type * simple_expr
  and 'a complex_expr = [
    | `Block of ('a stmt list) * 'a
    | `Match of t_simple_expr * ('a match_arm list)
+   | `While of t_simple_expr * 'a
    ]
  and struct_fields = struct_field list
  and struct_field = string * t_simple_expr (* field binding *)
@@ -73,6 +75,7 @@ let fresh_temp () =
   Printf.sprintf "__temp_%d" new_id
 
 let trivial_expr = `Bool,(`Literal "1")
+let literal_unit = `Unit,`Literal "0"
 
 let rec push_assignment (lhs : simple_expr) (e : all_expr) = 
   match (snd e) with
@@ -86,6 +89,10 @@ let rec push_assignment (lhs : simple_expr) (e : all_expr) =
 							) m_arms in
 	 (`Unit,`Match (e,m_arms'))
   | `Block (s,e) -> (`Unit,(`Block (s,(push_assignment lhs e))))
+  | `While _ -> 
+    let assign = `Unit,(`Assignment (lhs,literal_unit)) in
+    let new_block : all_expr = `Unit,(`Block ([`Expr e], assign)) in
+    new_block
 
 let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
   match expr with
@@ -97,6 +104,9 @@ let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
 	 let out_var = fresh_temp () in
 	 let m_arms' = List.map (fun (patt,m_arm) -> (patt,(push_assignment (`Var out_var) m_arm))) m_arms in
 	 (out_var,(`Unit,`Match (e,m_arms')))
+  | (`While _ as w) -> 
+    let out_var = fresh_temp () in
+    out_var,(push_assignment (`Var out_var) (`Unit,w))
 
 let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> 'a) -> 'a = 
   fun expr cb ->
@@ -219,7 +229,6 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 					  if stmt' = [] then simpl_match 
 					  else (expr_type,(`Block (stmt',simpl_match)))
 					 )
-  (*		 apply_lift (fst expr) e (simplify_match m_arms)*)
   | `UnOp (op,e) ->
 	 apply_lift (fst expr) e (fun e' -> `UnOp (op,e'))
   | `BinOp (op,e1,e2) ->
@@ -232,8 +241,27 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 							let e1' = snd t_e1 in
 							`Unit,(`Assignment (e1',e2'))
 						   )
+  | `Assign_Op (op,e1,e2) ->
+    simplify_binary e1 e2 (fun t_e1 e2' ->
+        let e1' = snd t_e1 in
+        `Unit,(`Assign_Op (op,e1',e2'))
+      )
   | `Cast (e,t) ->
 	 apply_lift (fst expr) e (fun e' -> `Cast (e',t))
+  | `While (cond,b) ->
+    let b' = simplify_ir b in
+    apply_lift_cb cond (fun stmt c' ->
+        match stmt with
+        | [] -> (`Unit,`While (c',b'))
+        | [`Declare _; s] ->
+          let final_expr = `Unit,(`Literal "0") in
+          let loop_body = `Block ([`Expr b';s],final_expr) in
+          let t_loop_body : all_expr = `Unit,loop_body in
+          let loop_ast : all_expr = `Unit,(`While (c',t_loop_body)) in
+          let block_body = `Block ((stmt @ [`Expr loop_ast]),final_expr) in
+          `Unit,block_body
+        | _ -> assert false
+      )
 and simplify_binary e1 e2 cb = 
   apply_lift_cb e1 (fun stmt1 e1' ->
 					apply_lift_cb e2 (fun stmt2 e2' ->
@@ -255,6 +283,7 @@ and simplify_stmt : Ir.stmt -> all_expr stmt list = function
 		  let c' = push_assignment (`Var v_name) (e_type,c) in
 		  [`Declare (v_name,v_type); `Expr c']
 	 end
+  | `Declare (n,t) -> [`Declare (n,t)]
   | `Expr e ->
 	 let e' = simplify_ir e in
 	 [`Expr e']
@@ -335,6 +364,8 @@ let rec clean_ir_expr (expr : t_simple_expr) =
   | `Assignment (_,((_,`Return _) as r)) -> r
   | `Assignment (_,((_,`Call ("crust_abort",_,_,_)) as r)) ->
     r
+  | `Assign_Op (op,e1,e2) -> 
+    e_type,`Assign_Op (op,e1,e2)
   | `Assignment (e1,e2) ->
     (* XXX: also a hack *)
     let e1 = snd (clean_ir_expr (`Bottom,e1)) in
@@ -362,6 +393,8 @@ let rec clean_ir (expr : all_expr) =
       ) stmt 
     in
     e_type,(`Block (stmt,clean_ir e))
+  | `While (cond,body) ->
+    e_type,`While (clean_ir_expr cond,clean_ir body)
 
 let get_simple_ir ir = 
   instrument_return ir

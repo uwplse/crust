@@ -202,6 +202,14 @@ class expr_emitter buf t_bindings =
         self#newline ()
       | `Match (_,m_arm) ->
         self#put_many "else " self#dump_match m_arm
+      | `While (cond,expr) ->
+        self#put_i "while(";
+        self#dump_simple_expr @@ snd cond;
+        self#put ") ";
+        self#open_block ();
+        self#dump_expr expr;
+        self#close_block ();
+        self#newline ()
       | #CRep.simple_expr as s -> self#dump_simple_expr s
     method dump_stmt_expr = function
       | (_,`Match _)
@@ -225,6 +233,10 @@ class expr_emitter buf t_bindings =
         self#dump_simple_expr lhs;
         self#put_i " = ";
         self#dump_simple_expr rhs
+      | `Assign_Op (op,e1,(_,e2)) ->
+        self#dump_simple_expr e1;
+        self#put_all [ string_of_binop op; "=" ];
+        self#dump_simple_expr e2
       | `Cast ((_,expr),t) ->
         self#put_i "(";
         self#put @@ Printf.sprintf "(%s)" @@ self#t_string t;

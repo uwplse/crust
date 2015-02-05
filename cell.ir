@@ -113,6 +113,8 @@ fn UnsafeCell_new<0><1: T>
 #                  | "unsafe" stmt* expr
 #                  | "assign" expr expr
 #				   | "return" expr
+#                  | "assign_op" op expr expr
+#                  | "while" expr expr
 #	binop ::= BiAdd | ...
 #	unop ::= ...
 #   field ::= name(field) expr
@@ -128,5 +130,6 @@ fn UnsafeCell_new<0><1: T>
 #
 #   stmt ::= "expr" expr
 #          | "let" name(var) type(var) expr
+#          | "decl" name(var) type(var)
 #
 #   const_def ::= "const" name ty expr

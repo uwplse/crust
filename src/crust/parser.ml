@@ -244,6 +244,14 @@ let rec parse_expr_var tokens cb = match tokens with
 	 (parse_expr >> parse_expr) t (fun a rest -> cb (`Assignment a) rest)
   | "return"::t ->
 	 parse_expr t (fun expr rest -> cb (`Return expr) rest)
+  | "while"::t ->
+    (parse_expr >> parse_expr) t (fun w rest ->
+        cb (`While w) rest
+      )
+  | "assign_op"::t ->
+    (parse_binop >> parse_expr >> parse_expr) t (fun ((op,lhs),rhs) rest ->
+        cb (`Assign_Op (op,lhs,rhs)) rest
+      )
   | _ -> raise (Parse_failure ("parse_expr_var",tokens))
 and parse_stmt tokens cb = match tokens with
   | "expr"::t -> parse_expr t (fun expr rest -> cb (`Expr expr) rest)
@@ -251,6 +259,10 @@ and parse_stmt tokens cb = match tokens with
 	 (parse_type >> parse_expr) t (fun (typ,expr) rest ->
 								   cb (`Let (name,typ,expr)) rest
 								  )
+  | "decl"::name::t ->
+    parse_type t (fun ty rest ->
+        cb (`Declare (name,ty)) rest
+      )
   | _ -> raise (Parse_failure ("parse_stmt",tokens))
 and parse_match_arm = fun tokens cb ->
   (parse_patt >> parse_expr) tokens cb
