@@ -116,6 +116,8 @@ liftTempsM x = traverse go concat x >>= return . fst
             let_ n $ applyDecls ds e
     goStmt ds (SLet n ty e) = do
         let_ n $ applyDecls ds e
+    goStmt [] (SDecl n ty) = do
+        return $ SDecl n ty
 
     goExpr :: [Decl] -> Expr -> LifterM (Expr, [Decl])
     goExpr ds (Expr ty (EAddrOf e))

@@ -127,6 +127,10 @@ addCleanup ix xs = evalState (runReaderT (go xs) ix) (CleanupState S.empty S.emp
         extendScope name ty
         addPending name
         return $ SLet name ty expr'
+    goStmt (SDecl name ty) = do
+        extendScope name ty
+        addPending name
+        return $ SDecl name ty
     goStmt (SExpr expr) = do
         expr' <- go expr
         return $ SExpr expr'

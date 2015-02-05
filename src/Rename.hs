@@ -95,6 +95,9 @@ renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
         -- The name goes out of scope when the enclosing block does.
         name' <- bindName name
         (SLet name' ty expr' :) <$> go ss
+    goStmtList (s@(SDecl name ty) : ss) = do
+        name' <- bindName name
+        (SDecl name' ty :) <$> go ss
     goStmtList ss = gmapM go ss
 
     goFnDef (FnDef name lps tps args retTy implClause body) = withEmptyScope $ do

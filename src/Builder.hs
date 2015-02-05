@@ -59,6 +59,9 @@ let_ n e = do
     e <- e
     return $ SLet n (typeOf e) e
 
+decl n ty = do
+    return $ SDecl n ty
+
 sexpr :: Monad m => m Expr -> m Stmt
 sexpr e = do
     e <- e

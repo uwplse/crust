@@ -50,7 +50,7 @@ main = do
             addCleanup ix $
             renameLocals $
             liftTemps ix $
-            constElim $
+            constExpand $
             ifFix $
 --            fixAbort $
             fixBottom $
@@ -111,7 +111,7 @@ fixAddress = everywhere (mkT stripAddr)
     stripAddr (Expr _ (EDeref (Expr _ (EAddrOf e)))) = e
     stripAddr e = e
 
-constElim items = filter (not . isConst) $ everywhere (mkT fixExpr `extT` fixPat) items
+constExpand items = everywhere (mkT fixExpr `extT` fixPat) items
   where
     consts :: M.Map Name Expr_
     consts = everything M.union (M.empty `mkQ` collectItem) items

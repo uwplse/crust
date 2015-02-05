@@ -169,6 +169,9 @@ ppExpr (Expr ty e) = case e of
     EUnsafe stmts expr ->
         inline (tell "unsafe {") (tell "}") $ mapM ppStmt stmts >> line (ppExpr expr)
     EAssign lhs rhs -> ppExpr lhs >> tell " = " >> ppExpr rhs
+    EAssignOp op lhs rhs -> ppExpr lhs >> tell (" `" ++ op ++ "`= ") >> ppExpr rhs
+    EWhile cond body ->
+        inline (tell "while " >> ppExpr cond >> tell " {") (tell "}") $ ppExpr body
     EReturn expr -> tell "return " >> ppExpr expr
 
 ppPat (Pattern ty p) = case p of
@@ -182,6 +185,9 @@ ppPat (Pattern ty p) = case p of
 ppStmt (SExpr e) = line $ ppExpr e >> tell ";"
 ppStmt (SLet name ty expr) = line $ do
     spaceSep [tell "let", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
+    tell ";"
+ppStmt (SDecl name ty) = line $ do
+    spaceSep [tell "let", tell name, tell ":", ppTy ty]
     tell ";"
 
 ppConstDef (ConstDef name ty expr) = line $ do
