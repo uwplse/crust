@@ -30,6 +30,10 @@ addrOf m e = do
     e <- e
     return $ Expr (TPtr m (typeOf e)) $ EAddrOf e
 
+addrOf' m e = do
+    e <- e
+    return $ Expr (TRef "r_addrof" m (typeOf e)) $ EAddrOf e
+
 deref e = do
     e <- e
     let ptrTy = typeOf e

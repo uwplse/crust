@@ -159,6 +159,7 @@ ppExpr (Expr ty e) = case e of
     EField expr name -> ppExpr expr >> tell "." >> tell name
     EDeref expr -> tell "*" >> ppExpr expr
     EAddrOf expr -> tell "&" >> ppExpr expr
+    EIndex arr idx -> ppExpr arr >> brackets (ppExpr idx)
     ECast expr ty -> ppExpr expr >> tell " as " >> ppTy ty
     EBinOp op a b -> parens $ ppExpr a >> tell " `" >> tell op >> tell "` " >> ppExpr b
     EUnOp op a -> parens $ tell "`" >> tell op >> tell "` " >> ppExpr a

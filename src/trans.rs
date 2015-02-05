@@ -598,7 +598,19 @@ impl Trans for Expr {
                         expr.trans(trcx),
                         field.node.as_str()),
             // ExprTupField
-            ExprIndex(ref arr, ref idx) => panic!("exprindex"),
+            ExprIndex(ref arr, ref idx) => {
+                match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
+                    Some(callee) => {
+                        let arg_strs = vec![arr.trans(trcx), idx.trans(trcx)];
+                        trans_method_call(trcx, callee, arg_strs)
+                    },
+                    None => {
+                        format!("index {} {}",
+                                arr.trans(trcx),
+                                idx.trans(trcx))
+                    },
+                }
+            },
             ExprRange(ref low, ref high) => panic!("exprrange"),
             ExprPath(ref path) => {
                 if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
