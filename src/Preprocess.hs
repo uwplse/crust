@@ -53,9 +53,7 @@ main = do
             renameLocals $
             addCleanup ix $
             renameLocals $
-            dumpIr "post" $
             liftTemps ix $
-            dumpIr "pre" $
             constExpand $
             ifFix $
 --            fixAbort $
