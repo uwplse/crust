@@ -400,11 +400,13 @@ impl Trans for Local {
             },
             _ => panic!("unsupported Pat_ variant in Local"),
         };
-        assert!(self.init.is_some());
-        format!("let {} {} {}",
-                name,
-                trcx.tcx.node_types.borrow()[self.id].trans(trcx),
-                self.init.as_ref().unwrap().trans(trcx))
+        let ty = trcx.tcx.node_types.borrow()[self.id].trans(trcx);
+        match(self.init) {
+            Some(_) => format!("let {} {} {}",
+                               name, ty,
+                               self.init.as_ref().unwrap().trans(trcx)),
+            None => format!("decl {} {}", name, ty)
+        }
     }
 }
 
@@ -562,6 +564,10 @@ impl Trans for Expr {
                         */
             // ExprIfLet
             // ExprWhile
+            ExprWhile(ref guard, ref body, _) =>
+                format!("while {} [unit] {}",
+                        guard.trans(trcx),
+                        body.trans(trcx)),
             // ExprWhileLet
             // ExprForLoop
             // ExprLoop
@@ -577,7 +583,12 @@ impl Trans for Expr {
                 format!("assign {} {}",
                         l.trans(trcx),
                         r.trans(trcx)),
-            // ExprAssignOp
+            ExprAssignOp(ref op, ref rhs, ref operand) =>
+                format!("assign_op {:?} {} {}",
+                        op.node,
+                        rhs.trans(trcx),
+                        operand.trans(trcx)
+                        ),
             ExprField(ref expr, field) =>
                 format!("field {} {}",
                         expr.trans(trcx),
