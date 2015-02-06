@@ -50,6 +50,14 @@ let parse_n parse_fn l cb =
   in
   parse_loop 0 n_items (List.tl l) []
 
+let maybe_parse parse_fn tokens cb = 
+  match tokens with
+  | "1"::t -> parse_fn t (fun a rest ->
+						  cb (Some a) rest
+						 )
+  | "0"::t -> cb None t
+  | _ -> raise (Parse_failure ("maybe_parse",tokens))
+
 let parse_lifetimes tokens cb = 
   parse_n consume_lifetime tokens cb
 
@@ -255,27 +263,19 @@ let rec parse_expr_var tokens cb = match tokens with
   | _ -> raise (Parse_failure ("parse_expr_var",tokens))
 and parse_stmt tokens cb = match tokens with
   | "expr"::t -> parse_expr t (fun expr rest -> cb (`Expr expr) rest)
-  | "let"::name::t ->
-	 (parse_type >> parse_expr) t (fun (typ,expr) rest ->
-								   cb (`Let (name,typ,expr)) rest
-								  )
-  | "decl"::name::t ->
-    parse_type t (fun ty rest ->
-        cb (`Declare (name,ty)) rest
-      )
+  | "let"::t ->
+	 (parse_patt >> (maybe_parse parse_expr)) t (fun ((typ,binding_pat),expr) rest ->
+        match binding_pat with
+        | `Bind r ->
+		  cb (`Let (r,typ,expr)) rest
+        | _ -> raise (Parse_failure ("Found unsupported pattern in let position",tokens))
+	  )
   | _ -> raise (Parse_failure ("parse_stmt",tokens))
 and parse_match_arm = fun tokens cb ->
   (parse_patt >> parse_expr) tokens cb
 and parse_expr = fun tokens cb ->
   (parse_type >> parse_expr_var) tokens cb
 
-let maybe_parse parse_fn tokens cb = 
-  match tokens with
-  | "1"::t -> parse_fn t (fun a rest ->
-						  cb (Some a) rest
-						 )
-  | "0"::t -> cb None t
-  | _ -> raise (Parse_failure ("maybe_parse",tokens))
 
 
 let parse_fn = 

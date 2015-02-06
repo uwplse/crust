@@ -50,9 +50,8 @@ and struct_fields = struct_field list
 and struct_field = string * expr (* field binding *)
 and stmt = [
   | `Expr of expr
-  | `Let of string * Types.r_type * expr
-  | `Declare of string * Types.r_type
-  ]
+  | `Let of string * Types.r_type * expr option
+]
 and match_arm = (pattern * expr)
 and pattern = (r_type * pattern_variant)
 and pattern_variant = [

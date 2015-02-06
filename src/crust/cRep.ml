@@ -273,20 +273,23 @@ and simplify_binary e1 e2 cb =
 									 )
 				   )
 and simplify_stmt : Ir.stmt -> all_expr stmt list = function
-  | `Let (v_name,v_type,expr) ->
-	 let expr' = simplify_ir expr in
-	 let e_type = fst expr' in
-	 begin
-	   match (snd expr') with
-	   | #simple_expr as s -> [`Let (v_name,v_type,(e_type,s))]
-	   | #complex_expr as c -> 
-		  let c' = push_assignment (`Var v_name) (e_type,c) in
-		  [`Declare (v_name,v_type); `Expr c']
-	 end
-  | `Declare (n,t) -> [`Declare (n,t)]
+  | `Let (v_name,v_type,binding) ->
+    begin
+      match binding with
+      | Some expr -> begin
+          let e_type = fst expr in
+          let expr = simplify_ir expr in
+          match (snd expr) with
+          | #simple_expr as s -> [`Let (v_name,v_type,(e_type,s))]
+          | #complex_expr as c -> 
+            let c' = push_assignment (`Var v_name) (e_type,c) in
+            [`Declare (v_name,v_type); `Expr c']
+        end
+      | None -> [`Declare (v_name,v_type)]
+    end
   | `Expr e ->
-	 let e' = simplify_ir e in
-	 [`Expr e']
+	let e' = simplify_ir e in
+	[`Expr e']
 and simplify_match : Ir.match_arm list -> t_simple_expr -> 'a = 
   fun m_arms t_matchee -> 
   let matchee = snd t_matchee in

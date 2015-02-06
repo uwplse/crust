@@ -218,9 +218,10 @@ and walk_statement t_bindings w_state stmt =
   | `Expr e -> walk_expr t_bindings w_state e
   | `Let (_,v_type,expr) -> 
     let w_state = inst_walk_type t_bindings w_state v_type in
-    walk_expr t_bindings w_state expr
-  | `Declare (_,v_type) ->
-    inst_walk_type t_bindings w_state v_type
+    match expr with
+    | Some e -> walk_expr t_bindings w_state e
+    | None -> w_state
+
 and walk_match_arm t_bindings w_state (patt,expr) = 
   let w_state = walk_pattern t_bindings w_state patt in
   walk_expr t_bindings w_state expr

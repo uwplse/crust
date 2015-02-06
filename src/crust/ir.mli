@@ -42,7 +42,7 @@ type expr_variant = [
   | `BinOp of bin_op * expr * expr
   | `UnOp of un_op * expr
   | `Tuple of expr list
-  | `While of expr * expr (* TODO(jtoman): push through while *)
+  | `While of expr * expr
   | `Assign_Op of bin_op * expr * expr
   ]
 and expr = r_type * expr_variant
@@ -50,8 +50,7 @@ and struct_fields = struct_field list
 and struct_field = string * expr (* field binding *)
 and stmt = [
   | `Expr of expr
-  | `Let of string * Types.r_type * expr
-  | `Declare of string * Types.r_type
+  | `Let of string * Types.r_type * expr option
   ]
 and match_arm = (pattern * expr)
 and pattern = (r_type * pattern_variant)
