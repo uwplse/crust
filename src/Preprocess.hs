@@ -1,9 +1,11 @@
-{-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable #-}
+{-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable, Rank2Types,
+        ScopedTypeVariables #-}
 import Control.Applicative ((<$>))
 import Control.Exception (evaluate)
 import Control.Monad
+import Control.Monad.Identity
 import Data.Char (toLower)
-import Data.Generics
+import Data.Generics hiding (typeOf)
 import Data.List (intercalate, isPrefixOf, isSuffixOf)
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -18,6 +20,7 @@ import TempLift
 import Rename
 import Pprint
 import DropGlue
+import Builder
 
 import Debug.Trace
 
@@ -58,6 +61,8 @@ main = do
             fixBottom $
             fixSpecialFn $
             fixAddress $
+            desugarRange $
+            desugarIndex ix $
             items'
     putStrLn $ concatMap pp items''
 
@@ -181,6 +186,77 @@ fixBottom = everywhere (mkT go)
   where
     go TBottom = TUnit
     go t = t
+
+data Location = Rvalue | Lvalue | LvalueMut
+  deriving (Eq, Show, Data, Typeable)
+
+everywhereWithLocationM :: forall m a. (Monad m, Data a) => (forall d. Data d => Location -> d -> m d) -> a -> m a
+everywhereWithLocationM f x = go Rvalue x
+  where
+    go :: forall d. Data d => Location -> d -> m d
+    go loc = (f loc <=< gmapM (go loc)) `extM` goExpr loc
+
+    -- Process children as loc', then process e as loc
+    next :: Location -> Location -> Expr -> m Expr
+    next loc loc' e = f loc =<< gmapM (go loc') e
+
+    goExpr :: Location -> Expr -> m Expr
+    goExpr loc e@(Expr ty (EAddrOf _)) = do
+        let loc' = case ty of
+                TRef _ MMut _ -> LvalueMut
+                TRef _ MImm _ -> Lvalue
+                TPtr MMut _ -> LvalueMut
+                TPtr MImm _ -> Lvalue
+                _ -> error $ "bad type for EAddrOf: " ++ show ty
+        next loc loc' e
+    goExpr loc (Expr ty (EAssign l r)) = do
+        ty' <- go loc ty
+        l' <- go LvalueMut l
+        r' <- go Rvalue r
+        e_' <- f loc (EAssign l' r')
+        f loc $ Expr ty' e_'
+    goExpr loc (Expr ty (EAssignOp op l r)) = do
+        ty' <- go loc ty
+        op' <- go loc op
+        l' <- go LvalueMut l
+        r' <- go Rvalue r
+        e_' <- f loc (EAssignOp op' l' r')
+        f loc $ Expr ty' e_'
+    goExpr loc e@(Expr _ (EField _ _)) = next loc loc e
+    goExpr loc e@(Expr ty (EIndex arr idx)) = do
+        ty' <- go loc ty
+        arr' <- go loc arr
+        idx' <- go Rvalue idx
+        e_' <- f loc (EIndex arr' idx')
+        f loc $ Expr ty' e_'
+    goExpr loc e = next loc Rvalue e
+
+everywhereWithLocation :: forall a. (Data a) => (forall d. Data d => Location -> d -> d) -> a -> a
+everywhereWithLocation f = runIdentity . everywhereWithLocationM (\loc -> Identity . f loc)
+
+desugarIndex ix = everywhereWithLocation (\loc -> mkT $ go loc)
+  where
+    go loc (Expr _ (EIndex arr idx)) = mkE ix $ do
+        let arrRef = addrOf' mutbl (return arr)
+        let idxRef = addrOf' MImm (return idx)
+        deref (call methodName [] [typeOf idx, typeOf arr] [arrRef, idxRef])
+      where
+        (mutbl, methodName) = case loc of
+            LvalueMut -> (MMut, "core_ops_IndexMut_index_mut")
+            _ -> (MImm, "core_ops_Index_index")
+    go loc e = e
+
+desugarRange = everywhere (mkT go)
+  where
+    go (Expr ty (ERange Nothing Nothing)) =
+        Expr ty $ EStructLiteral []
+    go (Expr ty (ERange (Just low) Nothing)) =
+        Expr ty $ EStructLiteral [Field "start" low]
+    go (Expr ty (ERange Nothing (Just high))) =
+        Expr ty $ EStructLiteral [Field "end" high]
+    go (Expr ty (ERange (Just low) (Just high))) =
+        Expr ty $ EStructLiteral [Field "start" low, Field "end" high]
+    go e = e
 
 data RefState = InRef | TopLevel
 

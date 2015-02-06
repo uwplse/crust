@@ -106,6 +106,7 @@ fn UnsafeCell_new<0><1: T>
 #                  | "field" expr(struct) name(field)
 #                  | "deref" expr
 #                  | "addr_of" expr
+#                  | "index" expr expr
 #                  | "cast" expr type
 #                  | "binop" op expr expr
 #                  | "unop" op expr expr

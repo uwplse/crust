@@ -23,6 +23,9 @@ subst (lp, tp) (la, ta) t = goTy t
     goTy (TTuple ts) = TTuple (map goTy ts)
     goTy (TRef l m t) = TRef (goLife l) m (goTy t)
     goTy (TPtr m t) = TPtr m (goTy t)
+    goTy (TVec t) = TVec (goTy t)
+    goTy (TFixedVec n t) = TFixedVec n (goTy t)
+    goTy (TAbstract n ls ts) = TAbstract n (map goLife ls) (map goTy ts)
     goTy t = t
 
     goLife n = case M.lookup n lifeMap of Just l -> l; Nothing -> n

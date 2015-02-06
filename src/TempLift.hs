@@ -108,8 +108,7 @@ liftTempsM x = traverse go concat x >>= return . fst
 
     goStmt :: [Decl] -> Stmt -> LifterM Stmt
     goStmt ds (SExpr e) = do
-        kind <- getKind (typeOf e)
-        if hasStableLocation e || kind == Copy then
+        if hasStableLocation e then
             sexpr $ applyDecls ds e
         else do
             n <- fresh "lifttemp"
@@ -120,18 +119,16 @@ liftTempsM x = traverse go concat x >>= return . fst
         return $ SDecl n ty
 
     goExpr :: [Decl] -> Expr -> LifterM (Expr, [Decl])
-    goExpr ds (Expr ty (EAddrOf e))
+    goExpr ds orig@(Expr ty (EAddrOf e))
       | not $ hasStableLocation e = collectDecls ds $ do
-        kind <- getKind (typeOf e)
-        if kind == Copy then return e else do
         n <- fresh "lifttemp"
         addDecl n e
         return $ Expr ty $ EAddrOf $ Expr (typeOf e) $ EVar n
+    {-
     goExpr ds (Expr _ (EField e _))
       | not $ hasStableLocation e = collectDecls ds $ do
-        kind <- getKind (typeOf e)
-        if kind == Copy then return e else do
         error $ "can't yet handle accessing a field of a temporary"
+        -}
     goExpr ds (Expr ty (EBlock ss e)) = collectDecls [] $ do
         e' <- applyDecls ds e
         return $ Expr ty $ EBlock ss e'
