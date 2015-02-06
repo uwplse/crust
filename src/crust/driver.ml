@@ -152,7 +152,7 @@ module DriverF(COMP : Compilation) = struct
       self#emit_define no_borrow_symbol "-1";
       self#emit_define immutable_borrow_symbol "0";
       self#emit_define mutable_borrow_symbol "1";
-      self#emit_define max_actions_symbol "8";
+      self#emit_define max_actions_symbol "4";
       List.iteri (fun index ty ->
           let type_code = string_of_int index in
           let type_const = "TYPE_" ^ (String.uppercase @@ COMP.adt_type_name ty) in

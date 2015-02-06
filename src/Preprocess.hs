@@ -49,6 +49,7 @@ main = do
     let items'' =
             dumpIr "final" $
             filter (not . isExternFn) $
+            fixBool $
             fixDST $
             renameLocals $
             addCleanup ix $
@@ -65,6 +66,20 @@ main = do
             desugarIndex ix $
             items'
     putStrLn $ concatMap pp items''
+
+fixBool = everywhere (mkT fixBoolLitExpr `extT` fixBoolLitPat)
+  where
+    fixBoolLitExpr (Expr TBool (ESimpleLiteral b))
+      | b == "true" = Expr TBool (ESimpleLiteral "1")
+    fixBoolLitExpr (Expr TBool (ESimpleLiteral b))
+      | b == "false" = Expr TBool (ESimpleLiteral "0")
+    fixBoolLitExpr e = e
+
+    fixBoolLitPat (Pattern TBool (PSimpleLiteral "false")) =
+      Pattern TBool (PSimpleLiteral "0")
+    fixBoolLitPat (Pattern TBool (PSimpleLiteral "true")) =
+      Pattern TBool (PSimpleLiteral "1")
+    fixBoolLitPat p = p
 
 fixDST = everywhere (mkT transmuteDST)
   where
@@ -156,8 +171,8 @@ ifFix = everywhere (mkT fixIf)
   where
     fixIf
         (EMatch e
-                [MatchArm (Pattern TBool (PSimpleLiteral "true")) e1,
-                 MatchArm (Pattern TBool (PSimpleLiteral "false")) e2]) =
+                [MatchArm (Pattern TBool (PSimpleLiteral "1")) e1,
+                 MatchArm (Pattern TBool (PSimpleLiteral "0")) e2]) =
          EMatch (mkCast e (TInt 32))
                 [MatchArm (Pattern (TInt 32) (PSimpleLiteral "0")) e2,
                  MatchArm (Pattern (TInt 32) (PWild)) e1]

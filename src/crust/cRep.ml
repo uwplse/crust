@@ -370,8 +370,8 @@ let rec clean_ir_expr (expr : t_simple_expr) =
     (* XXX: also a hack *)
     let e1 = snd (clean_ir_expr (`Bottom,e1)) in
     (e_type,`Assignment (e1,clean_ir_expr e2))
-  | `Call ("crust_abort", _, _, _) ->
-    failwith "crust_abort found in unsupported position"
+(*  | `Call ("crust_abort", _, _, _) ->
+    failwith "crust_abort found in unsupported position"*)
   | `Call (s,l,t,e) ->
     e_type,`Call (s,l,t,List.map clean_ir_expr e)
 
