@@ -4,6 +4,7 @@ import Control.Applicative ((<$>))
 import Control.Exception (evaluate)
 import Control.Monad
 import Control.Monad.Identity
+import Control.Monad.State
 import Data.Char (toLower)
 import Data.Generics hiding (typeOf)
 import Data.List (intercalate, isPrefixOf, isSuffixOf)
@@ -61,6 +62,7 @@ main = do
             fixBottom $
             fixSpecialFn $
             fixAddress $
+            desugarPatternLets $
             desugarArgPatterns $
             desugarRange $
             desugarIndex ix $
@@ -286,6 +288,48 @@ desugarArgPatterns = map go
 
     isVar (ArgDecl (Pattern _ (PVar _))) = True
     isVar _ = False
+
+desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
+  where
+    goExpr (EBlock ss e) = do
+        (ss', e') <- go ss e
+        return $ EBlock ss' e'
+    goExpr (EUnsafe ss e) = do
+        (ss', e') <- go ss e
+        return $ EUnsafe ss' e'
+    goExpr e = return e
+
+    skip s ss e = do
+        (ss', e') <- go ss e
+        return (s : ss', e')
+
+    go (s@(SExpr _) : ss) e = skip s ss e
+    go (s@(SLet (Pattern ty p) Nothing) : ss) e = case p of
+        PVar _ -> skip s ss e
+        _ -> error $ "can't handle non-PVar patterns in SLet with no Expr"
+    go (s@(SLet (Pattern ty p) (Just rhs)) : ss) e = case p of
+        PVar _ -> skip s ss e
+        PWild -> do
+            n <- fresh "__wild"
+            skip (SLet (Pattern ty $ PVar n) (Just rhs)) ss e
+        PTuple pats -> do
+            let lets = zipWith (\i (Pattern ty' p') -> SLet (Pattern ty' p')
+                    (Just $ Expr ty' $ EField rhs $ "field" ++ show i)) [0..] pats
+            go (lets ++ ss) e
+        PRefVar name -> do
+            let TRef life mutbl ty' = ty
+            skip (SLet (Pattern ty $ PVar name) (Just $ Expr ty $ EAddrOf rhs)) ss e
+        _ -> do
+            let e' = Expr (typeOf e) $ EMatch rhs
+                    [MatchArm (Pattern ty p) (Expr (typeOf e) $ EBlock ss e)]
+            return ([], e')
+
+    go [] e = return ([], e)
+
+    fresh base = do
+        cur <- get
+        modify (+1)
+        return $ base ++ show cur
 
 data RefState = InRef | TopLevel
 

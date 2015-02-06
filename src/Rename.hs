@@ -88,6 +88,7 @@ renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
 
     walkPat = everywhereM (mkM go)
       where go (PVar name) = PVar <$> bindName name
+            go (PRefVar name) = PRefVar <$> bindName name
             go p = return p
 
     goStmtList (s@(SLet pat expr) : ss) = do
