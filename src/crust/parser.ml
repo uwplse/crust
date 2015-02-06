@@ -278,8 +278,19 @@ and parse_expr = fun tokens cb ->
 
 
 
-let parse_fn = 
-  let consume_arg = consume_name >> parse_type in
+let parse_fn =
+  let arg_counter = ref 0 in
+  let consume_arg = fun tokens cb ->
+    parse_patt tokens (fun (p_ty,p_var) rest ->
+        match p_var with
+        | `Bind i -> cb (i,p_ty) rest
+        | `Wild -> 
+          let arg_name = "__crust_unused_" ^ (string_of_int !arg_counter) in
+          incr arg_counter;
+          cb (arg_name,p_ty) rest
+        | _ -> raise @@ Parse_failure ("Unsupported pattern type found in argument position", tokens)
+      )
+  in
   let parse_args = fun tokens cb ->
 	match tokens with 
 	| "args"::t -> parse_n consume_arg t cb
@@ -312,6 +323,7 @@ let parse_fn =
     | _ -> raise (Parse_failure ("parse_impl", tokens))
   in
   fun tokens cb ->
+    arg_counter := 0;
     match tokens with
     | "fn"::fn_name::t ->
 	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return >> (maybe_parse parse_impl) >> parse_body in
