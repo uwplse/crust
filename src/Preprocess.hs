@@ -270,6 +270,7 @@ desugarArgPatterns = map go
     go (IExternFn (ExternFnDef abi name lps tps args retTy)) =
         let args' = numberArgs args
         in IExternFn (ExternFnDef abi name lps tps args' retTy)
+    go i = i
 
     numberArgs args | all isVar args = args
     numberArgs args = zipWith (\(ArgDecl (Pattern ty _)) i ->

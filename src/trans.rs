@@ -65,6 +65,14 @@ impl<T: Trans> Trans for Vec<T> {
     }
 }
 
+struct SliceIndex;
+
+impl<T: TransExtra<usize>> TransExtra<SliceIndex> for Vec<T> {
+    fn trans_extra(&self, trcx: &mut TransCtxt, _: SliceIndex) -> String {
+        self.as_slice().trans_extra(trcx, SliceIndex)
+    }
+}
+
 impl<T: TransExtra<E>, E: Copy> TransExtra<E> for Vec<T> {
     fn trans_extra(&self, trcx: &mut TransCtxt, extra: E) -> String {
         self.as_slice().trans_extra(trcx, extra)
@@ -77,6 +85,17 @@ impl<'a, T: Trans> Trans for &'a [T] {
         for item in self.iter() {
             result.push_str(" ");
             result.push_str(item.trans(trcx).as_slice());
+        }
+        result
+    }
+}
+
+impl<'a, T: TransExtra<usize>> TransExtra<SliceIndex> for &'a [T] {
+    fn trans_extra(&self, trcx: &mut TransCtxt, _: SliceIndex) -> String {
+        let mut result = format!("{}", self.len());
+        for (idx, item) in self.iter().enumerate() {
+            result.push_str(" ");
+            result.push_str(item.trans_extra(trcx, idx).as_slice());
         }
         result
     }
@@ -455,7 +474,13 @@ impl Trans for Expr {
             // ExprBox
             // ExprVec
             ExprCall(ref func, ref args) => {
-                if let Some((var_name, var_idx)) = find_variant(trcx, func.id) {
+                if let Some(struct_name) = find_tuple_struct_ctor(trcx, func.id) {
+                    let mut fields = Vec::new();
+                    for (i, a) in args.iter().enumerate() {
+                        fields.push(format!("field{} {}", i, a.trans(trcx)));
+                    }
+                    format!("struct_literal {}", fields.trans(trcx))
+                } else if let Some((var_name, var_idx)) = find_variant(trcx, func.id) {
                     format!("enum_literal {} {} {}",
                             var_name,
                             var_idx,
@@ -579,7 +604,10 @@ impl Trans for Expr {
                 format!("field {} {}",
                         expr.trans(trcx),
                         field.node.as_str()),
-            // ExprTupField
+            ExprTupField(ref expr, index) =>
+                format!("field {} field{}",
+                        expr.trans(trcx),
+                        index.node),
             ExprIndex(ref arr, ref idx) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
@@ -715,6 +743,24 @@ fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
     }
 }
 
+fn find_tuple_struct_ctor(trcx: &mut TransCtxt, id: NodeId) -> Option<String> {
+    use rustc::middle::def::*;
+
+    let def_map = trcx.tcx.def_map.borrow();
+
+    let def = match def_map.get(&id) {
+        None => return None,
+        Some(d) => d,
+    };
+
+    match *def {
+        DefStruct(struct_did) => {
+            Some(mangled_def_name(trcx, struct_did))
+        },
+        _ => None,
+    }
+}
+
 fn find_variant(trcx: &mut TransCtxt, id: NodeId) -> Option<(String, usize)> {
     use rustc::middle::def::*;
 
@@ -783,12 +829,16 @@ impl Trans for Pat {
                 }
             },
             PatEnum(ref path, Some(ref args)) => {
-                let (var_name, var_idx) = find_variant(trcx, self.id)
-                        .expect("couldn't find variant for enum pattern");
-                format!("enum {} {} {}",
-                        var_name,
-                        var_idx,
-                        args.trans(trcx))
+                if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
+                    format!("enum {} {} {}",
+                            var_name,
+                            var_idx,
+                            args.trans(trcx))
+                } else if let Some(struct_name) = find_tuple_struct_ctor(trcx, self.id) {
+                    format!("tuple {}", args.trans(trcx))
+                } else {
+                    panic!("couldn't find enum variant or tuple struct for {}", path.repr(trcx.tcx));
+                }
             },
             PatTup(ref args) => format!("tuple {}", args.trans(trcx)),
             PatRegion(ref pat, _mutbl) => format!("addr_of {}", pat.trans(trcx)),
@@ -802,11 +852,16 @@ impl Trans for Pat {
     }
 }
 
-impl Trans for StructField {
-    fn trans(&self, trcx: &mut TransCtxt) -> String {
-        format!("{} {}",
-                self.node.ident().unwrap().as_str(),
-                self.node.ty.trans(trcx))
+impl TransExtra<usize> for StructField {
+    fn trans_extra(&self, trcx: &mut TransCtxt, idx: usize) -> String {
+        match self.node.ident() {
+            Some(ident) => format!("{} {}",
+                                   ident.trans(trcx),
+                                   self.node.ty.trans(trcx)),
+            None => format!("field{} {}",
+                            idx,
+                            self.node.ty.trans(trcx)),
+        }
     }
 }
 
@@ -894,11 +949,10 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
     fn trans_extra(&self, trcx: &mut TransCtxt, filter_fn: &'a HashSet<String>) -> String {
         match self.node {
             ItemStruct(ref def, ref g) => {
-                //assert!(def.ctor_id.is_none());
                 format!("struct {} {} {} {};",
                         mangled_def_name(trcx, local_def(self.id)),
                         g.trans_extra(trcx, TypeSpace),
-                        def.fields.trans(trcx),
+                        def.fields.trans_extra(trcx, SliceIndex),
                         ty::ty_dtor(trcx.tcx, local_def(self.id)).trans(trcx))
             },
             ItemEnum(ref def, ref g) => {
