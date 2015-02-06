@@ -61,6 +61,8 @@ and pattern_variant = [
   | `Literal of string
   | `Const of string
   | `Tuple of pattern list
+  | `Addr_of of pattern
+  | `Ref of string
   ]
 
 type impl_info = {

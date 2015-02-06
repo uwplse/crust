@@ -103,7 +103,7 @@ let parse_simple_type tokens cb = match tokens with
   | "bottom"::t -> cb `Bottom t
   | "float"::w::t -> cb (`Float (int_of_string w)) t
   | "char"::t -> cb (`Char) t
-  | _ -> raise (Unexpected_stream_end "parse_simple_type")
+  | _ -> raise (Parse_failure ("parse_simple_type", tokens))
 
 let rec parse_adt_type tokens cb = match tokens with
   | "adt"::name::t -> 
@@ -201,6 +201,12 @@ and parse_patt_variant tokens cb =
 	 (parse_n parse_patt) t (fun patts rest ->
 							 cb (`Enum (variant_name,(int_of_string variant_tag),patts)) rest
 							)
+  | "addr_of"::t ->
+    parse_patt t (fun p ->
+        cb (`Addr_of p)
+      )
+  | "ref_var"::name::t ->
+    cb (`Ref name) t
   | _ -> raise (Parse_failure ("parse_patt_variant",tokens))
 		   
 let rec parse_expr_var tokens cb = match tokens with

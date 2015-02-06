@@ -235,6 +235,8 @@ and walk_pattern t_bindings w_state patt =
   | `Tuple p_list
   | `Enum (_,_,p_list) ->
     List.fold_left (walk_pattern t_bindings) w_state p_list
+  | `Addr_of p -> walk_pattern t_bindings w_state p
+  | `Ref _ -> w_state
 and walk_fn w_state fn_name m_args  = 
   if Intrinsics.is_intrinsic_fn fn_name then 
     add_fn_instance w_state (fn_name,m_args)

@@ -317,7 +317,15 @@ and simplify_match_arm matchee (patt,m_arm) =
 	  end
   in
   (predicate_expr,final_expr)
-and compile_pattern : ((t_simple_expr * t_simple_expr) list * 'b) -> 'c -> Ir.pattern -> 'd = fun (predicates,bindings) matchee patt ->
+and compile_pattern : ((t_simple_expr * t_simple_expr) list * 'b) -> 'c -> Ir.pattern -> 'd = 
+  let get_addr_type = function
+    | `Ref_Mut (_,t)
+    | `Ptr t
+    | `Ptr_Mut t
+    | `Ref (_,t) -> t
+    | _ -> failwith "the address of pattern was not applied to a pointer type?!"
+  in
+  fun (predicates,bindings) matchee patt ->
   let p_type = fst patt in
   match (snd patt) with
   | `Wild -> predicates,bindings
@@ -329,6 +337,19 @@ and compile_pattern : ((t_simple_expr * t_simple_expr) list * 'b) -> 'c -> Ir.pa
 	 let tag_rhs = (`Int 32,tag_field matchee) in
 	 let tag_lhs = (`Int 32,`Literal (string_of_int tag)) in
 	 (tag_lhs,tag_rhs)::predicates',bindings
+  | `Ref b_name ->
+    (* XXX(jtoman): THE WORST HACK
+     * Welp, what's the type of the thing we're taking the address of?
+     * We have NO idea: we erase this information as we walk the pattern!!
+     * We're faking it here by trying to infer this info from the type of the bound
+     * variable
+     * The intermediate type information IS used during simplification, but
+     * we should never revisit this node.
+     *)
+    let matchee = `Address_of (get_addr_type p_type,matchee) in
+    (predicates,(p_type,b_name,matchee)::bindings)
+  | `Addr_of p ->
+    compile_pattern (predicates,bindings) (`Deref (p_type,matchee)) p
   | `Const l
   | `Literal l ->
 	 let lhs = (p_type,`Literal l) in
