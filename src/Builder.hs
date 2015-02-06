@@ -2,6 +2,7 @@
 module Builder
 where
 
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Reader
 import qualified Data.Map as M
@@ -61,10 +62,11 @@ field e f = do
 
 let_ n e = do
     e <- e
-    return $ SLet n (typeOf e) e
+    return $ SLet (Pattern (typeOf e) $ PVar n) (Just e)
 
-decl n ty = do
-    return $ SDecl n ty
+letP p e = do
+    e <- e
+    return $ SLet p (Just e)
 
 sexpr :: Monad m => m Expr -> m Stmt
 sexpr e = do

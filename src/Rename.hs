@@ -90,14 +90,11 @@ renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
       where go (PVar name) = PVar <$> bindName name
             go p = return p
 
-    goStmtList (s@(SLet name ty expr) : ss) = do
+    goStmtList (s@(SLet pat expr) : ss) = do
         expr' <- go expr
         -- The name goes out of scope when the enclosing block does.
-        name' <- bindName name
-        (SLet name' ty expr' :) <$> go ss
-    goStmtList (s@(SDecl name ty) : ss) = do
-        name' <- bindName name
-        (SDecl name' ty :) <$> go ss
+        pat' <- walkPat pat
+        (SLet pat' expr' :) <$> go ss
     goStmtList ss = gmapM go ss
 
     goFnDef (FnDef name lps tps args retTy implClause body) = withEmptyScope $ do
@@ -105,6 +102,6 @@ renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
         body' <- go body
         return $ FnDef name lps tps args' retTy implClause body'
 
-    renameArg (ArgDecl name ty) = do
-        name' <- bindName name
-        return $ ArgDecl name ty
+    renameArg (ArgDecl pat) = do
+        pat' <- walkPat pat
+        return $ ArgDecl pat'

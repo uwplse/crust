@@ -113,10 +113,10 @@ liftTempsM x = traverse go concat x >>= return . fst
         else do
             n <- fresh "lifttemp"
             let_ n $ applyDecls ds e
-    goStmt ds (SLet n ty e) = do
-        let_ n $ applyDecls ds e
-    goStmt [] (SDecl n ty) = do
-        return $ SDecl n ty
+    goStmt ds (SLet p (Just e)) = do
+        letP p $ applyDecls ds e
+    goStmt [] (SLet p Nothing) = do
+        return $ SLet p Nothing
 
     goExpr :: [Decl] -> Expr -> LifterM (Expr, [Decl])
     goExpr ds orig@(Expr ty (EAddrOf e))

@@ -131,7 +131,7 @@ ppExternFnDef (ExternFnDef abi name lps tps args retTy) = do
         tell " -> " >> ppTy retTy >> tell ";"
 
 ppArgDecl :: (MonadReader Int m, MonadWriter String m) => ArgDecl -> m ()
-ppArgDecl (ArgDecl name ty) = tell name >> tell ": " >> ppTy ty
+ppArgDecl (ArgDecl pat@(Pattern ty _)) = ppPat pat >> tell ": " >> ppTy ty
 
 ppImplClause :: (MonadReader Int m, MonadWriter String m) => ImplClause -> m ()
 ppImplClause (ImplClause name lifetimes tys) = do
@@ -186,13 +186,15 @@ ppPat (Pattern ty p) = case p of
     PWild -> tell "_"
     PSimpleLiteral str -> tell str >> tell " : " >> ppTy ty
     PTuple pats -> parens $ commaSep $ map ppPat pats
+    PRefVar name -> tell "ref " >> tell name
+    PAddrOf pat -> tell "& " >> ppPat pat
 
 ppStmt (SExpr e) = line $ ppExpr e >> tell ";"
-ppStmt (SLet name ty expr) = line $ do
-    spaceSep [tell "let", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
+ppStmt (SLet pat@(Pattern ty _) Nothing) = line $ do
+    spaceSep [tell "let", ppPat pat, tell ":", ppTy ty]
     tell ";"
-ppStmt (SDecl name ty) = line $ do
-    spaceSep [tell "let", tell name, tell ":", ppTy ty]
+ppStmt (SLet pat@(Pattern ty _) (Just expr)) = line $ do
+    spaceSep [tell "let", ppPat pat, tell ":", ppTy ty, tell "=", ppExpr expr]
     tell ";"
 
 ppConstDef (ConstDef name ty expr) = line $ do

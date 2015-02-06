@@ -209,14 +209,7 @@ impl Trans for FnDecl {
 
 impl Trans for Arg {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        let name = match self.pat.node {
-            PatIdent(_, span_ident, _) => {
-                // TODO: check that span_ident doesn't refer to a nullary enum variant
-                format!("{}", span_ident.node.as_str())
-            },
-            _ => panic!("unsupported Pat_ variant in Arg"),
-        };
-        format!("{} {}", name, self.ty.trans(trcx))
+        self.pat.trans(trcx)
     }
 }
 
@@ -397,20 +390,9 @@ impl Trans for Decl {
 
 impl Trans for Local {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        let name = match self.pat.node {
-            PatIdent(_, span_ident, _) => {
-                // TODO: check that span_ident doesn't refer to a nullary enum variant
-                format!("{}", span_ident.node.as_str())
-            },
-            _ => panic!("unsupported Pat_ variant in Local"),
-        };
-        let ty = trcx.tcx.node_types.borrow()[self.id].trans(trcx);
-        match(self.init) {
-            Some(ref i) => format!("let {} {} {}",
-                               name, ty,
-                               i.trans(trcx)),
-            None => format!("decl {} {}", name, ty)
-        }
+        format!("let {} {}",
+                self.pat.trans(trcx),
+                self.init.trans(trcx))
     }
 }
 
@@ -782,7 +764,7 @@ impl Trans for Pat {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         let variant = match self.node {
             PatWild(PatWildSingle) => format!("wild"),
-            PatIdent(_mode, name, None) => {
+            PatIdent(mode, name, None) => {
                 if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
                     format!("enum {} {} 0",
                             var_name,
@@ -790,8 +772,11 @@ impl Trans for Pat {
                 } else {
                     use rustc::middle::def::*;
                     match trcx.tcx.def_map.borrow().get(&self.id) {
-                        None | Some(&DefLocal(_)) => format!("var {}",
-                                                             name.node.trans(trcx)),
+                        None | Some(&DefLocal(_)) => 
+                            match mode {
+                                BindByRef(_) => format!("ref_var {}", name.node.trans(trcx)),
+                                BindByValue(_) => format!("var {}", name.node.trans(trcx)),
+                            },
                         Some(ref d) => format!("const {}",
                                                mangled_def_name(trcx, d.def_id())),
                     }
@@ -806,6 +791,7 @@ impl Trans for Pat {
                         args.trans(trcx))
             },
             PatTup(ref args) => format!("tuple {}", args.trans(trcx)),
+            PatRegion(ref pat, _mutbl) => format!("addr_of {}", pat.trans(trcx)),
             // NB: For PatLit, we skip the code below that adds the pattern type.
             PatLit(ref expr) => return expr.trans(trcx),
             _ => panic!("unhandled Pat_ variant"),
@@ -1152,13 +1138,13 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
 
     let self_arg = match exp_self.node {
         SelfStatic => None,
-        SelfValue(ref name) =>
-            Some(format!("{} {}",
-                         name.trans(trcx),
-                         self_ty.trans(trcx))),
-        SelfRegion(ref opt_lifetime, mutbl, ref name) =>
-            Some(format!("{} {} {} {}",
-                         name.trans(trcx),
+        SelfValue(ref name) => {
+            Some(format!("({} var {})",
+                         self_ty.trans(trcx),
+                         name.trans(trcx)))
+        },
+        SelfRegion(ref opt_lifetime, mutbl, ref name) => {
+            Some(format!("({} {} {} var {})",
                          match mutbl {
                              MutMutable => "ref_mut",
                              MutImmutable => "ref",
@@ -1168,11 +1154,14 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                                  lifetime.trans(trcx),
                              None => format!("r_anon_0"),
                          },
-                         self_ty.trans(trcx))),
-        SelfExplicit(ref ty, ref name) =>
-            Some(format!("{} {}",
-                         name.trans(trcx),
-                         self_ty.trans(trcx))),
+                         self_ty.trans(trcx),
+                         name.trans(trcx)))
+        },
+        SelfExplicit(ref ty, ref name) => {
+            Some(format!("({} var {})",
+                         ty.trans(trcx),
+                         name.trans(trcx)))
+        },
     };
     let offset = match self_arg {
         Some(arg) => {

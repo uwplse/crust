@@ -60,6 +60,7 @@ main = do
             fixBottom $
             fixSpecialFn $
             fixAddress $
+            desugarArgPatterns $
             desugarRange $
             desugarIndex ix $
             items'
@@ -242,6 +243,33 @@ desugarRange = everywhere (mkT go)
     go (Expr ty (ERange (Just low) (Just high))) =
         Expr ty $ EStructLiteral [Field "start" low, Field "end" high]
     go e = e
+
+desugarArgPatterns = map go
+  where
+    go (IFn (FnDef name lps tps args retTy impl body)) =
+        let (args', body') = fixArgs args body
+        in IFn (FnDef name lps tps args' retTy impl body')
+    go (IAbstractFn (AbstractFnDef name lps tps args retTy)) =
+        let args' = numberArgs args
+        in IAbstractFn (AbstractFnDef name lps tps args' retTy)
+    go (IExternFn (ExternFnDef abi name lps tps args retTy)) =
+        let args' = numberArgs args
+        in IExternFn (ExternFnDef abi name lps tps args' retTy)
+
+    numberArgs args | all isVar args = args
+    numberArgs args = zipWith (\(ArgDecl (Pattern ty _)) i ->
+            ArgDecl $ Pattern ty (PVar $ "arg" ++ show i)) args [0..]
+
+    fixArgs args body | all isVar args = (args, body)
+    fixArgs args body = (args', body')
+      where
+        args' = numberArgs args
+        stmts = zipWith (\(ArgDecl pat@(Pattern ty _)) i ->
+                SLet pat (Just $ Expr ty $ EVar $ "arg" ++ show i)) args [0..]
+        body' = Expr (typeOf body) $ EBlock stmts body
+
+    isVar (ArgDecl (Pattern _ (PVar _))) = True
+    isVar _ = False
 
 data RefState = InRef | TopLevel
 

@@ -96,7 +96,7 @@ data AbstractFnDef = AbstractFnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty
 data ExternFnDef = ExternFnDef Abi Name [LifetimeParam] [TyParam] [ArgDecl] Ty
   deriving (Eq, Show, Data, Typeable)
 
-data ArgDecl = ArgDecl Name Ty
+data ArgDecl = ArgDecl Pattern
   deriving (Eq, Show, Data, Typeable)
 
 data ImplClause = ImplClause Name [Lifetime] [Ty]
@@ -146,9 +146,11 @@ data Pattern_ =
     | PWild
     | PSimpleLiteral String
     | PTuple [Pattern]
+    | PRefVar Name
+    | PAddrOf Pattern
   deriving (Eq, Show, Data, Typeable)
 
-data Stmt = SExpr Expr | SLet Name Ty Expr | SDecl Name Ty
+data Stmt = SExpr Expr | SLet Pattern (Maybe Expr)
   deriving (Eq, Show, Data, Typeable)
 
 data ConstDef = ConstDef Name Ty Expr
@@ -249,7 +251,7 @@ externFnDef = do
     exactWord "return"
     f <$> ty
 
-argDecl = ArgDecl <$> name <*> ty
+argDecl = ArgDecl <$> pattern
 
 implClause = ImplClause <$> name <*> counted lifetime <*> counted ty
 
@@ -290,12 +292,13 @@ pattern_ = tagged
     , ("wild", return PWild)
     , ("simple_literal", PSimpleLiteral <$> anyWord)
     , ("tuple", PTuple <$> counted pattern)
+    , ("ref_var", PRefVar <$> name)
+    , ("addr_of", PAddrOf <$> pattern)
     ]
 
 stmt = tagged
     [ ("expr", SExpr <$> expr)
-    , ("let", SLet <$> name <*> ty <*> expr)
-    , ("decl", SDecl <$> name <*> ty)
+    , ("let", SLet <$> pattern <*> optional expr)
     ]
 
 constDef = exactWord "const" >>
@@ -398,7 +401,7 @@ instance Pp ExternFnDef where
          "return", pp retTy]
 
 instance Pp ArgDecl where
-    pp' (ArgDecl a b) = map pp [pp a, pp b]
+    pp' (ArgDecl a) = map pp [pp a]
 
 instance Pp ImplClause where
     pp' (ImplClause absName lifetimes tys) = [pp absName, pp lifetimes, pp tys]
@@ -450,12 +453,13 @@ instance Pp Pattern_ where
         PWild ->                ppGo "wild"             []
         PSimpleLiteral a ->     ppGo "simple_literal"   [pp a]
         PTuple a ->             ppGo "tuple"            [pp a]
+        PRefVar a ->            ppGo "ref_var"          [pp a]
+        PAddrOf a ->            ppGo "addr_of"          [pp a]
 
 instance Pp Stmt where
     pp' s = case s of
         SExpr e -> ppGo "expr" [pp e]
-        SLet n t e -> ppGo "let" [pp n, pp t, pp e]
-        SDecl n t -> ppGo "decl" [pp n,pp t]
+        SLet p e -> ppGo "let" [pp p, pp e]
 
 instance Pp ConstDef where
     pp' (ConstDef n t e) = ppGo "const" [pp n, pp t, pp e]

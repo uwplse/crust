@@ -26,7 +26,7 @@ mkDropGlue ix ty = FnDef ("drop_glue_" ++ ty_name ty) lifetimes tyParams [argDec
     tyParams = ty_tyParams ty
     tyArgs = map TVar tyParams
     argTy = TPtr MMut $ TAdt (ty_name ty) lifetimes tyArgs
-    argDecl = ArgDecl "self" argTy
+    argDecl = ArgDecl $ Pattern argTy $ PVar "self"
     argUse = mkE ix $ var argTy "self"
 
     dtorCall = case ty_dtor ty of
@@ -122,15 +122,22 @@ addCleanup ix xs = evalState (runReaderT (go xs) ix) (CleanupState S.empty S.emp
     go :: (MonadReader Index m, MonadState CleanupState m, Data d) => d -> m d
     go = gmapM go `extM` goStmt `extM` goExpr
 
-    goStmt (SLet name ty expr) = do
+    walkPat = everywhereM (mkM go)
+      where go p@(Pattern ty (PVar name)) = do
+                extendScope name ty
+                addPending name
+                return p
+            go p@(Pattern ty (PRefVar name)) = do
+                extendScope name ty
+                addPending name
+                return p
+            go p = return p
+
+    goStmt (SLet pat expr) = do
+    -- TODO: collect names and tys from pat
         expr' <- go expr
-        extendScope name ty
-        addPending name
-        return $ SLet name ty expr'
-    goStmt (SDecl name ty) = do
-        extendScope name ty
-        addPending name
-        return $ SDecl name ty
+        walkPat pat
+        return $ SLet pat expr'
     goStmt (SExpr expr) = do
         expr' <- go expr
         return $ SExpr expr'

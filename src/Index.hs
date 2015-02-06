@@ -89,7 +89,7 @@ mkIndex items = Index fns types consts
 
 dropGlue = ("drop_glue", FAbstract def)
   where def = AbstractFnDef "drop_glue" [] ["T"]
-                [ArgDecl "self" (TRef "r_anon" MMut $ TVar "T")] TUnit
+                [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
 
 
 type CtxM a = Reader Index a
