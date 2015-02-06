@@ -119,11 +119,7 @@ module DriverF(COMP : Compilation) = struct
     method private emit_initialization () = 
       let init_fun = Env.EnvMap.find Env.fn_env "crust_init" in
       let seed_tuple = COMP.to_monomorph_c_type [] init_fun.Ir.ret_type in
-      let seed_types = List.filter (function
-          | #Types.simple_type -> false
-          | `Bottom -> false
-          | _ -> true
-        ) (match seed_tuple with `Tuple tl -> tl | _ -> assert false) in
+      let seed_types = (match seed_tuple with `Tuple tl -> tl | _ -> assert false) in
       self#put_all [ COMP.type_to_string seed_tuple; " __init = crust_init();"];
       self#newline ();
       let _ = 
@@ -133,8 +129,14 @@ module DriverF(COMP : Compilation) = struct
                 List.assoc t i_map
               else 0
             in
-            let t_field = Printf.sprintf CRep.tuple_field ind in
-            let t_value = "__init." ^ t_field in
+            let t_value = 
+              match t with
+              | #Types.simple_type as s ->
+                Hashtbl.find nondet_gen_cache s
+              | _ ->
+                let t_field = Printf.sprintf CRep.tuple_field ind in
+                "__init." ^ t_field
+            in
             let val_ind_s = (string_of_int val_ind) in
             let t_index = self#slot_call val_ind_s t in
             let val_array = Hashtbl.find tvalue_array_cache t in
