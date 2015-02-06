@@ -99,7 +99,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core_intrinsics_abort";
     i_params = [];
-    i_body = Inline "__CPROVER_assume(0)"
+    i_body = Inline "(__CPROVER_assume(0),0)"
   };
   {
     i_name = "core_intrinsics_move_val_init";

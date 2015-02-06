@@ -113,10 +113,13 @@ let resolve_abstract_fn =
   | [t] -> t
   | [] -> 
     raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
-  | _ -> 
-    let inst_dump = String.concat "/" @@ List.map snd possible_insts in
-    let fail_args = arg_str param_args in
-    raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
+  | l -> 
+    (* ugly hack *)
+    let all_prim = List.for_all (fun x -> match x with | #Types.simple_type -> true | _ -> false) param_args in
+    if all_prim then List.hd l else
+      let inst_dump = String.concat "/" @@ List.map snd possible_insts in
+      let fail_args = arg_str param_args in
+      raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
 
 
 
@@ -367,19 +370,6 @@ let run_analysis () =
       | _ -> accum
     ) Env.adt_env @@ build_nopub_fn ()
   in
-  (*let crust_init_patt = Str.regexp "crust_init$" in
-  let found_init_fn = Env.EnvMap.fold (fun fn_name _ accum ->
-      try
-        let _ = Str.search_forward crust_init_patt fn_name 0 in
-        fn_name::accum
-      with Not_found -> accum
-    ) Env.EnvMap.fn_name in
-  let (init_fn,has_init) = 
-    match found_init_fn with
-    | [] -> ("",false)
-    | [h] -> (h,true)
-    | _ -> failwith @@ "troublingly many init functions found! " ^ (String.concat ", " found_init_fn)
-  in*)
   let (init_def,seed_types) =
     if !Env.init_opt && not (Env.EnvMap.mem Env.fn_env "crust_init") then (None,[])
     else begin

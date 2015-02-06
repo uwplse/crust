@@ -33,9 +33,7 @@ pub struct Vec<T> {
     cap: uint,
 }
 
-fn crust_abort() -> ! {
-    unsafe { core::intrinsics::abort(); }
-}
+const MAX_VEC_SIZE : u32 = 4;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Inherent methods
@@ -63,19 +61,18 @@ impl<T> Vec<T> {
         } else {
             let size = match capacity.checked_mul(mem::size_of::<T>()) {
                 Some(i) => i,
-                None => crust_abort()
+                None => panic!()
             };
             /*
              * don't support static strings
             .expect("capacity overflow");*
             */
             let ptr = unsafe { allocate(size, mem::min_align_of::<T>()) };
-            if ptr.is_null() { /* XXX(jtoman): don't have this intrinsic???
-                                  ::alloc::oom()*/ crust_abort(); }
+            if ptr.is_null() { ::alloc::oom() }
             Vec { ptr: ptr as *mut T, len: 0, cap: capacity }
         }
     }
-
+/* TODO(jtoman): these trigger infinite loops in the api discovery :(
     #[stable]
     pub unsafe fn from_raw_parts(ptr: *mut T, length: uint,
                                  capacity: uint) -> Vec<T> {
@@ -90,7 +87,7 @@ impl<T> Vec<T> {
         ptr::copy_nonoverlapping_memory(dst.as_mut_ptr(), ptr, elts);
         dst
     }
-
+*/
     #[stable]
     pub fn reserve(&mut self, additional: uint) {
         if self.cap - self.len < additional {
@@ -99,7 +96,7 @@ impl<T> Vec<T> {
                 .checked_next_power_of_two().expect(err_msg);*/
             let new_cap = match self.len.checked_add(additional) {
                 Some(i) => i,
-                None => crust_abort()
+                None => panic!()
             };
             //let new_cap = self.len + additional;
             self.grow_capacity(new_cap);
@@ -111,9 +108,10 @@ impl<T> Vec<T> {
         if self.cap - self.len < additional {
             match self.len.checked_add(additional) {
                 Some(new_cap) => self.grow_capacity(new_cap),
-                None => crust_abort()
+                None => panic!("Vec::reserve: `uint` overflow")
             }
             let new_cap = self.len + additional;
+            
             self.grow_capacity(new_cap)
         }
     }
@@ -137,7 +135,7 @@ impl<T> Vec<T> {
                                      self.cap * mem::size_of::<T>(),
                                      self.len * mem::size_of::<T>(),
                                      mem::min_align_of::<T>()) as *mut T;
-                if ptr.is_null() { /*::alloc::oom()*/ crust_abort(); }
+                if ptr.is_null() { ::alloc::oom() }
                 self.ptr = ptr;
             }
             self.cap = self.len;
@@ -195,8 +193,7 @@ impl<T> Vec<T> {
     #[stable]
     pub fn insert(&mut self, index: uint, element: T) {
         let len = self.len();
-        if(index <= len) { crust_abort(); }
-        //assert!(index <= len); transform into crust_panic
+        assert!(index <= len);
         // space for the new element
         self.reserve(1);
 
@@ -218,10 +215,7 @@ impl<T> Vec<T> {
     #[stable]
     pub fn remove(&mut self, index: uint) -> T {
         let len = self.len();
-        //assert!(index < len); // transform to panic
-        if(index < len) {
-            crust_abort();
-        }
+        assert!(index < len); // transform to panic
         unsafe { // infallible
             let ret;
             {
@@ -247,7 +241,7 @@ impl<T> Vec<T> {
             // address space running out
             self.len = match self.len.checked_add(1) {
                 Some(i) => i,
-                None => crust_abort()
+                None => panic!()
             };
              //   .expect("length overflow");
             unsafe { mem::forget(value); }
@@ -256,10 +250,10 @@ impl<T> Vec<T> {
         if self.len == self.cap {
             let old_size = self.cap * mem::size_of::<T>();
             let size = max(old_size, 2 * mem::size_of::<T>()) * 2;
-            if old_size > size { crust_abort(); /*panic!("capacity overflow")*/ }
+            if old_size > size { panic!("capacity overflow") }
             unsafe {
                 let ptr = alloc_or_realloc(self.ptr, old_size, size);
-                if ptr.is_null() { /*::alloc::oom()*/ crust_abort(); }
+                if ptr.is_null() { ::alloc::oom() }
                 self.ptr = ptr;
             }
             self.cap = max(self.cap, 2) * 2;
@@ -293,7 +287,7 @@ impl<T> Vec<T> {
             // address space running out
             self.len = match self.len.checked_add(other.len()) {
                 Some(i) => i,
-                None => crust_abort()
+                None => panic!()
             };
             //    .expect("length overflow");
             unsafe { other.set_len(0) }
