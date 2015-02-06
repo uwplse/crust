@@ -167,7 +167,9 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 		 match (fst expr) with
 		 | `Bool -> begin match s with
 						  | "true" -> "1"
+						  | "1" -> "1"
 						  | "false" -> "0"
+						  | "0" -> "0"
 						  | _ -> failwith @@ "Unknown boolean representation: " ^ s
 					end
 		 | `Unit -> "0"

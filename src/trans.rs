@@ -1314,8 +1314,8 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
         };
 
         let mut args = Vec::new();
-        for (i, arg) in inputs.iter().enumerate() {
-            args.push(format!("arg{} {}", i, arg.trans(trcx)));
+        for (i, arg_ty) in inputs.iter().enumerate() {
+            args.push(format!("({} var arg{})", arg_ty.trans(trcx), i));
         }
 
         let mut regions = Vec::new();
