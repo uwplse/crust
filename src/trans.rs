@@ -228,7 +228,8 @@ impl Trans for FnDecl {
 
 impl Trans for Arg {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
-        self.pat.trans(trcx)
+        let ty_str = self.ty.trans(trcx);
+        self.pat.trans_extra(trcx, ty_str)
     }
 }
 
@@ -806,8 +807,8 @@ impl Trans for Arm {
     }
 }
 
-impl Trans for Pat {
-    fn trans(&self, trcx: &mut TransCtxt) -> String {
+impl TransExtra<String> for Pat {
+    fn trans_extra(&self, trcx: &mut TransCtxt, ty_str: String) -> String {
         let variant = match self.node {
             PatWild(PatWildSingle) => format!("wild"),
             PatIdent(mode, name, None) => {
@@ -846,9 +847,17 @@ impl Trans for Pat {
             PatLit(ref expr) => return expr.trans(trcx),
             _ => panic!("unhandled Pat_ variant"),
         };
+
         format!("({} {})",
-                trcx.tcx.node_types.borrow()[self.id].trans(trcx),
+                ty_str,
                 variant)
+    }
+}
+
+impl Trans for Pat {
+    fn trans(&self, trcx: &mut TransCtxt) -> String {
+        let ty_str = trcx.tcx.node_types.borrow()[self.id].trans(trcx);
+        self.trans_extra(trcx, ty_str)
     }
 }
 
