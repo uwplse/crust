@@ -11,7 +11,6 @@ type simple_expr = [
   | `Deref of t_simple_expr
   | `Address_of of t_simple_expr
   | `Call of string * (Types.lifetime list) * (Types.r_type list) * (t_simple_expr list)
-  | `Return of t_simple_expr
   | `Assignment of simple_expr * t_simple_expr
   | `BinOp of Ir.bin_op * t_simple_expr * t_simple_expr
   | `UnOp of Ir.un_op * t_simple_expr
@@ -23,6 +22,7 @@ type simple_expr = [
    | `Block of ('a stmt list) * 'a
    | `Match of t_simple_expr * ('a match_arm list)
    | `While of t_simple_expr * 'a
+   | `Return of t_simple_expr
    ]
  and struct_fields = struct_field list
  and struct_field = string * t_simple_expr (* field binding *)

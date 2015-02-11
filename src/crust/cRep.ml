@@ -31,7 +31,6 @@ type simple_expr = [
   | `Deref of t_simple_expr
   | `Address_of of t_simple_expr
   | `Call of string * (Types.lifetime list) * (Types.r_type list) * (t_simple_expr list)
-  | `Return of t_simple_expr
   | `Assignment of simple_expr * t_simple_expr
   | `BinOp of Ir.bin_op * t_simple_expr * t_simple_expr
   | `UnOp of Ir.un_op * t_simple_expr
@@ -43,7 +42,8 @@ type simple_expr = [
    | `Block of ('a stmt list) * 'a
    | `Match of t_simple_expr * ('a match_arm list)
    | `While of t_simple_expr * 'a
-   ]
+   | `Return of t_simple_expr
+ ]
  and struct_fields = struct_field list
  and struct_field = string * t_simple_expr (* field binding *)
  and 'a stmt = [
@@ -94,7 +94,7 @@ let rec push_assignment (lhs : simple_expr) (e : all_expr) =
     let new_block : all_expr = `Unit,(`Block ([`Expr e], assign)) in
     new_block
 
-let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
+let lift_complex : Types.r_type -> all_expr complex_expr -> (string * all_expr) = fun ty expr ->
   match expr with
   | `Block (s,e)  ->
 	 let out_var = fresh_temp () in
@@ -107,6 +107,9 @@ let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
   | (`While _ as w) -> 
     let out_var = fresh_temp () in
     out_var,(push_assignment (`Var out_var) (`Unit,w))
+  | `Return e ->
+    let out_var = fresh_temp () in
+    (out_var,(ty,`Return e))
 
 let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> 'a) -> 'a = 
   fun expr cb ->
@@ -115,7 +118,7 @@ let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> '
   match (snd expr') with
   | #simple_expr as s -> cb [] (e_type,s)
   | #all_complex as c ->
-	 let (out_var,lifted) = lift_complex c in
+	 let (out_var,lifted) = lift_complex e_type c in
 	 let declaration = `Declare (out_var,e_type) in
 	 let assign_block = `Expr lifted in
 	 let replacement = e_type,(`Var out_var) in
@@ -178,11 +181,12 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 	   (fst expr,`Literal lit_rep)
 	 end
   | `Return r ->
+    let ret_type = fst expr in
 	 apply_lift_cb r (fun stmt r ->
 					  if stmt = [] then
-						(`Bottom,`Return r)
+						(ret_type,`Return r)
 					  else
-						(`Bottom,`Block (stmt,(`Bottom,`Return r)))
+						(ret_type,`Block (stmt,(ret_type,`Return r)))
 					 )
   | `Struct_Field (s,f) -> apply_lift (fst expr) s (fun e -> `Struct_Field (snd e,f))
   | `Tuple t_fields ->
@@ -375,8 +379,6 @@ let rec clean_ir_expr (expr : t_simple_expr) =
     (* XXX: hack *)
     let e = snd (clean_ir_expr (`Bottom,e)) in
     e_type,`Struct_Field (e,f)
-  | `Return e ->
-    e_type,`Return (clean_ir_expr e)
   | `BinOp (o,e1,e2) ->
     e_type,`BinOp (o,clean_ir_expr e1,clean_ir_expr e2)
   | `UnOp (o,e1) ->
@@ -387,7 +389,6 @@ let rec clean_ir_expr (expr : t_simple_expr) =
     e_type,`Deref (clean_ir_expr e)
   | `Var _ -> expr
   | `Literal _ -> expr
-  | `Assignment (_,((_,`Return _) as r)) -> r
   | `Assignment (_,((_,`Call ("crust_abort",_,_,_)) as r)) ->
     r
   | `Assign_Op (op,e1,e2) -> 
@@ -413,7 +414,6 @@ let rec clean_ir (expr : all_expr) =
     let stmt = List.map (function
         | (`Expr (_,`Call ("crust_abort",_,_,_))) as e -> e
         | `Expr e -> `Expr (clean_ir e)
-        | `Let (v,_,((_,`Return _) as r)) -> `Expr r
         | `Let (v,t,e) -> `Let (v,t,clean_ir_expr e)
         | (`Declare _) as d -> d
       ) stmt 
@@ -421,6 +421,8 @@ let rec clean_ir (expr : all_expr) =
     e_type,(`Block (stmt,clean_ir e))
   | `While (cond,body) ->
     e_type,`While (clean_ir_expr cond,clean_ir body)
+  | `Return e ->
+    e_type,`Return (clean_ir_expr e)
 
 let get_simple_ir ir = 
   instrument_return ir

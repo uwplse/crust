@@ -210,6 +210,10 @@ class expr_emitter buf t_bindings =
         self#dump_expr expr;
         self#close_block ();
         self#newline ()
+      | `Return (_,e) ->
+        self#put_i "return ";
+        self#dump_simple_expr e;
+        self#newline ~post:";" ()
       | #CRep.simple_expr as s -> self#dump_simple_expr s
     method dump_stmt_expr = function
       | (_,`Match _)
@@ -225,9 +229,6 @@ class expr_emitter buf t_bindings =
         self#put_i ")"
       | `Address_of (_,e) ->
         self#put_i "&";
-        self#dump_simple_expr e
-      | `Return (_,e) ->
-        self#put_i "return ";
         self#dump_simple_expr e
       | `Assignment (lhs,(_,rhs)) ->
         self#dump_simple_expr lhs;
@@ -324,7 +325,13 @@ class expr_emitter buf t_bindings =
       self#put_i "if(";
       self#dump_expr (match_condition :> CRep.all_expr);
       self#put_i ") ";
+      let is_block = match match_body with
+        | (_,`Block _) -> true
+        | _ -> false
+      in
+      if not is_block then self#open_block () else ();
       self#dump_stmt_expr match_body;
+      if not is_block then (self#close_block (); self#newline ()) else ()
     method dump_stmt = function
       | `Let (v_name,r_type,expr) ->
         let m_type = to_monomorph_c_type t_bindings r_type in
