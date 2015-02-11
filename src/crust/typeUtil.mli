@@ -1,11 +1,23 @@
 module MTSet : Set.S with type elt = Types.mono_type
 
+type inst_flag = [
+  | `Adt of string
+  | `Tuple
+  | `Vec of bool
+  | `String of bool
+  | `Fixed_Vec of int
+]
+
+type type_inst = inst_flag * (Types.mono_type) list
+
 type type_binding = (string * Types.mono_type) list
 
 type inst_result = [
   | `Mismatch
   | `Inst of type_binding list
 ]
+
+exception StrayDST
 
 exception TyResolutionFailed
 

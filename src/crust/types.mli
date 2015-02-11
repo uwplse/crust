@@ -20,7 +20,11 @@ type 'a mono_r_type = [
   | simple_type
   | `Tuple of 'a list
   | `Bottom
+  | `Fixed_Vec of (int * 'a)
+  | `Str
+  | `Vec of 'a
   ]
+
  and 'a adt_type = {
 	 type_name : string;
 	 lifetime_param : lifetime list;
@@ -65,6 +69,6 @@ val type_binding : type_param list -> 'a list -> (type_param * 'a) list
 
 val pp_t :  r_type -> string
 val pp_tb : (string * mono_type) list -> string
-val rust_tuple_name : string
+(*val rust_tuple_name : string*)
 
 type type_binding = (string * mono_type) list

@@ -1,12 +1,12 @@
-type inst = string * (Types.mono_type list)
+type f_inst = string * (Types.mono_type list)
 
 module TypeInstantiation = struct
-  type t = inst
+  type t = TypeUtil.type_inst
   let compare = Pervasives.compare
 end
 
 module FunctionInstantiation = struct
-  type t = inst
+  type t = f_inst
   let compare = Pervasives.compare
 end
 
@@ -55,10 +55,14 @@ let add_public_type w_state inst =
     w_state with public_type = MTSet.add inst w_state.public_type
   }
 
+
+(* TODO(jtoman): this is totally a broken heuristic *)
 let rec type_contains_loop src_types = function
   | ((`T_Var _) as s)
   | (#simple_type as s) -> List.mem s src_types
   | `Bottom -> List.mem `Bottom src_types
+  | ((`Fixed_Vec (_,p)) as t) 
+  | ((`Vec p) as t)
   | ((`Ref_Mut (_,p)) as t)
   | ((`Ptr_Mut p) as t)
   | ((`Ref (_,p)) as t)
@@ -71,6 +75,7 @@ let rec type_contains_loop src_types = function
      List.exists (fun x -> x) contains
     )
   | `Abstract _ -> false (* not really true *)
+  | `Str as t -> List.mem t src_types
 
 let rec type_contains src_types target  = 
   match target with
@@ -78,7 +83,6 @@ let rec type_contains src_types target  =
   | `Tuple tl -> 
     let contains = List.map (type_contains_loop src_types) tl in
     List.exists (fun x -> x) contains
-  | `Abstract _ -> false
   | _ -> false
 
 let find_constructors () = 
@@ -123,29 +127,51 @@ let resolve_abstract_fn =
 
 
 
-let rec walk_type : walk_state -> Types.mono_type -> walk_state = fun w_state t ->
-  match t with
-  | `Adt_type a ->
-    let instantiation = a.type_name,a.type_param in
+let rec walk_type : walk_state -> Types.mono_type -> walk_state = 
+  let walk_rec_inst (w_state : walk_state) inst rec_t =
+    if TISet.mem inst w_state.type_inst then
+      w_state else walk_type (add_type_instance w_state inst) rec_t
+  in
+  let walk_type_aux w_state = function
+    | `Adt_type a ->
+      let instantiation = (`Adt a.type_name),a.type_param in
+      if TISet.mem instantiation w_state.type_inst then
+        w_state
+      else
+        let w_state = add_type_instance w_state instantiation in
+        walk_type_def_named w_state a.type_name a.type_param
+          
+    | `Ref (_,t') -> walk_type w_state t'
+    | `Ref_Mut (_,t') -> walk_type w_state t'
+    | `Tuple tl -> 
+      let instantiation = `Tuple,tl in
+      if TISet.mem instantiation w_state.type_inst then
+        w_state
+      else
+        let w_state = add_type_instance w_state instantiation in
+        List.fold_left walk_type w_state tl
+    | `Ptr_Mut t' -> walk_type w_state t' 
+    | `Ptr t' -> walk_type w_state t'
+    | `Bottom -> w_state
+    | #simple_type -> w_state
+    | `Fixed_Vec (n,t) ->
+      let instantiation = `Fixed_Vec n,[t] in
+      if TISet.mem instantiation w_state.type_inst then
+        w_state
+      else
+        walk_type (add_type_instance w_state instantiation) t
+    | `Str ->
+      raise TypeUtil.StrayDST
+    | `Vec _ ->
+      raise TypeUtil.StrayDST
+  in
+  fun w_state ->
+    Dst.handle_dst (fun mut t ->
+        walk_rec_inst w_state (`Vec mut,[t]) t
+      )
+      (fun mut -> add_type_instance w_state (`String mut,[]))
+      (walk_type_aux w_state)
 
-    if TISet.mem instantiation w_state.type_inst then
-      w_state
-    else
-      let w_state = add_type_instance w_state instantiation in
-      walk_type_def_named w_state a.type_name a.type_param
-  | `Ref (_,t') -> walk_type w_state t'
-  | `Ref_Mut (_,t') -> walk_type w_state t'
-  | `Tuple tl -> 
-    let instantiation = Types.rust_tuple_name,tl in
-    if TISet.mem instantiation w_state.type_inst then
-      w_state
-    else
-      let w_state = add_type_instance w_state instantiation in
-      List.fold_left walk_type w_state tl
-  | `Ptr_Mut t' -> walk_type w_state t' 
-  | `Ptr t' -> walk_type w_state t'
-  | `Bottom -> w_state
-  | #simple_type -> w_state
 and walk_type_def_named w_state t_name m_params  = 
   walk_type_def w_state (Env.EnvMap.find Env.adt_env t_name) m_params 
 and walk_type_def w_state adt_def m_params =
@@ -440,6 +466,7 @@ let find_lifetime ty =
     | #Types.simple_type -> []
     | `Bottom -> []
     | `T_Var _ -> []
+    | `Str -> []
     | `Adt_type p ->
       let new_nested = nested || (p.Types.lifetime_param <> []) in
       let new_accum = List.flatten @@ List.map (find_lifetime_loop path new_nested) p.Types.type_param in
@@ -449,6 +476,21 @@ let find_lifetime ty =
       indexed_fold_left (fun i accum t ->
           (find_lifetime_loop (i::path) nested t) @ accum
         ) [] tl
+    (* this part's a bit messy and pretty hacky.
+     * We're pretty sure at this point that we're inside a ref:
+     * if we're not that's bad news and we'll die eventually. 
+     * So basically any lifetimes we discover
+     * by recursing on the wrapped vec types will be invalid (b/c no nested lifetimes).
+     * However, if we don't walk this type, we would potentially fail to discover
+     * these lifetimes and either fail in our lookup for the return type lifetime
+     * of fail to flag a duplicate borrow!
+     * So we have to walk these types to keep from generating code that does not
+     * match the semantics of Rust (blow up instead). So just say we're nested and recurse:
+     * it doesn't matter that the path is junk, we're going to throw it away anyway :)
+     *)
+    | `Fixed_Vec (_,t) 
+    | `Vec t ->
+      find_lifetime_loop path true t
   in
   find_lifetime_loop [] false ty
 

@@ -9,8 +9,8 @@ type simple_type = [
   | `Unit
   | `Float of int
   | `Char
-  ]
-					 
+]
+
 type 'a mono_r_type = [
   | `Adt_type of 'a adt_type
   | `Ref of lifetime * 'a
@@ -20,12 +20,15 @@ type 'a mono_r_type = [
   | simple_type
   | `Tuple of 'a list
   | `Bottom
-  ]
- and 'a adt_type = {
-	 type_name : string;
-	 lifetime_param : lifetime list;
-	 type_param : 'a list;
-   }
+  | `Fixed_Vec of (int * 'a)
+  | `Str
+  | `Vec of 'a
+]
+and 'a adt_type = {
+  type_name : string;
+  lifetime_param : lifetime list;
+  type_param : 'a list;
+}
 
 type mono_type = mono_type mono_r_type;;
 
@@ -59,27 +62,6 @@ type associated_type = {
   ty_output : r_type
 }
 
-(*
-let rec (to_monomorph : (string * mono_type) list -> r_type -> mono_type) = fun t_binding t ->
-  match t with
-  | `Adt_type a ->
-	 let mono_params = List.map (to_monomorph t_binding) a.type_param in
-	 `Adt_type { a with type_param = mono_params }
-  | `T_Var t_var -> List.assoc t_var t_binding
-  | #simple_type as st -> st 
-  | `Ref (l,t') -> `Ref (l,(to_monomorph t_binding t'))
-  | `Ref_Mut (l, t') -> `Ref_Mut (l,(to_monomorph t_binding t'))
-  | `Ptr_Mut t' -> `Ptr_Mut (to_monomorph t_binding t')
-  | `Bottom -> `Bottom
-  | `Ptr t' -> `Ptr (to_monomorph t_binding t')
-  | `Tuple tl -> `Tuple (List.map (to_monomorph t_binding) tl)
-  | `Abstract a ->
-    let m_args = List.map (to_monomorph t_binding) a.a_params in
-    resolve_abstract_type a.a_name m_args
-and resolve_abstract_type abstract_name m_args =
-  (* stub *)
-  `Unit
-  *)
 type type_binding = (string * mono_type) list
 
 let type_binding tv ty = 
@@ -106,6 +88,9 @@ let rec pp_t (to_pp : r_type) = match to_pp with
     "<" ^ a.a_name ^ "<" ^ (
       String.concat "," @@ List.map pp_t a.a_params
     ) ^">>"
+  | `Str -> "str"
+  | `Vec t -> "[" ^ (pp_t t) ^ "]"
+  | `Fixed_Vec (n,t) -> (pp_t t) ^ "[" ^ (string_of_int n) ^ "]"
 
 let pp_tb tb = 
   "{ " ^
@@ -114,5 +99,3 @@ let pp_tb tb =
        t_var ^ " -> " ^ (pp_t (t_type : mono_type :> r_type))
      ) tb
   ) ^ " }"
-
-let rust_tuple_name = "__rust_tuple"

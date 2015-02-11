@@ -6,32 +6,34 @@ module type Compilation = sig
     | `Ptr of c_types
     | `Ptr_Mut of c_types
     | `Bottom
+    | `Fixed_Vec of int * c_types
   ]
-  val adt_type_name : c_types -> string
+  val adt_type_name : Types.mono_type -> string
   val type_to_string : c_types -> string
   val simple_type_repr : Types.simple_type -> string
   val to_monomorph_c_type : (string * c_types) list -> Types.r_type -> c_types
   val int_sizes : int list
-  val mangle_fn_name : string -> c_types list -> string
+  val mangle_fn_name : string -> Types.mono_type list -> string
+  val ctype_of_mono : Types.mono_type -> c_types
 end
 
 module DriverF(COMP : Compilation) = struct
-
+  type type_cache = (Types.mono_type,string) Hashtbl.t
 
   type arg_result = 
     | Primitive of string
     (* an "a priori" value, could be a reference *)
-    | Complex of string * COMP.c_types
+    | Complex of string * Types.mono_type
     (* a SYNTHESIZED reference *)
-    | ComplexRef of string * COMP.c_types
+    | ComplexRef of string * Types.mono_type
     (* represents a SYNTHESIZED tuple *)
     | Tuple of string * (arg_result list)
-                      
-  class driver_emission buf (public_types : COMP.c_types list) = object(self)
+
+  class driver_emission buf (public_types : Types.mono_type list) = object(self)
     inherit Emit.emitter buf
-    val tcode_const_cache = Hashtbl.create 10
-    val tsize_const_cache = Hashtbl.create 10
-    val tvalue_array_cache = Hashtbl.create 10
+    val tcode_const_cache : type_cache = Hashtbl.create 10
+    val tsize_const_cache : type_cache = Hashtbl.create 10
+    val tvalue_array_cache : type_cache = Hashtbl.create 10
     val nondet_gen_cache = Hashtbl.create 10
     val stack_name = "stack"
     val stack_type = "stack_info"
@@ -56,7 +58,12 @@ module DriverF(COMP : Compilation) = struct
     val immutable_borrow_symbol = "IMMUTABLE"
     val mutable_borrow_symbol = "MUTABLE"
 
-    method emit_driver (public_fn : (string * COMP.c_types list * Analysis.move_info list) list) = 
+    method private to_ctype t_binding ty=
+      let mono_type = TypeUtil.to_monomorph t_binding ty in
+      let c_type = COMP.ctype_of_mono mono_type in
+      (mono_type, c_type)
+
+    method emit_driver (public_fn : (string * Types.mono_type list * Analysis.move_info list) list) = 
       self#emit_consts ();
       self#emit_nondets ();
       self#emit_stack_def ();
@@ -118,12 +125,12 @@ module DriverF(COMP : Compilation) = struct
 
     method private emit_initialization () = 
       let init_fun = Env.EnvMap.find Env.fn_env "crust_init" in
-      let seed_tuple = COMP.to_monomorph_c_type [] init_fun.Ir.ret_type in
-      let seed_types = (match seed_tuple with `Tuple tl -> tl | _ -> assert false) in
-      self#put_all [ COMP.type_to_string seed_tuple; " __init = crust_init();"];
+      let (seed_tuple_m, seed_tuple_c) = self#to_ctype [] init_fun.Ir.ret_type in
+      let seed_types = (match seed_tuple_m with `Tuple tl -> tl | _ -> assert false) in
+      self#put_all [ COMP.type_to_string seed_tuple_c; " __init = crust_init();"];
       self#newline ();
       let _ = 
-        List.fold_left (fun (ind,i_map) (t : COMP.c_types) ->
+        List.fold_left (fun (ind,i_map) (t : Types.mono_type) ->
             let val_ind = 
               if List.mem_assoc t i_map then
                 List.assoc t i_map
@@ -163,7 +170,7 @@ module DriverF(COMP : Compilation) = struct
           self#emit_define type_const type_code;
           Hashtbl.add tsize_const_cache ty type_size_const;
           self#emit_define type_size_const "3";
-        ) (public_types : COMP.c_types list);
+        ) public_types;
       let all_types = Hashtbl.fold (fun _ t_const accum ->
           t_const::accum
         ) tsize_const_cache [] in
@@ -215,7 +222,7 @@ module DriverF(COMP : Compilation) = struct
         );
       self#emit_array_def stack_type stack_name stack_depth_symbol;
       List.iter (fun t ->
-          let arr_type = (COMP.type_to_string t) in
+          let arr_type = (COMP.type_to_string @@ COMP.ctype_of_mono t) in
           let arr_name = "state_" ^ (COMP.adt_type_name t) in
           Hashtbl.add tvalue_array_cache t arr_name;
           self#emit_array_def arr_type arr_name @@ Hashtbl.find tsize_const_cache t
@@ -266,19 +273,21 @@ module DriverF(COMP : Compilation) = struct
       if l = [] then None
       else Some l
 
-    method private get_adt_drop_fn p = 
+    method private get_adt_drop_fn (p : Types.mono_type Types.adt_type) = 
       let raw_name = Env.get_adt_drop p.Types.type_name in
       match raw_name with
       | None -> None
       | Some df ->
         Some (COMP.mangle_fn_name df p.Types.type_param)
 
-    method private collect_drop to_drop ty = 
+    method private collect_drop to_drop (ty : Types.mono_type) = 
       match ty with
       | #Types.simple_type -> None
       | `Ptr _ -> None
       | `Ptr_Mut _ -> None
       | `Bottom -> None
+      | `Ref _ -> None
+      | `Ref_Mut _ -> None
       | `Tuple tl ->
         self#coalesce_option @@
         List.mapi (fun i ty' ->
@@ -292,11 +301,17 @@ module DriverF(COMP : Compilation) = struct
           | Some df_name ->
             Some [ Printf.sprintf "%s(&(%s));" df_name to_drop ]
         end
+      (* TODO(jtoman): see below *)
+      | `Fixed_Vec _ -> None
+      | `Vec _ -> raise TypeUtil.StrayDST
+      | `Str -> raise TypeUtil.StrayDST
 
-    method private get_drop_calls slot ty = 
+    method private get_drop_calls slot (ty : Types.mono_type) = 
       match ty with
       | #Types.simple_type -> None
-      | `Ptr _ -> None
+      | `Ref_Mut _
+      | `Ref _
+      | `Ptr _
       | `Ptr_Mut _ -> None
       | `Bottom -> None
       | `Tuple tl ->
@@ -309,6 +324,10 @@ module DriverF(COMP : Compilation) = struct
       | `Adt_type _ -> 
         let to_drop = self#array_ref (Hashtbl.find tvalue_array_cache ty) slot in
         self#collect_drop to_drop ty
+      | `Str
+      | `Vec _ -> raise TypeUtil.StrayDST
+      (* TODO(jtoman): Fixed vecs have drop actions, but we're ignoring them for the time being *)
+      | `Fixed_Vec _ -> None
 
 
     method private emit_drop_call type_value slot index ty = 
@@ -319,7 +338,7 @@ module DriverF(COMP : Compilation) = struct
       begin
         match self#get_drop_calls slot ty with
         | None -> 
-          self#put_all [ "// No drop action for: "; Types.pp_t (ty : COMP.c_types :> Types.r_type) ];
+          self#put_all [ "// No drop action for: "; Types.pp_t (ty : Types.mono_type :> Types.r_type) ];
           self#newline ()
         | Some df ->
           List.iter (fun s -> self#put_i s; self#newline ()) df
@@ -396,7 +415,7 @@ module DriverF(COMP : Compilation) = struct
           (List.mem (`Ptr ty) public_types)
       )
 
-    method private resolve_arg ty = 
+    method private resolve_arg (ty : Types.mono_type) = 
       let handle_ref t is_ref mut = 
         let size_const = Hashtbl.find tsize_const_cache t in
         let src_var = self#emit_fresh_bounded_int size_const in
@@ -420,7 +439,7 @@ module DriverF(COMP : Compilation) = struct
       | (`Ptr_Mut _) as t -> 
         handle_ref t false `Mutable
       | `Tuple tl when not (List.mem ty public_types) ->
-        let t_name = COMP.type_to_string ty in
+        let t_name = COMP.type_to_string @@ COMP.ctype_of_mono ty in
         let temp_name = Printf.sprintf "temp_tuple_%d" var_counter in
         var_counter <- var_counter + 1;
         self#put_all [ t_name; " "; temp_name; ";" ];
