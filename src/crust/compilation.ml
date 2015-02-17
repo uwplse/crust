@@ -5,14 +5,14 @@ type c_types = [
   | `Ptr of c_types
   | `Ptr_Mut of c_types
   | `Bottom
+  | `Fixed_Vec of int * c_types
 ]
 
-let adt_of_tuple (tl : c_types list) = {
-  Types.type_name = Types.rust_tuple_name;
-  Types.type_param = tl;
-  Types.lifetime_param = [];
-}
-let rec (adt_type_name : c_types -> string) = function
+type c_inst_flag = [ `Tuple | `Adt of string | `Fixed_Vec of int ];;
+
+let tuple_name = "__rust_tuple_"
+
+let rec adt_type_name = function
   | `Adt_type a -> mangle_adt_name a
   | `Ptr t -> (adt_type_name t) ^ "_ptr"
   | `Ptr_Mut t -> "const_" ^ (adt_type_name t) ^ "_ptr"
@@ -23,24 +23,38 @@ let rec (adt_type_name : c_types -> string) = function
   | `Bool -> "bool"
   | `Unit -> "unit"
   | `Bottom -> "bottom"
-  | `Tuple tl -> mangle_adt_name @@ adt_of_tuple tl
+  | `Tuple tl -> mangle_tuple_name tl
+  | `Fixed_Vec (n,t) -> "v" ^ (string_of_int n) ^"_" ^ (adt_type_name t)
+  | `Ref_Mut (_,t) -> "refmut_" ^ (adt_type_name t)
+  | `Ref (_,t) -> "ref_" ^ (adt_type_name t)
+  | `Str -> "str"
+  | `Vec t -> "vec_" ^ (adt_type_name t)
 and mangle_adt_name t = 
   if t.Types.type_param = [] then
     t.Types.type_name
   else
     t.Types.type_name ^ "_" ^
     (String.concat "_" (List.map adt_type_name t.Types.type_param))
-and tuple_name tl = mangle_adt_name @@ adt_of_tuple tl
+and mangle_tuple_name tl = 
+  tuple_name ^ (String.concat "_" @@ List.map adt_type_name tl)
 
-let adt_of_inst (t_name,m_args) = 
-  {
-    Types.type_name = t_name;
-    Types.lifetime_param = [];
-    Types.type_param = m_args
-  }
+
+let type_of_inst (inst_flag,m_args) = 
+  match inst_flag with
+  | `Tuple -> `Tuple m_args
+  | `Fixed_Vec n -> (match m_args with
+      | [t] -> `Fixed_Vec (n,t)
+      | _ -> assert false
+    )
+  | `Adt a ->
+    `Adt_type {
+      Types.type_name = a;
+      Types.lifetime_param = [];
+      Types.type_param = m_args
+    }
 
 let c_struct_name t = 
-  "__c_struct_" ^ (mangle_adt_name t)
+  "__c_struct_" ^ t
 
 let mangle_fn_name fn_name mono_args = 
   match mono_args with
@@ -57,8 +71,10 @@ let rec type_to_string : c_types -> string = function
   | `Ptr t -> "const " ^ (type_to_string t) ^"*"
   | `Ptr_Mut t -> (type_to_string t) ^ "*"
   | `Bottom -> "rs_bottom"
-  | `Tuple l -> tuple_name l
+  | `Tuple l -> mangle_tuple_name l
   | `Adt_type a_type -> mangle_adt_name a_type
+  | `Fixed_Vec (n,t) -> "rs_f" ^ (string_of_int n) ^ (type_to_string t)
+
 
 let string_of_binop : Ir.bin_op -> string = function
   | `BiAdd -> "+"
@@ -85,59 +101,80 @@ let string_of_unop : Ir.un_op -> string = function
   | `UnNeg -> "-"
   | `UnDeref -> "*"
 
-let rec c_type_of_monomorph (ct : Types.mono_type) = 
-  match ct with
-  | #Types.simple_type as s -> s
-  | `Ptr s
-  | `Ref (_,s) -> `Ptr (c_type_of_monomorph s)
-  | `Ptr_Mut s
-  | `Ref_Mut (_,s) -> `Ptr_Mut (c_type_of_monomorph s)
-  | `Adt_type p -> 
-    `Adt_type {
-      Types.type_name = p.Types.type_name;
-      Types.lifetime_param = [];
-      Types.type_param = List.map c_type_of_monomorph p.Types.type_param
-    }
-  | `Tuple tl -> `Tuple (List.map c_type_of_monomorph tl)
-  | `Bottom -> `Bottom
+let rec c_type_of_monomorph mono_type = 
+  Dst.handle_dst 
+    (fun mut t -> 
+       if mut then
+         `Tuple [`Ptr_Mut (c_type_of_monomorph t); `UInt 32]
+       else
+         `Tuple [`Ptr_Mut (c_type_of_monomorph t); `UInt 32]
+    )
+    (fun mut ->
+       if mut then
+         `Tuple [`Ptr_Mut (`UInt 8); `UInt 32]
+       else
+         `Tuple [`Ptr (`UInt 8); `UInt 32]
+    )
+    (function
+      | #Types.simple_type as s -> s
+      | `Ptr s
+      | `Ref (_,s) -> `Ptr (c_type_of_monomorph s)
+      | `Ptr_Mut s
+      | `Ref_Mut (_,s) -> `Ptr_Mut (c_type_of_monomorph s)
+      | `Adt_type p -> 
+        `Adt_type {
+          Types.type_name = p.Types.type_name;
+          Types.lifetime_param = [];
+          Types.type_param = List.map c_type_of_monomorph p.Types.type_param
+        }
+      | `Tuple tl -> `Tuple (List.map c_type_of_monomorph tl)
+      | `Bottom -> `Bottom
+      | `Vec t -> raise TypeUtil.StrayDST
+      | `Fixed_Vec (n,t) -> `Fixed_Vec (n,c_type_of_monomorph t)
+      | `Str -> raise TypeUtil.StrayDST
+    ) mono_type
 
-let to_monomorph_c_type (t_bindings : (string * c_types) list) t = 
-  c_type_of_monomorph (TypeUtil.to_monomorph (t_bindings :> (string * Types.mono_type) list) t)
+let to_monomorph_c_type (t_bindings : (string * Types.mono_type) list) t = 
+  c_type_of_monomorph (TypeUtil.to_monomorph t_bindings t)
 
 let int_sizes = [ 8; 16; 32; 64 ];;
-
 
 class typedef_emitter buf = 
   object (self)
     inherit Emit.emitter buf
-    method private bindings = Types.type_binding
-    method emit_type_instantiation (type_name,mono_args) = 
-      let type_rep = adt_of_inst (type_name,mono_args) in
-      let c_name = c_struct_name type_rep in
-      let r_type_rep = 
-        if type_name = Types.rust_tuple_name then
-          (`Tuple (mono_args : c_types list :> Types.r_type list))
-        else
-          (`Adt_type (type_rep : c_types Types.adt_type :> Types.poly_adt_type))
-      in
-      self#put_i @@ "struct " ^ c_name ^ " { // " ^ (Types.pp_t r_type_rep);
-      self#newline ();
-      self#indent ();
-      if type_name = Types.rust_tuple_name then
-        self#dump_tuple mono_args
-      else begin
-        let t_def = Env.EnvMap.find Env.adt_env type_name in
-        match t_def with
-        | `Enum_def d -> 
-          let t_binding = self#bindings d.Ir.e_tparam mono_args in
-          self#dump_enum t_binding d
-        | `Struct_def s ->
-          let t_binding = self#bindings s.Ir.s_tparam mono_args in
-          self#dump_struct t_binding s
-      end;
-      self#dedent();
-      self#put_i "};";
-      self#newline ()
+    method private bindings s t = (Types.type_binding s t : (string * c_types) list :> (string * Types.mono_type) list)
+    method emit_type_instantiation ((inst_flag,mono_args) : (c_inst_flag * (c_types list))) = 
+      let type_rep = type_of_inst (inst_flag,mono_args) in
+      let type_name = type_to_string type_rep in
+      let r_type_rep = (type_rep : c_types :> Types.r_type) in
+      match inst_flag with
+      (* fixed vec ruins goddamn everything *)
+      | `Fixed_Vec n ->
+        let vec_type = type_to_string (List.hd mono_args) in
+        self#put_all [ "typedef " ; vec_type ; " "; type_name; "[" ; (string_of_int n); "];" ];
+        self#newline ()
+      | `Tuple as i
+      | (`Adt _ as i) -> begin
+        let c_name = c_struct_name @@ type_name in
+        self#put_i @@ "struct " ^ c_name ^ " { // " ^ (Types.pp_t r_type_rep);
+        self#newline ();
+        self#indent ();
+        (match i with
+        | `Tuple -> self#dump_tuple mono_args
+        | `Adt type_name -> begin
+            let t_def = Env.EnvMap.find Env.adt_env type_name in
+            match t_def with
+            | `Enum_def d -> 
+              let t_binding = self#bindings d.Ir.e_tparam mono_args in
+              self#dump_enum t_binding d
+            | `Struct_def s ->
+              let t_binding = self#bindings s.Ir.s_tparam mono_args in
+              self#dump_struct t_binding s
+          end);
+        self#dedent();
+        self#put_i "};"
+        end;
+        self#newline ()
     method private dump_tuple mono_args = 
       let field_names = List.mapi (fun i _ -> Printf.sprintf CRep.tuple_field i) mono_args in
       let fields = List.map2 (fun f_name f_type -> 
@@ -184,7 +221,7 @@ class typedef_emitter buf =
     method private dump_fields : ((string * c_types) list) -> unit = List.iter self#dump_field_def
   end
 
-class expr_emitter buf t_bindings = 
+class expr_emitter buf (t_bindings : (string * Types.mono_type) list) = 
   object (self)
     inherit Emit.emitter buf
     method private t_string (t : Types.r_type) = 
@@ -210,6 +247,10 @@ class expr_emitter buf t_bindings =
         self#dump_expr expr;
         self#close_block ();
         self#newline ()
+      | `Return (_,e) ->
+        self#put_i "return ";
+        self#dump_simple_expr e;
+        self#newline ~post:";" ()
       | #CRep.simple_expr as s -> self#dump_simple_expr s
     method dump_stmt_expr = function
       | (_,`Match _)
@@ -225,9 +266,6 @@ class expr_emitter buf t_bindings =
         self#put_i ")"
       | `Address_of (_,e) ->
         self#put_i "&";
-        self#dump_simple_expr e
-      | `Return (_,e) ->
-        self#put_i "return ";
         self#dump_simple_expr e
       | `Assignment (lhs,(_,rhs)) ->
         self#dump_simple_expr lhs;
@@ -253,7 +291,7 @@ class expr_emitter buf t_bindings =
           self#handle_intrinsic fn_name mangled_fname m_args args
         else if Env.is_abstract_fn fn_name then begin
           let arg_types = List.map (fun (t,_) -> 
-              ((to_monomorph_c_type t_bindings t) : c_types :> Types.mono_type)
+              (TypeUtil.to_monomorph t_bindings t)
             ) args in
           let (mono_args,resolved_name) = Analysis.resolve_abstract_fn fn_name arg_types in
           let mangled_name' = mangle_fn_name resolved_name @@ List.map (to_monomorph_c_type t_bindings) (mono_args :> Types.r_type list) in
@@ -298,7 +336,7 @@ class expr_emitter buf t_bindings =
       self#drop_type drop_type arg_string;
       self#put "0"
     (* XXX: there is a lot of overlap here with the drop action synth in driver.ml *)
-    method drop_type ty arg_string = 
+    method drop_type (ty : Types.mono_type) arg_string = 
       match ty with
       | `Tuple tl -> 
         List.iteri (fun i ty' ->
@@ -324,7 +362,13 @@ class expr_emitter buf t_bindings =
       self#put_i "if(";
       self#dump_expr (match_condition :> CRep.all_expr);
       self#put_i ") ";
+      let is_block = match match_body with
+        | (_,`Block _) -> true
+        | _ -> false
+      in
+      if not is_block then self#open_block () else ();
       self#dump_stmt_expr match_body;
+      if not is_block then (self#close_block (); self#newline ()) else ()
     method dump_stmt = function
       | `Let (v_name,r_type,expr) ->
         let m_type = to_monomorph_c_type t_bindings r_type in
@@ -339,6 +383,22 @@ class expr_emitter buf t_bindings =
         self#newline ~post:";" ()
       | `Expr e ->
         self#dump_stmt_expr e;
+      | `Vec_Init (var_name,vec_type,init_expr) ->
+        self#put_all [ self#t_string vec_type; " "; var_name; " = {"];
+        self#put_many ", " self#dump_expr (init_expr : CRep.t_simple_expr list :> CRep.all_expr list);
+        self#newline ~post:"};" ()
+      | `Vec_Assign (n,lhs,(_,rhs)) ->
+        let rec assign_aux i = 
+          if i = n then () else begin
+            self#dump_simple_expr lhs;
+            self#put_all [ "["; string_of_int i; "] = " ];
+            self#dump_simple_expr rhs;
+            self#put_all [ "["; string_of_int i; "];" ];
+            self#newline ();
+            assign_aux (succ i)
+          end
+        in
+        assign_aux 0
     method dump_args (_,e) = self#dump_simple_expr e
   end
 
@@ -353,6 +413,7 @@ let simple_type_repr t =
   | `Float i -> if i = 32 then "float" else if i = 64 then "double" else assert false
   | `Char -> "uint32_t"
 
+(*
 type c_types' = c_types
 
 module DriverEmit = Driver.DriverF(struct
@@ -364,6 +425,7 @@ module DriverEmit = Driver.DriverF(struct
     let simple_type_repr = simple_type_repr
     let to_monomorph_c_type = to_monomorph_c_type
 end)
+*)
 
 let simplified_ir = Hashtbl.create 10;;
 
@@ -396,9 +458,16 @@ let emit_common_typedefs out_channel =
     ) int_sizes
 
 let emit_typedefs out_channel inst = 
-  let adt = adt_of_inst inst in
-  let struct_name = c_struct_name adt in
-  Printf.fprintf out_channel "typedef struct %s %s;\n" struct_name @@ mangle_adt_name adt
+  match inst with
+  (* for fixed vec, there is no implementation, the implementation
+   * IS a typedef
+   *)
+  | (`Fixed_Vec _,_) -> ()
+  | _ -> 
+    let ty = type_of_inst inst in
+    let mangled_ty = type_to_string ty in
+    let struct_name = c_struct_name @@ mangled_ty in
+    Printf.fprintf out_channel "typedef struct %s %s;\n" struct_name @@ mangled_ty
 
 let sig_of_fdef fn_def mono_args buf = 
   let bindings = Types.type_binding fn_def.Ir.fn_tparams mono_args in
@@ -440,6 +509,7 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
 let emit_fsigs out_channel f_list = 
   let buf = Buffer.create 1000 in
   List.iter (fun (f_name,m_args) ->
+      let m_args = List.map c_type_of_monomorph m_args in
       if Intrinsics.is_intrinsic_fn f_name then
         let m_strings = List.map type_to_string m_args in
         let mangled_name = mangle_fn_name f_name m_args in
@@ -452,11 +522,27 @@ let emit_fsigs out_channel f_list =
     ) f_list;
   Buffer.output_buffer out_channel buf
 
-(* at this point our types are still in terms of Refs, and Ptrs.
+(* at this point our types are still in terms of Refs, Ptrs, Vecs, and Strs.
    However in C there is no such distinction. Therefore a Foo<*T> and a
    Foo<&T> will compile to the precisely the same data structure. So at
    this point we eliminate type instantiations that are
    indistinguishable, and instead work at the level raw pointers.
+
+   We also references to DSTs Vecs and Strs into their runtime representation.
+
+   This also means throwing away some information in our instantiations.
+   For instance, when performing monomorphization we track Vecs, Str, and Tuples
+   as distinct instantiations because in some contexts---(API discovery),
+   test generation, and so on--- this matters. But when generating C code it does not.
+
+   However, at this point in the compilation process we don't particularly care:
+   an instantiation of a Vec true,t is exactly the same as a Tuple [*mut t, u32] so
+   when checking for duplicate instances we erase this information.
+
+   Note that abstract method resolution still operates at the level of mono_types,
+   TODO(jtoman): no it doesn't, whoopsie daisy!
+   i.e. we can still resolve vecs and tuples without ambiguity if there are impls
+   for both.
 *)
 
 (* XXX: COPY PASTE *)
@@ -467,6 +553,7 @@ let rec uniq_list = function
   | h::t ->
     h::(uniq_list t)
 
+(*
 let find_dup_pf_inst insts = 
   let simple_inst =
     List.map (fun (n,m_args) ->
@@ -479,18 +566,58 @@ let find_dup_pf_inst insts =
   in
   List.sort Pervasives.compare simple_inst
   |> uniq_list
+*)
 
-let find_dup_inst insts = 
-  let simple_inst = 
-    List.map (fun (n,m_args) ->
-        (n,(List.map c_type_of_monomorph m_args))
-      ) insts
+let find_dup_ty_inst =
+  let make_dst_inst mut wrapped = 
+  if mut then
+    `Tuple,[`Ptr_Mut (c_type_of_monomorph wrapped); `UInt 32]
+  else
+    `Tuple,[`Ptr (c_type_of_monomorph wrapped); `UInt 32]
   in
-  List.sort Pervasives.compare simple_inst
-  |> uniq_list
+  fun insts ->
+    let simple_inst = 
+      List.map (fun (inst_flag,m_args) ->
+          match inst_flag with
+          | `String mut ->
+            make_dst_inst mut (`UInt 8)
+          | `Vec mut ->
+            make_dst_inst mut (List.hd m_args)
+          | (`Fixed_Vec _ as n)
+          | (`Tuple as n)
+          | (`Adt _ as n) ->
+            (n,(List.map c_type_of_monomorph m_args))
+        ) insts
+    in
+    List.sort Pervasives.compare simple_inst
+    |> uniq_list
+
+let find_dup_fn_inst = 
+  let rec simple_refs : Types.mono_type -> Types.mono_type = function
+    | `Ref (_,t) -> `Ref ("_dummy_",(simple_refs t))
+    | `Ref_Mut (_,t) -> `Ref_Mut ("_dummy_", (simple_refs t))
+    | `Tuple tl -> `Tuple (List.map simple_refs tl)
+    | `Ptr t -> `Ptr (simple_refs t)
+    | `Ptr_Mut t -> `Ptr_Mut (simple_refs t)
+    | #Types.simple_type as s -> s
+    | `Vec t -> `Vec (simple_refs t)
+    | `Str -> `Str
+    | `Bottom -> `Bottom
+    | `Adt_type a -> 
+      `Adt_type { a with Types.type_param = List.map simple_refs a.Types.type_param }
+    | `Fixed_Vec (n,t) -> 
+      `Fixed_Vec (n,simple_refs t)
+  in
+  fun insts -> 
+    let simple_inst = 
+      List.map (fun (f_name,m_args) ->
+          (f_name,(List.map simple_refs m_args))
+        ) insts in
+    List.sort Pervasives.compare simple_inst |> uniq_list
+
 
 module CTypeInst = struct
-  type t = string * (c_types list)
+  type t = c_inst_flag * (c_types list)
   let compare = Pervasives.compare
 end
 
@@ -498,27 +625,31 @@ module CISet = Set.Make(CTypeInst)
 
 module CIMap = Map.Make(CTypeInst)
 
-let add_inst accum (ty : c_types) =
+let add_inst (accum : CISet.t) (ty : c_types) =
   match ty with
-  | `Tuple tl -> CISet.add (Types.rust_tuple_name,tl) accum
+  | `Tuple tl -> CISet.add (`Tuple,tl) accum
   | `Adt_type { Types.type_name = t; Types.type_param = tl } ->
-    CISet.add (t,tl) accum
+    CISet.add (`Adt t,tl) accum
+  | `Fixed_Vec (n,t) ->
+    CISet.add (`Fixed_Vec n,[t]) accum
   | _ -> accum
 
-let rec build_dep_map accum ((type_name,type_args) as inst)= 
-  if type_name = Types.rust_tuple_name then
+let rec build_dep_map (accum : CISet.t CIMap.t) ((inst_flag,type_args) as inst) =
+  match inst_flag with
+  | `Fixed_Vec _
+  | `Tuple ->
     CIMap.add inst (List.fold_left add_inst CISet.empty type_args) accum
-  else
+  | `Adt type_name ->
     let t_def = Env.EnvMap.find Env.adt_env type_name in
     let ref_types = 
       match t_def with
       | `Enum_def ed -> 
-        let b = Types.type_binding ed.Ir.e_tparam type_args in
+        let b = Types.type_binding ed.Ir.e_tparam (type_args : c_types list :> Types.mono_type list) in
         List.concat @@ List.map (fun ed ->
             List.map (to_monomorph_c_type b) ed.Ir.variant_fields
         ) ed.Ir.variants
       | `Struct_def sd ->
-        let b = Types.type_binding sd.Ir.s_tparam type_args in
+        let b = Types.type_binding sd.Ir.s_tparam (type_args : c_types list :> Types.mono_type list) in
         List.map (fun (_,t) -> to_monomorph_c_type b t) sd.Ir.struct_fields
     in
     CIMap.add inst (List.fold_left add_inst CISet.empty ref_types) accum
@@ -559,15 +690,15 @@ let dump_includes out_channel =
     ) includes
 
 let emit out_channel pub_type_set pub_fn_set t_set f_set = 
-  let t_list = order_types @@ find_dup_inst @@ Analysis.TISet.elements t_set in
-  let f_list = find_dup_inst @@ Analysis.FISet.elements f_set in
-  let (pt_list : c_types list) = List.sort Pervasives.compare @@ List.map c_type_of_monomorph @@ Analysis.MTSet.elements pub_type_set in
+  let t_list = order_types @@ find_dup_ty_inst @@ Analysis.TISet.elements t_set in
+  let f_list = find_dup_fn_inst @@ Analysis.FISet.elements f_set in
+(*  let (pt_list : c_types list) = List.sort Pervasives.compare @@ List.map c_type_of_monomorph @@ Analysis.MTSet.elements pub_type_set in
   let pt_list = uniq_list pt_list in
-  let pf_list = find_dup_pf_inst @@ Analysis.FISet.elements pub_fn_set in
+  let pf_list = find_dup_pf_inst @@ Analysis.FISet.elements pub_fn_set in*)
   emit_common_typedefs out_channel;
   begin
     if !Env.gcc_mode then begin
-      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x)\n"
+      Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x) 0\n"
     end else ()
   end;
   dump_includes out_channel;
@@ -587,10 +718,12 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
   emit_fsigs out_channel f_list;
   let fn_buffer = Buffer.create 1000 in
   List.iter (emit_fn_def out_channel fn_buffer) f_list;
+  (*
   Buffer.clear fn_buffer;
   if Env.EnvMap.mem Env.fn_env "crust_init" then
     let driver_emit = new DriverEmit.driver_emission fn_buffer pt_list in
     driver_emit#emit_driver pf_list;
     Buffer.output_buffer out_channel fn_buffer
   else ();
+*)
   print_newline ()

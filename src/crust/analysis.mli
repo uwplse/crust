@@ -1,5 +1,5 @@
 module FISet : Set.S with type elt = string * (Types.mono_type list)
-module TISet : Set.S with type elt = string * (Types.mono_type list)
+module TISet : Set.S with type elt = TypeUtil.type_inst
 module MTSet : Set.S with type elt = Types.mono_type
 
 type borrow_nested = [

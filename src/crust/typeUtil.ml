@@ -18,9 +18,13 @@ type type_binding = (string * Types.mono_type) list
 
 type _ query_param = 
   | Tuple : int -> (Types.mono_type list) query_param
-  | Mut_Ptr : Types.mono_type query_param
+  | Ptr_Mut : Types.mono_type query_param
   | Ptr : Types.mono_type query_param
+  | Ref : Types.mono_type query_param
+  | Ref_Mut : Types.mono_type query_param
   | Adt : string -> (Types.mono_type list) query_param
+  | Fixed_Vec : int -> Types.mono_type query_param
+  | Vec : Types.mono_type query_param
 
 (* extend me as needed *)
 let primitive_types = 
@@ -48,24 +52,43 @@ let find_types : type a.MTSet.t -> a query_param -> a list =
           tl::accum
         | _ -> accum
       ) set []
-    | Mut_Ptr -> MTSet.fold (fun t accum  ->
+    | Ptr_Mut -> MTSet.fold (fun t accum  ->
         match t with
-        | `Ptr_Mut t 
-        | `Ref_Mut (_,t) ->
+        | `Ptr_Mut t ->
           t::accum
         | _ -> accum
       ) set []
     | Ptr -> MTSet.fold (fun t accum  ->
         match t with
-        | `Ptr t
+        | `Ptr t -> t::accum
+        | _ -> accum
+      ) set []
+    | Ref -> MTSet.fold (fun t accum ->
+        match t with
         | `Ref (_,t) ->
           t::accum
+        | _ -> accum
+      ) set []
+    | Ref_Mut -> MTSet.fold (fun t accum ->
+        match t with
+        | `Ref_Mut (_,t) -> t::accum
         | _ -> accum
       ) set []
     | Adt name -> MTSet.fold (fun t accum ->
         match t with
         | `Adt_type p when p.Types.type_name = name ->
           p.Types.type_param::accum
+        | _ -> accum
+      ) set []
+    | Fixed_Vec n -> MTSet.fold (fun t accum ->
+        match t with
+        | `Fixed_Vec (n',t) when n' = n -> 
+          t::accum
+        | _ -> accum
+      ) set []
+    | Vec -> MTSet.fold (fun t accum ->
+        match t with
+        | `Vec t -> t::accum
         | _ -> accum
       ) set []
 
@@ -118,7 +141,7 @@ let primitive_types =
     |> add `Bool
     |> add `Unit
   );;
-
+exception StrayDST;;
 exception TyResolutionFailed;;
 
 (* I originally wrote this class because I had this idea that
@@ -176,12 +199,15 @@ class type_matcher = object(self)
     | `Ref (l,t') -> `Ref (l,(self#to_monomorph t_binding t'))
     | `Ref_Mut (l, t') -> `Ref_Mut (l,(self#to_monomorph t_binding t'))
     | `Ptr_Mut t' -> `Ptr_Mut (self#to_monomorph t_binding t')
-    | `Bottom -> `Bottom
     | `Ptr t' -> `Ptr (self#to_monomorph t_binding t')
+    | `Bottom -> `Bottom
     | `Tuple tl -> `Tuple (List.map (self#to_monomorph t_binding) tl)
     | `Abstract a ->
       let m_args = List.map (self#to_monomorph t_binding) a.Types.a_params in
       self#resolve_abstract_type a.Types.a_name m_args
+    | `Str -> `Str
+    | `Vec t -> `Vec (self#to_monomorph t_binding t)
+    | `Fixed_Vec (i,t) -> `Fixed_Vec (i,self#to_monomorph t_binding t)
 
   method private p_match_types = fun state t_binding t_accum to_match ->
     match to_match with 
@@ -288,12 +314,23 @@ class type_matcher = object(self)
           [(t_var,t)]::accum
         ) t_set [] in
       `Bind binding_choices
-    | `Ptr t
-    | `Ref (_,t) ->
+    | `Ptr t -> 
       self#match_single_type state t_binding (find_types t_set Ptr) t_set t
-    | `Ref_Mut (_,t)
+    | `Ref (_,t) ->
+      self#match_single_type state t_binding (find_types t_set Ref) t_set t
+    | `Ref_Mut (_,t) ->
+      self#match_single_type state t_binding (find_types t_set Ref_Mut) t_set t
     | `Ptr_Mut t ->
-      self#match_single_type state t_binding (find_types t_set Mut_Ptr) t_set t
+      self#match_single_type state t_binding (find_types t_set Ptr_Mut) t_set t
+    | `Str -> 
+      if MTSet.mem `Str t_set then
+        `Match
+      else
+        `Mismatch
+    | `Fixed_Vec (n,t) -> 
+      self#match_single_type state t_binding (find_types t_set (Fixed_Vec n)) t_set t
+    | `Vec t -> 
+      self#match_single_type state t_binding (find_types t_set Vec) t_set t
     | `Abstract _ ->
       try
         let t = self#to_monomorph t_binding to_match in
@@ -306,15 +343,19 @@ let rec get_free_vars accum t =
     | #Types.simple_type -> accum
     | `Bottom -> accum
     | `T_Var t -> SSet.add t accum
+    | `Str -> accum
     | `Tuple tl
     | `Adt_type { Types.type_param = tl; _ }
     | `Abstract { Types.a_params = tl; _ } ->
       List.fold_left get_free_vars accum tl
+    | `Vec t
+    | `Fixed_Vec (_,t)
     | `Ptr t
     | `Ptr_Mut t
     | `Ref (_,t)
     | `Ref_Mut (_,t) ->
       get_free_vars accum t
+
 ;;
 
 let matcher = new type_matcher;;
@@ -328,11 +369,15 @@ let rec has_abstract (t : Types.r_type) =
   | `Tuple tl -> 
     List.exists has_abstract tl
   | `Abstract _ -> true
+  | `Vec t
+  | `Fixed_Vec (_,t)
   | `Ref_Mut (_,t)
   | `Ref (_,t)
   | `Ptr t
   | `Ptr_Mut t ->
     has_abstract t
+  | `Str -> false
+
 
 let sort_types a b = 
   let has_abstract_a = has_abstract a in
@@ -351,7 +396,7 @@ let sort_types a b =
 
 let rev_app f x y = f y x
 
-let get_inst type_univ free_vars to_match = 
+let get_inst type_univ free_vars (to_match : Types.r_type list) = 
   let appears_in = List.fold_left get_free_vars SSet.empty to_match in
   let all_free = List.fold_right SSet.add free_vars SSet.empty in
   if not (SSet.is_empty @@ SSet.diff all_free appears_in) then
@@ -378,3 +423,17 @@ let rec is_move_type : Types.mono_type -> bool = function
   | `Ref_Mut (_,t) -> true
   | #Types.simple_type -> false
   | `Bottom -> false
+  (* these cases should be impossible! *)
+  | `Fixed_Vec _ -> false
+  | `Vec _ -> false
+  | `Str -> false
+
+type inst_flag = [
+  | `Adt of string
+  | `Tuple
+  | `Vec of bool
+  | `String of bool
+  | `Fixed_Vec of int
+]
+
+type type_inst = inst_flag * (Types.mono_type) list

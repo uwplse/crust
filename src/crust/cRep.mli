@@ -11,7 +11,6 @@ type simple_expr = [
   | `Deref of t_simple_expr
   | `Address_of of t_simple_expr
   | `Call of string * (Types.lifetime list) * (Types.r_type list) * (t_simple_expr list)
-  | `Return of t_simple_expr
   | `Assignment of simple_expr * t_simple_expr
   | `BinOp of Ir.bin_op * t_simple_expr * t_simple_expr
   | `UnOp of Ir.un_op * t_simple_expr
@@ -23,6 +22,7 @@ type simple_expr = [
    | `Block of ('a stmt list) * 'a
    | `Match of t_simple_expr * ('a match_arm list)
    | `While of t_simple_expr * 'a
+   | `Return of t_simple_expr
    ]
  and struct_fields = struct_field list
  and struct_field = string * t_simple_expr (* field binding *)
@@ -30,6 +30,8 @@ type simple_expr = [
    | `Expr of 'a
    | `Let of string * Types.r_type * t_simple_expr
    | `Declare of string * Types.r_type
+   | `Vec_Init of string * Types.r_type * (t_simple_expr list)
+   | `Vec_Assign of int * simple_expr * t_simple_expr
    ]
 (* this is a t_simple_expr but the type will always be `Bool actually *)
  and 'a match_arm = (t_simple_expr * 'a)

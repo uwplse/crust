@@ -51,7 +51,6 @@ main = do
             dumpIr "final" $
             filter (not . isExternFn) $
             fixBool $
-            fixDST $
             renameLocals $
             addCleanup ix $
             renameLocals $
@@ -82,18 +81,6 @@ fixBool = everywhere (mkT fixBoolLitExpr `extT` fixBoolLitPat)
     fixBoolLitPat (Pattern TBool (PSimpleLiteral "true")) =
       Pattern TBool (PSimpleLiteral "1")
     fixBoolLitPat p = p
-
-fixDST = everywhere (mkT transmuteDST)
-  where
-    transmuteDST (TRef l r TStr) = TTuple [TRef l r (TUint 8), TUint 32]
-    transmuteDST (TRef l r (TVec t)) = TTuple [TRef l r t, TUint 32]
---    transmuteDST (TVec _) = error "stray vec type"
---    transmuteDST TStr = error "str str type"
-    transmuteDST (TFixedVec _ _) = error "stray fixed vec type"
-    transmuteDST e = e
-
-
-
 
 
 fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ everywhere (mkT fixInit) $ everywhere (mkT renameAbortCall) items

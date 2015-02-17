@@ -152,6 +152,16 @@ and parse_type tokens cb =
             Types.a_params = types
         })
       )
+  | "vec"::rest ->
+    parse_type rest (fun t ->
+        cb (`Vec t)
+      )
+  | "str"::rest ->
+    cb `Str rest
+  | "fixed_vec"::rest ->
+    (consume_int >> parse_type) rest (fun l ->
+        cb (`Fixed_Vec l)
+      )
   | _ -> parse_simple_type tokens cb
 
 let parse_binop tokens cb = match tokens with
@@ -265,6 +275,10 @@ let rec parse_expr_var tokens cb = match tokens with
   | "assign_op"::t ->
     (parse_binop >> parse_expr >> parse_expr) t (fun ((op,lhs),rhs) rest ->
         cb (`Assign_Op (op,lhs,rhs)) rest
+      )
+  | "vec"::t ->
+    (parse_n parse_expr) t (fun e_list ->
+        cb (`Vec e_list)
       )
   | _ -> raise (Parse_failure ("parse_expr_var",tokens))
 and parse_stmt tokens cb = match tokens with

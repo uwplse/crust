@@ -1,12 +1,3 @@
-let get_sets () = 
-  let t_set = Env.EnvMap.fold (fun t _ accum ->
-							Analysis.TISet.add (t,[]) accum
-						   ) Env.adt_env Analysis.TISet.empty in
-  let f_set = Env.EnvMap.fold (fun f _ accum ->
-							Analysis.FISet.add (f,[]) accum
-						   ) Env.fn_env Analysis.FISet.empty in
-  (t_set,f_set)
-
 let do_it f = 
   Printexc.record_backtrace true;
   let input_file = ref "" in

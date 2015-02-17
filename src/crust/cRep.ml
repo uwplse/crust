@@ -31,7 +31,6 @@ type simple_expr = [
   | `Deref of t_simple_expr
   | `Address_of of t_simple_expr
   | `Call of string * (Types.lifetime list) * (Types.r_type list) * (t_simple_expr list)
-  | `Return of t_simple_expr
   | `Assignment of simple_expr * t_simple_expr
   | `BinOp of Ir.bin_op * t_simple_expr * t_simple_expr
   | `UnOp of Ir.un_op * t_simple_expr
@@ -43,13 +42,16 @@ type simple_expr = [
    | `Block of ('a stmt list) * 'a
    | `Match of t_simple_expr * ('a match_arm list)
    | `While of t_simple_expr * 'a
-   ]
+   | `Return of t_simple_expr
+ ]
  and struct_fields = struct_field list
  and struct_field = string * t_simple_expr (* field binding *)
  and 'a stmt = [
    | `Expr of 'a
    | `Let of string * Types.r_type * t_simple_expr
    | `Declare of string * Types.r_type
+   | `Vec_Init of string * Types.r_type * (t_simple_expr list)
+   | `Vec_Assign of int * simple_expr * t_simple_expr
    ]
  (* this is a t_simple_expr but the type will always be `Bool actually *)
  and 'a match_arm = (t_simple_expr * 'a)
@@ -77,24 +79,53 @@ let fresh_temp () =
 let trivial_expr = `Bool,(`Literal "1")
 let literal_unit = `Unit,`Literal "0"
 
+
+let mk_assign = 
+  let is_fix_vec = function
+    | `Fixed_Vec _ -> true
+    | _ -> false
+  in
+  let vec_size = function
+    | `Fixed_Vec (n,_) -> n
+    | _ -> assert false
+  in
+  let vec_component = function
+    | `Fixed_Vec (_,t) -> t
+    | _ -> assert false
+  in
+  fun nv_cb vcb lhs rhs ->
+    let rhs_type = fst rhs in
+    if is_fix_vec rhs_type then
+      let assign_temp = fresh_temp () in
+      let assign_var = rhs_type,`Var assign_temp in
+      vcb [
+        `Let (assign_temp,`Ptr (vec_component rhs_type),rhs);
+        `Vec_Assign (vec_size rhs_type,lhs,assign_var)
+      ]
+    else
+      nv_cb (`Unit,`Assignment (lhs,rhs))
+
+let mk_assign_expr = mk_assign (fun i -> i) (fun l ->
+    `Unit,`Block (l,literal_unit)
+  );;
+
 let rec push_assignment (lhs : simple_expr) (e : all_expr) = 
   match (snd e) with
   | `Return _ -> e
-  | #simple_expr as s -> 
-	 let assign = `Assignment (lhs,((fst e),s)) in
-	 ((`Unit,assign) : all_expr)
+  | #simple_expr as s ->
+    mk_assign_expr lhs (fst e,s)
   | `Match (e,m_arms) ->
-	 let m_arms' = List.map (fun (patt,m_arm) -> 
-							 (patt,(push_assignment lhs m_arm))
-							) m_arms in
-	 (`Unit,`Match (e,m_arms'))
+    let m_arms' = List.map (fun (patt,m_arm) -> 
+        (patt,(push_assignment lhs m_arm))
+      ) m_arms in
+    (`Unit,`Match (e,m_arms'))
   | `Block (s,e) -> (`Unit,(`Block (s,(push_assignment lhs e))))
   | `While _ -> 
     let assign = `Unit,(`Assignment (lhs,literal_unit)) in
     let new_block : all_expr = `Unit,(`Block ([`Expr e], assign)) in
     new_block
 
-let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
+let lift_complex : Types.r_type -> all_expr complex_expr -> (string * all_expr) = fun ty expr ->
   match expr with
   | `Block (s,e)  ->
 	 let out_var = fresh_temp () in
@@ -107,6 +138,9 @@ let lift_complex : all_expr complex_expr -> (string * all_expr) = fun expr ->
   | (`While _ as w) -> 
     let out_var = fresh_temp () in
     out_var,(push_assignment (`Var out_var) (`Unit,w))
+  | `Return e ->
+    let out_var = fresh_temp () in
+    (out_var,(ty,`Return e))
 
 let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> 'a) -> 'a = 
   fun expr cb ->
@@ -115,7 +149,7 @@ let rec apply_lift_cb : 'a. Ir.expr -> (all_expr stmt list -> t_simple_expr -> '
   match (snd expr') with
   | #simple_expr as s -> cb [] (e_type,s)
   | #all_complex as c ->
-	 let (out_var,lifted) = lift_complex c in
+	 let (out_var,lifted) = lift_complex e_type c in
 	 let declaration = `Declare (out_var,e_type) in
 	 let assign_block = `Expr lifted in
 	 let replacement = e_type,(`Var out_var) in
@@ -135,13 +169,13 @@ and simplify_adt : 'a. Types.r_type -> 'a list -> ?post:(t_simple_expr -> all_ex
   let adt_var = e_type,`Var out_var in
   let declare = `Declare (out_var,e_type) in
   let stmts = List.mapi (fun i comp ->
-						 let assign_lhs = lhs adt_var i comp in
-						 let e = rhs i comp in
-						 apply_lift_cb e (fun stmts e' ->
-										  let assignment = `Assignment (assign_lhs,e') in
-										  stmts @ [`Expr (`Unit,assignment)]
-										 )
-						) components in
+      let assign_lhs = lhs adt_var i comp in
+      let e = rhs i comp in
+      apply_lift_cb e (fun stmts e' ->
+          let s = mk_assign (fun a -> [`Expr a]) (fun i -> i) assign_lhs e' in
+          stmts @ s
+        )
+    ) components in
   let post_stmts = List.map (fun e -> `Expr e) (post adt_var) in
   let stmts' = (declare :: (List.flatten stmts)) @ post_stmts in
   (e_type,(`Block (stmts',adt_var)))
@@ -178,11 +212,12 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 	   (fst expr,`Literal lit_rep)
 	 end
   | `Return r ->
+    let ret_type = fst expr in
 	 apply_lift_cb r (fun stmt r ->
 					  if stmt = [] then
-						(`Bottom,`Return r)
+						(ret_type,`Return r)
 					  else
-						(`Bottom,`Block (stmt,(`Bottom,`Return r)))
+						(ret_type,`Block (stmt,(ret_type,`Return r)))
 					 )
   | `Struct_Field (s,f) -> apply_lift (fst expr) s (fun e -> `Struct_Field (snd e,f))
   | `Tuple t_fields ->
@@ -239,10 +274,9 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 							expr_type,(`BinOp (op,e1',e2'))
 						   )
   | `Assignment (e1,e2) ->
-	 simplify_binary e1 e2 (fun t_e1 e2' ->
-							let e1' = snd t_e1 in
-							`Unit,(`Assignment (e1',e2'))
-						   )
+    simplify_binary e1 e2 (fun t_e1 e2' ->
+        mk_assign_expr (snd t_e1) e2'
+      )
   | `Assign_Op (op,e1,e2) ->
     simplify_binary e1 e2 (fun t_e1 e2' ->
         let e1' = snd t_e1 in
@@ -264,6 +298,20 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
           `Unit,block_body
         | _ -> assert false
       )
+  | `Vec e_list ->
+    let (stmts,e_list') = 
+      List.fold_right (fun vec_e (stmt_accum,e_accum) ->
+          apply_lift_cb vec_e (fun stmt e' ->
+              (stmt @ stmt_accum,e'::e_accum)
+            )
+        ) e_list ([],[])
+    in
+    let temp = fresh_temp () in
+    let vec_type = fst expr in
+    vec_type,`Block (stmts @ [
+        `Vec_Init (temp,vec_type,e_list')
+      ],(vec_type,`Var temp)
+      )
 and simplify_binary e1 e2 cb = 
   apply_lift_cb e1 (fun stmt1 e1' ->
 					apply_lift_cb e2 (fun stmt2 e2' ->
@@ -282,7 +330,13 @@ and simplify_stmt : Ir.stmt -> all_expr stmt list = function
           let e_type = fst expr in
           let expr = simplify_ir expr in
           match (snd expr) with
-          | #simple_expr as s -> [`Let (v_name,v_type,(e_type,s))]
+          | #simple_expr as s -> begin
+              match v_type with 
+              | `Fixed_Vec _ -> 
+                [ `Declare (v_name,v_type) ] @ 
+                (mk_assign (fun i -> assert false) (fun l -> l) (`Var v_name) (e_type,s))
+              | _ -> [`Let (v_name,v_type,(e_type,s))]
+            end
           | #complex_expr as c -> 
             let c' = push_assignment (`Var v_name) (e_type,c) in
             [`Declare (v_name,v_type); `Expr c']
@@ -375,8 +429,6 @@ let rec clean_ir_expr (expr : t_simple_expr) =
     (* XXX: hack *)
     let e = snd (clean_ir_expr (`Bottom,e)) in
     e_type,`Struct_Field (e,f)
-  | `Return e ->
-    e_type,`Return (clean_ir_expr e)
   | `BinOp (o,e1,e2) ->
     e_type,`BinOp (o,clean_ir_expr e1,clean_ir_expr e2)
   | `UnOp (o,e1) ->
@@ -387,7 +439,6 @@ let rec clean_ir_expr (expr : t_simple_expr) =
     e_type,`Deref (clean_ir_expr e)
   | `Var _ -> expr
   | `Literal _ -> expr
-  | `Assignment (_,((_,`Return _) as r)) -> r
   | `Assignment (_,((_,`Call ("crust_abort",_,_,_)) as r)) ->
     r
   | `Assign_Op (op,e1,e2) -> 
@@ -413,14 +464,17 @@ let rec clean_ir (expr : all_expr) =
     let stmt = List.map (function
         | (`Expr (_,`Call ("crust_abort",_,_,_))) as e -> e
         | `Expr e -> `Expr (clean_ir e)
-        | `Let (v,_,((_,`Return _) as r)) -> `Expr r
         | `Let (v,t,e) -> `Let (v,t,clean_ir_expr e)
         | (`Declare _) as d -> d
+        | (`Vec_Init _) as d -> d
+        | (`Vec_Assign _) as d -> d
       ) stmt 
     in
     e_type,(`Block (stmt,clean_ir e))
   | `While (cond,body) ->
     e_type,`While (clean_ir_expr cond,clean_ir body)
+  | `Return e ->
+    e_type,`Return (clean_ir_expr e)
 
 let get_simple_ir ir = 
   instrument_return ir
