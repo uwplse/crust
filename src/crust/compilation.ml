@@ -151,7 +151,8 @@ class typedef_emitter buf =
       (* fixed vec ruins goddamn everything *)
       | `Fixed_Vec n ->
         let vec_type = type_to_string (List.hd mono_args) in
-        self#put_all [ "typedef " ; vec_type ; " "; type_name; "[" ; (string_of_int n); "];" ]
+        self#put_all [ "typedef " ; vec_type ; " "; type_name; "[" ; (string_of_int n); "];" ];
+        self#newline ()
       | `Tuple as i
       | (`Adt _ as i) -> begin
         let c_name = c_struct_name @@ type_name in
