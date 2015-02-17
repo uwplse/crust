@@ -490,5 +490,5 @@ instance Pp Item where
                     IAbstractType a -> pp a
                     IAssociatedType a -> pp a
                     IMeta s -> s
-                    IStatic s -> pp a
+                    IStatic a -> pp a
         in [pp a, "\n"]

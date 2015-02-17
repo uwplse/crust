@@ -67,13 +67,15 @@ data Index = Index
     { i_fns :: M.Map Name AnyFnDef
     , i_types :: M.Map Name TypeDef
     , i_consts :: M.Map Name ConstDef
+    , i_statics :: M.Map Name StaticDef
     }
 
-mkIndex items = Index fns types consts
+mkIndex items = Index fns types consts statics
   where
     fns = M.fromList $ dropGlue : mapMaybe onFn items
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
+    statics = M.fromList $ mapMaybe onStatic items
 
     onFn (IFn x@(FnDef name _ _ _ _ _ _)) = Just (name, FConcrete x)
     onFn (IAbstractFn x@(AbstractFnDef name _ _ _ _)) = Just (name, FAbstract x)
@@ -86,6 +88,9 @@ mkIndex items = Index fns types consts
 
     onConst (IConst x@(ConstDef name _ _)) = Just (name, x)
     onConst _ = Nothing
+
+    onStatic (IStatic x@(StaticDef name _ _)) = Just (name, x)
+    onStatic _ = Nothing
 
 dropGlue = ("drop_glue", FAbstract def)
   where def = AbstractFnDef "drop_glue" [] ["T"]
@@ -113,6 +118,12 @@ getConst name = do
     case mx of
         Just x -> return x
         Nothing -> error $ "unknown const: " ++ name
+
+getStatic name = do
+    mx <- asks $ M.lookup name . i_statics
+    case mx of
+        Just x -> return x
+        Nothing -> error $ "unknown statics: " ++ name
 
 getConcreteFn name = do
     fn <- getFn name

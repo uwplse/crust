@@ -70,7 +70,13 @@ withEmptyScope a = do
     put old
     return x
 
-renameLocals x = evalState (go x) (RenamerState M.empty M.empty)
+initState ix = RenamerState nameMap usedNames
+  where
+    names = M.keys (i_consts ix) ++ M.keys (i_statics ix)
+    nameMap = M.fromList $ zip names names
+    usedNames = M.fromList $ zip names (repeat 0)
+
+renameLocals ix x = evalState (go x) (initState ix)
   where
     go :: forall d. Data d => d -> State RenamerState d
     go = gmapM go `extM` goExpr `extM` goMatchArm `extM` goStmtList `extM` goFnDef

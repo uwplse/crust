@@ -202,11 +202,11 @@ ppStmt (SLet pat@(Pattern ty _) (Just expr)) = line $ do
     tell ";"
 
 ppConstDef (ConstDef name ty expr) = line $ do
-    spaceSep [tell "static", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
+    spaceSep [tell "const", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
     tell ";"
 
 ppStaticDef (StaticDef name ty expr) = line $ do
-    spaceSep [ tell "stat", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
+    spaceSep [tell "static", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
     tell ";"
 
 ppItem (IStruct s) = ppStructDef s
