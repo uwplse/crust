@@ -152,6 +152,16 @@ and parse_type tokens cb =
             Types.a_params = types
         })
       )
+  | "vec"::rest ->
+    parse_type rest (fun t ->
+        cb (`Vec t)
+      )
+  | "str"::rest ->
+    cb `Str rest
+  | "fixed_vec"::rest ->
+    (consume_int >> parse_type) rest (fun l ->
+        cb (`Fixed_Vec l)
+      )
   | _ -> parse_simple_type tokens cb
 
 let parse_binop tokens cb = match tokens with
