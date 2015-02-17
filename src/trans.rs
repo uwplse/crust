@@ -15,6 +15,7 @@ use rustc::middle::ty::{MethodCall, MethodCallee, MethodOrigin};
 use rustc::util::ppaux::Repr;
 use syntax::ast::*;
 use syntax::ast_map;
+use syntax::ast_util;
 use syntax::ast_util::local_def;
 use syntax::codemap::Span;
 use syntax::ptr::P;
@@ -521,7 +522,13 @@ impl Trans for Expr {
             ExprBinary(op, ref a, ref b) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
-                        let arg_strs = vec![a.trans(trcx), b.trans(trcx)];
+                        let b_str = if ast_util::is_by_value_binop(op.node) {
+                            b.trans(trcx)
+                        } else {
+                            let unadjusted = b.trans(trcx);
+                            do_auto_ref(trcx, &**b, unadjusted)
+                        };
+                        let arg_strs = vec![a.trans(trcx), b_str];
                         trans_method_call(trcx, callee, arg_strs)
                     },
                     None => {
@@ -725,6 +732,20 @@ fn adjust_expr(trcx: &mut TransCtxt,
     }
 
     result
+}
+
+fn do_auto_ref(trcx: &mut TransCtxt,
+               expr: &Expr,
+               unadjusted: String) -> String {
+    let result = unadjusted;
+    let mut result_ty = trcx.tcx.node_types.borrow()[expr.id];
+
+    let region = ty::ReScope(region::CodeExtent::Misc(expr.id));
+    let mt = ty::mt { ty: result_ty, mutbl: MutImmutable };
+    result_ty = ty::mk_t(trcx.tcx, ty::ty_rptr(trcx.tcx.mk_region(region), mt));
+    format!("({} addr_of {})",
+            result_ty.trans(trcx),
+            result)
 }
 
 fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
