@@ -117,7 +117,7 @@ fn UnsafeCell_new<0><1: T>
 #				   | "return" expr
 #                  | "assign_op" op expr expr
 #                  | "while" expr expr
-				   | "vec" expr*
+#                  | "vec" expr*
 #	binop ::= BiAdd | ...
 #	unop ::= ...
 #   field ::= name(field) expr
