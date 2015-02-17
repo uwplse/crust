@@ -19,11 +19,12 @@ type move_info = [
 ]
 
 type walk_state = {
-	type_inst : TISet.t;
-	fn_inst : FISet.t;
-	public_type : MTSet.t;
-	public_fn : FISet.t
-  }
+  type_inst : TISet.t;
+  fn_inst : FISet.t;
+  public_type : MTSet.t;
+  public_fn : FISet.t;
+  static_var : SSet.t
+}
 
 exception ResolutionFailed of string
 

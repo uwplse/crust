@@ -33,7 +33,8 @@ type walk_state = {
   type_inst : TISet.t;
   fn_inst : FISet.t;
   public_type : MTSet.t;
-  public_fn : FISet.t
+  public_fn : FISet.t;
+  static_var : SSet.t
 }
 
 let add_type_instance w_state inst = 
@@ -53,6 +54,11 @@ let add_public_fn w_state inst =
 let add_public_type w_state inst = 
   {
     w_state with public_type = MTSet.add inst w_state.public_type
+  }
+
+let add_static_var w_state var = 
+  {
+    w_state with static_var = SSet.add var w_state.static_var
   }
 
 
@@ -214,7 +220,11 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
       walk_fn w_state fn_name m_args
   | `Address_of e | `Deref e -> walk_expr t_bindings w_state e
   | `Struct_Field (e,_) -> walk_expr t_bindings w_state e
-  | `Var a -> w_state
+  | `Var a -> 
+    if Env.is_static_var a then
+      walk_static a w_state
+    else
+      w_state
   | `Literal _ -> w_state
   | `Struct_Literal s_fields ->
     let fold = rev_app (snd >>= (rev_app (walk_expr t_bindings))) in
@@ -249,7 +259,14 @@ and walk_statement t_bindings w_state stmt =
     match expr with
     | Some e -> walk_expr t_bindings w_state e
     | None -> w_state
-
+and walk_static var w_state = 
+  if SSet.mem var w_state.static_var then
+    w_state 
+  else
+    let (ty,static_expr) = Env.EnvMap.find Env.static_env var in
+    add_static_var w_state var
+    |> (rev_app (inst_walk_type [])) ty
+    |> (rev_app (walk_expr [])) static_expr
 and walk_match_arm t_bindings w_state (patt,expr) = 
   let w_state = walk_pattern t_bindings w_state patt in
   walk_expr t_bindings w_state expr
@@ -421,7 +438,8 @@ let run_analysis () =
     type_inst = TISet.empty;
     fn_inst = FISet.empty;
     public_type = List.fold_right MTSet.add seed_types MTSet.empty;
-    public_fn = FISet.empty
+    public_fn = FISet.empty;
+    static_var = SSet.empty
   }
   in
   let w_state = 

@@ -433,6 +433,14 @@ let parse_abstract_type tokens cb =
       )
   | _ -> raise (Parse_failure ("parse_abstract_type",tokens))
 
+let parse_static tokens cb = 
+  match tokens with
+  | "static"::t ->
+    (consume_name >> parse_type >> parse_expr) t (fun ((name,ty),expr) ->
+        cb (`Static (name,ty,expr))
+      )
+  | _ -> raise (Parse_failure ("parse_static",tokens))
+
 let rec parse_module tokens cb = 
   match tokens with
   | "abstract_fn"::_ 
@@ -445,6 +453,7 @@ let rec parse_module tokens cb =
     (parse_type >> parse_expr) t (fun _ rest ->
         parse_module rest cb
       )
+  | "static"::_ -> parse_static tokens cb
   | _ -> (raise (Parse_failure ("parse_module",tokens)))
 
 let parse_string s = 

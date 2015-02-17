@@ -117,4 +117,5 @@ type module_expr = [
   | `Abstract_Fn of string
   | `Assoc_type of Types.associated_type
   | `Abstract_Type of Types.abstract_type_def
+  | `Static of string * Types.r_type * expr
 ]
