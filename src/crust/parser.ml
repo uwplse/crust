@@ -276,6 +276,10 @@ let rec parse_expr_var tokens cb = match tokens with
     (parse_binop >> parse_expr >> parse_expr) t (fun ((op,lhs),rhs) rest ->
         cb (`Assign_Op (op,lhs,rhs)) rest
       )
+  | "vec"::t ->
+    (parse_n parse_expr) t (fun e_list ->
+        cb (`Vec e_list)
+      )
   | _ -> raise (Parse_failure ("parse_expr_var",tokens))
 and parse_stmt tokens cb = match tokens with
   | "expr"::t -> parse_expr t (fun expr rest -> cb (`Expr expr) rest)

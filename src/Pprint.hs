@@ -178,6 +178,10 @@ ppExpr (Expr ty e) = case e of
     EWhile cond body ->
         inline (tell "while " >> ppExpr cond >> tell " {") (tell "}") $ ppExpr body
     EReturn expr -> tell "return " >> ppExpr expr
+    EVec exprs -> do
+      tell "vec["
+      commaSep $ map ppExpr exprs
+      tell "]"
 
 ppPat (Pattern ty p) = case p of
     PVar name -> tell name

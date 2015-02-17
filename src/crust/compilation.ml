@@ -382,6 +382,22 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         self#newline ~post:";" ()
       | `Expr e ->
         self#dump_stmt_expr e;
+      | `Vec_Init (var_name,vec_type,init_expr) ->
+        self#put_all [ self#t_string vec_type; " "; var_name; " = {"];
+        self#put_many ", " self#dump_expr (init_expr : CRep.t_simple_expr list :> CRep.all_expr list);
+        self#newline ~post:"};" ()
+      | `Vec_Assign (n,lhs,(_,rhs)) ->
+        let rec assign_aux i = 
+          if i = n then () else begin
+            self#dump_simple_expr lhs;
+            self#put_all [ "["; string_of_int i; "] = " ];
+            self#dump_simple_expr rhs;
+            self#put_all [ "["; string_of_int i; "];" ];
+            self#newline ();
+            assign_aux (succ i)
+          end
+        in
+        assign_aux 0
     method dump_args (_,e) = self#dump_simple_expr e
   end
 
