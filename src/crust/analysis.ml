@@ -376,16 +376,20 @@ let rec find_fn find_state =
 
 let build_nopub_fn () = 
   Env.EnvMap.fold (fun fn_name fn_def accum ->
-      match fn_def.Ir.fn_args with
-      | ("self",t)::_ -> begin
-          match t with
-          | `Ref (_,`Adt_type a)
-          | `Ref_Mut (_,`Adt_type a)
-          | `Adt_type a when Env.EnvSet.mem Env.type_infr_filter a.Types.type_name ->
-            SSet.add fn_def.Ir.fn_name accum
+      match snd fn_def.Ir.fn_body with
+      | `Unsafe _ -> SSet.add fn_name accum
+      | _ -> begin
+          match fn_def.Ir.fn_args with
+          | ("self",t)::_ -> begin
+              match t with
+              | `Ref (_,`Adt_type a)
+              | `Ref_Mut (_,`Adt_type a)
+              | `Adt_type a when Env.EnvSet.mem Env.type_infr_filter a.Types.type_name ->
+                SSet.add fn_def.Ir.fn_name accum
+              | _ -> accum
+            end
           | _ -> accum
         end
-      | _ -> accum
     ) Env.fn_env @@ SSet.singleton "crust_abort"
 
 let run_analysis () = 
