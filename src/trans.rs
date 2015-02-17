@@ -666,7 +666,7 @@ impl Trans for Expr {
             ExprVec(ref expr_list) => {
                 format!("vec {}", expr_list.trans(trcx))
             },
-            _ => panic!("unrecognized Expr_ variant {:?}", self.node),
+            _ => panic!("unrecognized Expr_ variant"/* {:?}", self.node*/),
         };
 
         let expr_ty = trcx.tcx.node_types.borrow()[self.id];
