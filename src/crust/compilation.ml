@@ -73,7 +73,7 @@ let rec type_to_string : c_types -> string = function
   | `Bottom -> "rs_bottom"
   | `Tuple l -> mangle_tuple_name l
   | `Adt_type a_type -> mangle_adt_name a_type
-  | `Fixed_Vec (n,t) -> "rs_f" ^ (string_of_int n) ^ (type_to_string t)
+  | `Fixed_Vec (n,t) -> "rs_f" ^ (string_of_int n) ^ (adt_type_name t)
 
 
 let string_of_binop : Ir.bin_op -> string = function
@@ -578,8 +578,7 @@ let emit_statics out_channel s_list =
   let emitter = new static_emitter buf in
   List.iter (fun static ->
       let d = memo_get_simple_static static in
-      emitter#dump_static static d;
-      Buffer.add_string buf "\n"
+      emitter#dump_static static d
     ) s_list;
   Buffer.output_buffer out_channel buf
 
