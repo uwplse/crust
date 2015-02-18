@@ -157,6 +157,9 @@ data Stmt = SExpr Expr | SLet Pattern (Maybe Expr)
 data ConstDef = ConstDef Name Ty Expr
   deriving (Eq, Show, Data, Typeable)
 
+data StaticDef = StaticDef Name Ty Expr
+  deriving (Eq, Show, Data, Typeable)
+
 data Item =
       IStruct StructDef
     | IEnum EnumDef
@@ -166,6 +169,7 @@ data Item =
     | IExternFn ExternFnDef
     | IAbstractType AbstractTypeDef
     | IAssociatedType AssociatedTypeDef
+    | IStatic StaticDef
     | IMeta String
   deriving (Eq, Show, Data, Typeable)
 
@@ -306,6 +310,9 @@ stmt = tagged
 constDef = exactWord "const" >>
     ConstDef <$> name <*> ty <*> expr
 
+staticDef = exactWord "static" >>
+    StaticDef <$> name <*> ty <*> expr
+
 item = choice
     [ IStruct <$> structDef
     , IEnum <$> enumDef
@@ -315,6 +322,7 @@ item = choice
     , IExternFn <$> externFnDef
     , IAbstractType <$> abstractTypeDef
     , IAssociatedType <$> associatedTypeDef
+    , IStatic <$> staticDef
     ]
 
 program = many item
@@ -467,6 +475,9 @@ instance Pp Stmt where
 instance Pp ConstDef where
     pp' (ConstDef n t e) = ppGo "const" [pp n, pp t, pp e]
 
+instance Pp StaticDef where
+    pp' (StaticDef n t e) = ppGo "static" [pp n, pp t, pp e]
+
 instance Pp Item where
     pp' i =
         let a = case i of
@@ -479,4 +490,5 @@ instance Pp Item where
                     IAbstractType a -> pp a
                     IAssociatedType a -> pp a
                     IMeta s -> s
+                    IStatic a -> pp a
         in [pp a, "\n"]

@@ -13,6 +13,17 @@ let rec instrument_return : Ir.expr -> Ir.expr = fun expr ->
   | `Return e -> expr
   | e -> (`Bottom,`Return expr)
 
+type static_expr = [
+  | `Var of string
+  | `Literal of string
+  | `Deref of static_expr
+  | `Address_of of static_expr
+  | `BinOp of Ir.bin_op * static_expr * static_expr
+  | `Init of static_expr list
+  | `Tagged_Init of string * static_expr list
+  | `UnOp of Ir.un_op * static_expr
+]
+
 (* A note on t_simple_expr vs. simple_expr: t_simple_expr is a simple
   expression with the type of the expression, and simple_expr is just
   the expression. With two exceptions sub-expressions also have type
@@ -481,3 +492,60 @@ let get_simple_ir ir =
   |> simplify_ir
   |> clean_ir
   |> flatten_blocks
+
+exception Illegal_dynamic_expr;;
+
+let rec simplify_static_ir : Ir.expr -> static_expr =
+  let extract_type_name = function
+    | `Adt_type { Types.type_name = a; _ } -> a
+    | _ -> assert false
+  in
+  fun expr ->
+    let e_type = fst expr in
+    match (snd expr) with
+    | `Call _ 
+    | `While _
+    | `Assignment _
+    | `Cast _
+    | `Unsafe _
+    | `Return _
+    | `Match _
+    | `Block _
+    | `Struct_Field _
+    | `Assign_Op _ -> raise Illegal_dynamic_expr
+    | `Var s -> `Var s
+    | `Literal l -> `Literal l
+    | `BinOp (op,e1,e2) -> `BinOp (op,simplify_static_ir e1,simplify_static_ir e2)
+    | `Vec e_list
+    | `Tuple e_list ->
+      `Init (List.map simplify_static_ir e_list)
+    | `Struct_Literal sl ->
+      let type_name = extract_type_name e_type in
+      let struct_type = match Env.EnvMap.find Env.adt_env type_name with
+        | `Struct_def s -> s
+        | _ -> assert false
+      in
+      let field_order = List.mapi (fun ind (f_name,_) ->
+          (f_name,ind)
+        ) struct_type.Ir.struct_fields
+      in
+      let sorted_init = List.sort (fun (f1,_) (f2,_) ->
+          Pervasives.compare (List.assoc f1 field_order) (List.assoc f2 field_order)
+        ) sl in
+      `Init (List.map (fun (_,e) -> simplify_static_ir e) sorted_init)
+    | `Enum_Literal (_,tag,sf) ->
+      `Init ([
+          `Literal (string_of_int tag)
+        ] @
+          match sf with 
+          | [] -> []
+          | l -> [`Tagged_Init ((Printf.sprintf arm_field tag),List.map simplify_static_ir l)]
+        )
+    | `Address_of e -> 
+      `Address_of (simplify_static_ir e)
+    | `Deref e -> `Deref (simplify_static_ir e)
+    | `UnOp (op,e) ->
+      `UnOp (op,simplify_static_ir e)
+
+let get_simple_static expr = 
+  simplify_static_ir expr

@@ -51,9 +51,9 @@ main = do
             dumpIr "final" $
             filter (not . isExternFn) $
             fixBool $
-            renameLocals $
+            renameLocals ix $
             addCleanup ix $
-            renameLocals $
+            renameLocals ix $
             liftTemps ix $
             constExpand $
             ifFix $

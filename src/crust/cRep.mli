@@ -4,6 +4,17 @@ val field_label : (int -> string, unit, string, string, string, string) format6
 val tuple_field : (int -> string, unit, string, string, string, string) format6
 val data_field : string
 
+type static_expr = [
+  | `Var of string
+  | `Literal of string
+  | `Deref of static_expr
+  | `Address_of of static_expr
+  | `BinOp of Ir.bin_op * static_expr * static_expr
+  | `Init of static_expr list
+  | `Tagged_Init of string * static_expr list
+  | `UnOp of Ir.un_op * static_expr 
+]
+
 type simple_expr = [
   | `Struct_Field of simple_expr * string
   | `Var of string
@@ -39,3 +50,7 @@ type all_expr = Types.r_type * [ all_expr complex_expr | simple_expr ]
 type all_complex = all_expr complex_expr
 
 val get_simple_ir : Ir.expr -> all_expr
+
+exception Illegal_dynamic_expr;;
+
+val get_simple_static : Ir.expr -> static_expr

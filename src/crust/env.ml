@@ -21,6 +21,7 @@ let fn_env = Hashtbl.create 10;;
 let type_infr_filter = Hashtbl.create 10;;
 let abstract_impl = Hashtbl.create 10;;
 let associated_types = Hashtbl.create 10;;
+let static_env = Hashtbl.create 10;;
 
 let is_abstract name = Hashtbl.mem abstract_impl name
 
@@ -54,6 +55,10 @@ let rec set_env = function
       Hashtbl.add associated_types a_name [ a ]
     );
     set_env t
+  | `Static (name,ty,expr)::t ->
+    Hashtbl.add static_env name (ty,expr);
+    set_env t
+  (* these are ignored for the moment *)
   | `Abstract_Type _::t
   | `Abstract_Fn _::t ->
     set_env t
@@ -62,6 +67,7 @@ let gcc_mode = ref false;;
 let init_opt = ref false;;
 
 let is_abstract_fn = Hashtbl.mem abstract_impl
+let is_static_var = Hashtbl.mem static_env
 
 let init_inference_filter file_name = 
   let f_in = open_in file_name in

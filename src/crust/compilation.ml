@@ -73,7 +73,7 @@ let rec type_to_string : c_types -> string = function
   | `Bottom -> "rs_bottom"
   | `Tuple l -> mangle_tuple_name l
   | `Adt_type a_type -> mangle_adt_name a_type
-  | `Fixed_Vec (n,t) -> "rs_f" ^ (string_of_int n) ^ (type_to_string t)
+  | `Fixed_Vec (n,t) -> "rs_f" ^ (string_of_int n) ^ (adt_type_name t)
 
 
 let string_of_binop : Ir.bin_op -> string = function
@@ -402,6 +402,45 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
     method dump_args (_,e) = self#dump_simple_expr e
   end
 
+class static_emitter buf = 
+  object(self)
+    inherit Emit.emitter buf
+    method dump_static name (ty,expr) = 
+      self#put_i  "static ";
+      self#put @@ type_to_string @@ to_monomorph_c_type [] ty;
+      self#put_all [ " "; name; " = " ];
+      self#dump_static_expr expr;
+      self#newline ~post:";" ()
+    method private dump_static_expr (expr : CRep.static_expr)  = 
+      match expr with
+      | `Var s -> self#put s
+      | `Literal l -> self#put l
+      | `Deref e -> 
+        self#put "*";
+        self#dump_static_expr e
+      | `Address_of e ->
+        self#put "&";
+        self#dump_static_expr e
+      | `UnOp (op,e) ->
+        self#put_all [ "("; string_of_unop op; "(" ];
+        self#dump_static_expr e;
+        self#put "))"
+      | `BinOp (op,e1,e2) ->
+        self#put "((";
+        self#dump_static_expr e1;
+        self#put_all [ ") "; string_of_binop op; " (" ];
+        self#dump_static_expr e2;
+        self#put "))"
+      | `Init tl ->
+        self#put "{";
+        self#put_many ", " self#dump_static_expr tl;
+        self#put "}"
+      | `Tagged_Init (tag,tl) ->
+        self#put_all [ "{ ."; tag; " = { "];
+        self#put_many ", " self#dump_static_expr tl;
+        self#put "}"
+  end
+
 let simple_type_repr t = 
   match t with
   | `Unit -> "char"
@@ -413,20 +452,6 @@ let simple_type_repr t =
   | `Float i -> if i = 32 then "float" else if i = 64 then "double" else assert false
   | `Char -> "uint32_t"
 
-(*
-type c_types' = c_types
-
-module DriverEmit = Driver.DriverF(struct
-    type c_types = c_types'
-    let adt_type_name = adt_type_name
-    let mangle_fn_name = mangle_fn_name
-    let int_sizes = int_sizes
-    let type_to_string = type_to_string
-    let simple_type_repr = simple_type_repr
-    let to_monomorph_c_type = to_monomorph_c_type
-end)
-*)
-
 let simplified_ir = Hashtbl.create 10;;
 
 let memo_get_simple_ir fn_name f_def = 
@@ -436,6 +461,18 @@ let memo_get_simple_ir fn_name f_def =
     let ir = CRep.get_simple_ir f_def.Ir.fn_body in
     Hashtbl.add simplified_ir fn_name ir;
     ir
+  end
+
+let simplified_static = Hashtbl.create 10;;
+
+let memo_get_simple_static static_name = 
+  if Hashtbl.mem simplified_static static_name then
+    Hashtbl.find simplified_static static_name
+  else begin
+    let (ty,s_def) = Env.EnvMap.find Env.static_env static_name in
+    let simple_def = CRep.get_simple_static s_def in
+    Hashtbl.add simplified_static static_name (ty,simple_def);
+    (ty,simple_def)
   end
 
 let emit_common_typedefs out_channel =
@@ -522,6 +559,15 @@ let emit_fsigs out_channel f_list =
     ) f_list;
   Buffer.output_buffer out_channel buf
 
+let emit_statics out_channel s_list = 
+  let buf = Buffer.create 1000 in
+  let emitter = new static_emitter buf in
+  List.iter (fun static ->
+      let d = memo_get_simple_static static in
+      emitter#dump_static static d
+    ) s_list;
+  Buffer.output_buffer out_channel buf
+
 (* at this point our types are still in terms of Refs, Ptrs, Vecs, and Strs.
    However in C there is no such distinction. Therefore a Foo<*T> and a
    Foo<&T> will compile to the precisely the same data structure. So at
@@ -540,7 +586,6 @@ let emit_fsigs out_channel f_list =
    when checking for duplicate instances we erase this information.
 
    Note that abstract method resolution still operates at the level of mono_types,
-   TODO(jtoman): no it doesn't, whoopsie daisy!
    i.e. we can still resolve vecs and tuples without ambiguity if there are impls
    for both.
 *)
@@ -552,21 +597,6 @@ let rec uniq_list = function
     h::(uniq_list t)
   | h::t ->
     h::(uniq_list t)
-
-(*
-let find_dup_pf_inst insts = 
-  let simple_inst =
-    List.map (fun (n,m_args) ->
-        (* XXX(jtoman): awful awful awful, move this somewhere else!!! *)
-        let fn_def = Env.EnvMap.find Env.fn_env n in
-        let mono_args = List.map (TypeUtil.to_monomorph @@ Types.type_binding fn_def.Ir.fn_tparams m_args) @@ List.map snd fn_def.Ir.fn_args in
-        let move_info = Analysis.move_analysis mono_args in
-        (n,(List.map c_type_of_monomorph m_args),move_info)
-      ) insts
-  in
-  List.sort Pervasives.compare simple_inst
-  |> uniq_list
-*)
 
 let find_dup_ty_inst =
   let make_dst_inst mut wrapped = 
@@ -654,29 +684,61 @@ let rec build_dep_map (accum : CISet.t CIMap.t) ((inst_flag,type_args) as inst) 
     in
     CIMap.add inst (List.fold_left add_inst CISet.empty ref_types) accum
 
-let rec topo_sort dep_map accum = 
-  let (dep_met,has_dep) = CIMap.partition (fun _ deps ->
-      CISet.is_empty deps
-    ) dep_map
+module SMap = Map.Make(String)
+
+let build_static_deps = 
+  let rec static_dep_aux accum expr = 
+    match expr with
+    | `Var s -> SSet.add s accum
+    | `Literal l -> accum
+    | `UnOp (_,s)
+    | `Address_of s
+    | `Deref s -> static_dep_aux accum s
+    | `Tagged_Init (_,tl)
+    | `Init tl ->
+      List.fold_left static_dep_aux accum tl
+    | `BinOp (_,e1,e2) ->
+      List.fold_left static_dep_aux accum [e1;e2]
   in
-  if CIMap.cardinal dep_met = 0 &&
-     CIMap.cardinal has_dep = 0 then
-    List.rev accum
-  else if CIMap.cardinal dep_met = 0 then
-    failwith "Type dependency cycle!"
-  else begin
-    let (accum,dep_met_s) = CIMap.fold (fun i _ (accum,dms) ->
-        i::accum,CISet.add i dms
-      ) dep_met (accum,CISet.empty) in
-    let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
-    topo_sort dep_map' accum
-  end
+  let dep_of_static static_name =
+    let (_,s_def) = memo_get_simple_static static_name in
+    static_dep_aux SSet.empty s_def
+  in
+  fun static_set ->
+    SSet.fold (fun s_name accum ->
+        SMap.add s_name (dep_of_static s_name) accum
+      ) static_set SMap.empty
+
+module TopoSort(M : Map.S) = functor(S: Set.S with type elt = M.key) -> struct
+  let rec topo_sort dep_map accum = 
+    let (dep_met,has_dep) = M.partition (fun _ deps ->
+        S.is_empty deps
+      ) dep_map
+    in
+    if M.cardinal dep_met = 0 &&
+       M.cardinal has_dep = 0 then
+      List.rev accum
+    else if M.cardinal dep_met = 0 then
+      failwith "Static dependency cycle!"
+    else begin
+      let (accum,dep_met_s) = M.fold (fun key _ (accum,dms) ->
+        key::accum,S.add key dms
+      ) dep_met (accum,S.empty) in
+      let dep_map' = M.map (fun deps -> S.diff deps dep_met_s) has_dep in
+      topo_sort dep_map' accum
+    end
+end
+
+module STopo = TopoSort(SMap)(SSet)
+let stopo_sort = STopo.topo_sort
+
+module TTopo = TopoSort(CIMap)(CISet)
+let topo_sort = TTopo.topo_sort
 
 let order_types t_list =
   let d_map = List.fold_left build_dep_map CIMap.empty t_list in
   topo_sort d_map []
 
-(* TODO: config this *)
 let includes = [
   "stdint.h";
   "stdlib.h";
@@ -689,12 +751,9 @@ let dump_includes out_channel =
       Printf.fprintf out_channel "#include <%s>\n" i
     ) includes
 
-let emit out_channel pub_type_set pub_fn_set t_set f_set = 
+let emit out_channel pub_type_set pub_fn_set t_set f_set statics = 
   let t_list = order_types @@ find_dup_ty_inst @@ Analysis.TISet.elements t_set in
   let f_list = find_dup_fn_inst @@ Analysis.FISet.elements f_set in
-(*  let (pt_list : c_types list) = List.sort Pervasives.compare @@ List.map c_type_of_monomorph @@ Analysis.MTSet.elements pub_type_set in
-  let pt_list = uniq_list pt_list in
-  let pf_list = find_dup_pf_inst @@ Analysis.FISet.elements pub_fn_set in*)
   emit_common_typedefs out_channel;
   begin
     if !Env.gcc_mode then begin
@@ -715,15 +774,11 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set =
     ) t_list;
   Buffer.output_buffer out_channel type_buffer;
   Buffer.reset type_buffer;
+
+  let statics = stopo_sort (build_static_deps statics) [] in
+  emit_statics out_channel statics;
+
   emit_fsigs out_channel f_list;
   let fn_buffer = Buffer.create 1000 in
   List.iter (emit_fn_def out_channel fn_buffer) f_list;
-  (*
-  Buffer.clear fn_buffer;
-  if Env.EnvMap.mem Env.fn_env "crust_init" then
-    let driver_emit = new DriverEmit.driver_emission fn_buffer pt_list in
-    driver_emit#emit_driver pf_list;
-    Buffer.output_buffer out_channel fn_buffer
-  else ();
-*)
   print_newline ()

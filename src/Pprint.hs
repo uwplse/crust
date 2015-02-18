@@ -202,6 +202,10 @@ ppStmt (SLet pat@(Pattern ty _) (Just expr)) = line $ do
     tell ";"
 
 ppConstDef (ConstDef name ty expr) = line $ do
+    spaceSep [tell "const", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
+    tell ";"
+
+ppStaticDef (StaticDef name ty expr) = line $ do
     spaceSep [tell "static", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
     tell ";"
 
@@ -213,6 +217,7 @@ ppItem (IAbstractFn f) = ppAbstractFnDef f
 ppItem (IExternFn f) = ppExternFnDef f
 ppItem (IAbstractType t) = ppAbstractTypeDef t
 ppItem (IAssociatedType t) = ppAssociatedTypeDef t
+ppItem (IStatic t) = ppStaticDef t
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m
 
 runPp :: (ReaderT Int (Writer String) ()) -> String

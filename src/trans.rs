@@ -646,6 +646,8 @@ impl Trans for Expr {
                                         .identifier.as_str()),
                         DefStruct(did) =>
                             format!("struct_literal 0"),
+                        DefStatic(did, _) =>
+                            format!("var {}", mangled_def_name(trcx, did)),
                         d => format!("const {}",
                                      mangled_def_name(trcx, d.def_id())),
                     }
@@ -1076,6 +1078,10 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 }
                 result
 
+            },
+            ItemStatic(ref ty, _, ref ex) => {
+                let mangled_name = mangled_def_name(trcx, local_def(self.id));
+                format!("static {} {} {}", mangled_name, ty.trans(trcx), ex.trans(trcx))
             },
             _ => format!(""),
         }

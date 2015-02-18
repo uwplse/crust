@@ -28,5 +28,6 @@ let do_it f =
     w_state.Analysis.public_fn
     w_state.Analysis.type_inst
     w_state.Analysis.fn_inst
+    w_state.Analysis.static_var
 
 let _ = do_it Sys.argv.(1)
