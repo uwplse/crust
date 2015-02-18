@@ -26,9 +26,11 @@ mod alloc {
 }
 */
 
+/*
 fn crust_abort() -> ! {
     unsafe { core::intrinsics::abort() };
 }
+*/
 
 
 struct Array<T> {

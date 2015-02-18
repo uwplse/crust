@@ -318,8 +318,6 @@ desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
         modify (+1)
         return $ base ++ show cur
 
-data RefState = InRef | TopLevel
-
 scrub items = scrubbed'
   where
     ix = mkIndex items
@@ -333,22 +331,16 @@ scrub items = scrubbed'
             else scrubbed
 
     isValid item =
-      (everythingWithContext TopLevel (&&) ((\s -> (True,s)) `mkQ` goTy) item)
-      && (everything (&&) (True `mkQ` goExpr) item)
+      (everything (&&) (True `mkQ` goTy (itemName item)) item)
+      && (everything (&&) (True `mkQ` goExpr (itemName item)) item)
 
-    goTy (TAdt name _ _) f = (name `M.member` i_types ix,f)
-    goTy (TRef l r TStr) _ = (True,InRef)
-    goTy (TRef l r (TVec t)) _ = (True,InRef)
-    goTy (TVec _) TopLevel = (False,TopLevel)
-    goTy (TVec _) InRef = (True,InRef)
-    goTy TStr TopLevel = (False,TopLevel)
-    goTy TStr InRef = (True,InRef)
-    goTy (TFixedVec _ _) f = (False,f)
-    goTy e f = (True,f)
+    goTy loc (TAdt name _ _) = name `M.member` i_types ix || traceShow ("discard", loc, "missing type", name) False
+    goTy loc (TFixedVec _ _) = traceShow ("discard", loc, "used fixedvec") False
+    goTy loc e = True
 
-    goExpr (ECall name _ _ _) = name `M.member` i_fns ix
-    goExpr (EConst name) = name `M.member` i_consts ix
-    goExpr _ = True
+    goExpr loc (ECall name _ _ _) = name `M.member` i_fns ix || traceShow ("discard", loc, "missing", name) False
+    goExpr loc (EConst name) = name `M.member` i_consts ix || traceShow ("discard", loc, "missing", name) False
+    goExpr _ _ = True
 
 
 mkCast e t = Expr t (ECast e t)

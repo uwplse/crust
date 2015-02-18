@@ -196,3 +196,16 @@ getFieldTy (StructDef structName _ _ fs _) n = case candidates of
 adtName ty = case ty of
     TAdt name _ _ -> name
     t -> error $ "expected self to be TAdt, not " ++ show t
+
+
+itemName (IStruct (StructDef name _ _ _ _)) = name
+itemName (IEnum (EnumDef name _ _ _ _)) = name
+itemName (IConst (ConstDef name _ _)) = name
+itemName (IFn (FnDef name _ _ _ _ _ _)) = name
+itemName (IAbstractFn (AbstractFnDef name _ _ _ _)) = name
+itemName (IExternFn (ExternFnDef _ name _ _ _ _)) = name
+itemName (IAbstractType (AbstractTypeDef name _ _)) = name
+itemName (IAssociatedType (AssociatedTypeDef _ _ (ImplClause name lps tps) _)) =
+    "<associated type: " ++ name ++ " " ++ show tps ++ ">"
+itemName (IStatic (StaticDef name _ _)) = name
+itemName (IMeta s) = "<metadata item: " ++ s ++ ">"
