@@ -452,20 +452,6 @@ let simple_type_repr t =
   | `Float i -> if i = 32 then "float" else if i = 64 then "double" else assert false
   | `Char -> "uint32_t"
 
-(*
-type c_types' = c_types
-
-module DriverEmit = Driver.DriverF(struct
-    type c_types = c_types'
-    let adt_type_name = adt_type_name
-    let mangle_fn_name = mangle_fn_name
-    let int_sizes = int_sizes
-    let type_to_string = type_to_string
-    let simple_type_repr = simple_type_repr
-    let to_monomorph_c_type = to_monomorph_c_type
-end)
-*)
-
 let simplified_ir = Hashtbl.create 10;;
 
 let memo_get_simple_ir fn_name f_def = 
@@ -612,21 +598,6 @@ let rec uniq_list = function
   | h::t ->
     h::(uniq_list t)
 
-(*
-let find_dup_pf_inst insts = 
-  let simple_inst =
-    List.map (fun (n,m_args) ->
-        (* XXX(jtoman): awful awful awful, move this somewhere else!!! *)
-        let fn_def = Env.EnvMap.find Env.fn_env n in
-        let mono_args = List.map (TypeUtil.to_monomorph @@ Types.type_binding fn_def.Ir.fn_tparams m_args) @@ List.map snd fn_def.Ir.fn_args in
-        let move_info = Analysis.move_analysis mono_args in
-        (n,(List.map c_type_of_monomorph m_args),move_info)
-      ) insts
-  in
-  List.sort Pervasives.compare simple_inst
-  |> uniq_list
-*)
-
 let find_dup_ty_inst =
   let make_dst_inst mut wrapped = 
   if mut then
@@ -738,43 +709,31 @@ let build_static_deps =
         SMap.add s_name (dep_of_static s_name) accum
       ) static_set SMap.empty
 
-(* a lot of duplication here :( *)
+module TopoSort(M : Map.S) = functor(S: Set.S with type elt = M.key) -> struct
+  let rec topo_sort dep_map accum = 
+    let (dep_met,has_dep) = M.partition (fun _ deps ->
+        S.is_empty deps
+      ) dep_map
+    in
+    if M.cardinal dep_met = 0 &&
+       M.cardinal has_dep = 0 then
+      List.rev accum
+    else if M.cardinal dep_met = 0 then
+      failwith "Static dependency cycle!"
+    else begin
+      let (accum,dep_met_s) = M.fold (fun key _ (accum,dms) ->
+        key::accum,S.add key dms
+      ) dep_met (accum,S.empty) in
+      let dep_map' = M.map (fun deps -> S.diff deps dep_met_s) has_dep in
+      topo_sort dep_map' accum
+    end
+end
 
-let rec stopo_sort dep_map accum = 
-  let (dep_met,has_dep) = SMap.partition (fun _ deps ->
-      SSet.is_empty deps
-    ) dep_map
-  in
-  if SMap.cardinal dep_met = 0 &&
-     SMap.cardinal has_dep = 0 then
-    List.rev accum
-  else if SMap.cardinal dep_met = 0 then
-    failwith "Static dependency cycle!"
-  else begin
-    let (accum,dep_met_s) = SMap.fold (fun static _ (accum,dms) ->
-        static::accum,SSet.add static dms
-      ) dep_met (accum,SSet.empty) in
-    let dep_map' = SMap.map (fun deps -> SSet.diff deps dep_met_s) has_dep in
-    stopo_sort dep_map' accum
-  end
+module STopo = TopoSort(SMap)(SSet)
+let stopo_sort = STopo.topo_sort
 
-let rec topo_sort dep_map accum = 
-  let (dep_met,has_dep) = CIMap.partition (fun _ deps ->
-      CISet.is_empty deps
-    ) dep_map
-  in
-  if CIMap.cardinal dep_met = 0 &&
-     CIMap.cardinal has_dep = 0 then
-    List.rev accum
-  else if CIMap.cardinal dep_met = 0 then
-    failwith "Type dependency cycle!"
-  else begin
-    let (accum,dep_met_s) = CIMap.fold (fun i _ (accum,dms) ->
-        i::accum,CISet.add i dms
-      ) dep_met (accum,CISet.empty) in
-    let dep_map' = CIMap.map (fun deps -> CISet.diff deps dep_met_s) has_dep in
-    topo_sort dep_map' accum
-  end
+module TTopo = TopoSort(CIMap)(CISet)
+let topo_sort = TTopo.topo_sort
 
 let order_types t_list =
   let d_map = List.fold_left build_dep_map CIMap.empty t_list in
