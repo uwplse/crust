@@ -33,7 +33,7 @@
  * https://www.securecoding.cert.org/confluence/display/seccode/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow?showComments=false
  */
 
-#define __crust_intr_op(pref, width, op_name) core_intrinsics_##pref##width##_##op_name##_with_overflow
+#define __crust_intr_op(pref, width, op_name) core$intrinsics$##pref##width##_##op_name##_with_overflow
 
 #define __crust_sub_op(pref, width) __crust_intr_op(pref, width, sub)
 #define __crust_add_op(pref, width) __crust_intr_op(pref, width, add)

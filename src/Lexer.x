@@ -9,7 +9,7 @@ import Data.Data
 %wrapper "posn"
 
 $digit = [0-9]
-$word = [a-zA-Z0-9_]
+$word = [a-zA-Z0-9_\$]
 
 tokens :-
  

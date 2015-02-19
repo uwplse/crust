@@ -55,7 +55,7 @@ let arith_intrinsics = List.flatten
   @@ List.map (fun size ->
       List.map (fun (i_name, macro_name) ->
           List.map (fun (i_pref, macro_prefix) ->
-              let f_name = Printf.sprintf "core_intrinsics_%s%d_%s_with_overflow" i_pref size i_name in
+              let f_name = Printf.sprintf "core$intrinsics$%s%d_%s_with_overflow" i_pref size i_name in
               {
                 i_name = f_name;
                 i_params = [];
@@ -67,77 +67,77 @@ let arith_intrinsics = List.flatten
 
 let i_list = arith_intrinsics @ [
   {
-    i_name = "core_intrinsics_set_memory";
+    i_name = "core$intrinsics$set_memory";
     i_params = [ "t1" ];
     i_body = Inline "memset({arg1}, {arg2}, sizeof({t1}) * {arg3})"
   };
   {
-    i_name = "core_intrinsics_transmute";
+    i_name = "core$intrinsics$transmute";
     i_params = [ "t1"; "u1" ];
     i_body = Inline "(*(({u1}*)&{arg1}))"
   };
   {
-    i_name = "core_intrinsics_size_of";
+    i_name = "core$intrinsics$size_of";
     i_params = [ "t1" ];
     i_body = Inline "(sizeof({t1}))"
   };
   {
-    i_name = "core_intrinsics_uninit";
+    i_name = "core$intrinsics$uninit";
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; return to_ret; }"
   };
 (*  {
-    i_name = "core_intrinsics_offset";
+    i_name = "core$intrinsics$offset";
     i_params = ["t1"];
     i_body = Inline "(({t1}*)(((size_t){arg1}) + {arg2}))"
   }; *)
   {
-    i_name = "core_intrinsics_offset";
+    i_name = "core$intrinsics$offset";
     i_params = ["t1"];
     i_body = Inline "({arg1} + {arg2})"
   };
   {
-    i_name = "core_intrinsics_abort";
+    i_name = "core$intrinsics$abort";
     i_params = [];
     i_body = Inline "(__CPROVER_assume(0),0)"
   };
   {
-    i_name = "core_intrinsics_move_val_init";
+    i_name = "core$intrinsics$move_val_init";
     i_params = ["t1"];
     i_body = Inline "memcpy({arg1}, &{arg2}, sizeof({t1}))"
   };
   {
-    i_name = "core_intrinsics_init";
+    i_name = "core$intrinsics$init";
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; memset(&to_ret, 0, sizeof({t1})); return to_ret; }"
   };
   {
-    i_name = "core_intrinsics_forget";
+    i_name = "core$intrinsics$forget";
     i_params = [""];
     i_body = Nop
   };
   {
-    i_name = "core_intrinsics_copy_memory";
+    i_name = "core$intrinsics$copy_memory";
     i_params = [ "t1" ];
     i_body = Inline "memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))";
   };
   {
-    i_name = "core_intrinsics_copy_nonoverlapping_memory";
+    i_name = "core$intrinsics$copy_nonoverlapping_memory";
     i_params = [ "t1" ];
     i_body = Inline "memcpy({arg1}, {arg2}, {arg3} * sizeof({t1}))"
   };
   {
-    i_name = "alloc_heap_allocate";
+    i_name = "alloc$heap$allocate";
     i_params = [];
     i_body = Inline "((char*)malloc({arg1}))"
   };
   {
-    i_name = "alloc_heap_deallocate";
+    i_name = "alloc$heap$deallocate";
     i_params = [];
     i_body = Inline "(free({arg1}),0)"
   };
   {
-    i_name = "alloc_heap_reallocate";
+    i_name = "alloc$heap$reallocate";
     i_params = [];
     i_body = Inline "((char*)realloc({arg1}, {arg3}))"
   };
@@ -145,36 +145,36 @@ let i_list = arith_intrinsics @ [
      and alignment doesn't/shouldn't matter in symbolically executed code
   *)
   {
-    i_name = "core_intrinsics_pref_align_of";
+    i_name = "core$intrinsics$pref_align_of";
     i_params = [ "_" ];
     i_body = Inline "((size_t)1)"
   };
-  { i_name = "core_intrinsics_min_align_of";
+  { i_name = "core$intrinsics$min_align_of";
     i_params = [ "_" ];
     i_body = Inline "((size_t)1)"
   };
 (*  {
-    i_name = "core_intrinsics_bswap16";
+    i_name = "core$intrinsics$bswap16";
     i_params = [ "_" ];
     i_body = Inline "((uint16_t)__builtin_bswap16((int16_t){arg1}, (int16_t){arg2}))"
   };
   {
-    i_name = "core_intrinsics_bswap32";
+    i_name = "core$intrinsics$bswap32";
     i_params = [ "_" ];
     i_body = Inline "((uint32_t)__builtin_bswap32((int32_t){arg1}, (int32_t){arg2}))"
   };
   {
-    i_name = "core_intrinsics_bswap64";
+    i_name = "core$intrinsics$bswap64";
     i_params = [ "_" ];
     i_body = Inline "((uint64_t)__builtin_bswap64((int64_t){arg1}, (int64_t){arg2}))"
   };
   {
-    i_name = "core_intrinsics_powif32";
+    i_name = "core$intrinsics$powif32";
     i_params = [ "_" ];
     i_body = Inline "(__builtin_powfi({arg1}, {arg2}))"
   };
   {
-    i_name = "core_intrinsics_powif64";
+    i_name = "core$intrinsics$powif64";
     i_params = [ "_" ];
     i_body = Inline "(__builtin_powi({arg1}, {arg2}))"
   };
@@ -184,7 +184,7 @@ let i_list = arith_intrinsics @ [
     i_body = Inline "(fmodf({arg1}, {arg2}))"
   };
   {
-    i_name = "core_ops_f64__Rem_rem_fmod";
+    i_name = "core$ops$f64__Rem_rem_fmod";
     i_params = [ "_" ];
     i_body = Inline "(fmod({arg1}, {arg2}))"
   };*)
