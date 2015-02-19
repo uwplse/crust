@@ -1302,27 +1302,17 @@ fn trans_impl_clause(trcx: &mut TransCtxt,
                      name: String,
                      self_ty: String) -> String {
     let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
-    let mut tys = vec![];
-    let mut lifes = vec![];
-    match last_seg.parameters {
-        AngleBracketedParameters(ref params) => {
-            for life in params.lifetimes.iter() {
-                lifes.push(life.trans(trcx));
-            }
-            for ty in params.types.iter() {
-                tys.push(ty.trans(trcx));
-            }
-        },
+    let substs = match last_seg.parameters {
+        AngleBracketedParameters(ref params) =>
+            trcx.tcx.trait_refs.borrow()[trait_ref.ref_id].substs.trans(trcx),
         ParenthesizedParameters(_) =>
             panic!("unsupported ParenthesizedParameters"),
-    }
-    tys.push(self_ty.trans(trcx));
+    };
 
-    format!("{}_{} {} {}",
+    format!("{}_{} {}",
             mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
             name.trans(trcx),
-            lifes.trans(trcx),
-            tys.trans(trcx))
+            substs)
 }
 
 fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
