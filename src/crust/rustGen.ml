@@ -325,6 +325,17 @@ and do_gen_immut const_fn_set seq_len state index path f =
     | None -> ()
   end
 
+let prelude = [
+  "#![crate_type = \"lib\"]";
+  "#![no_std]";
+  "#![feature(unsafe_destructor)]";
+  "extern crate core;";
+  "extern crate alloc;"
+]
+
+let output_standard_header out_channel = 
+  List.iter (Printf.fprintf out_channel "%s\n") prelude
+
 let gen_call_seq out_channel fi_set = 
   let (mut_fn_set,const_fn_set) = Analysis.FISet.partition mut_analysis fi_set in
   let mut_fn_arr = Array.of_list @@ (drop_fn,[])::Analysis.FISet.elements mut_fn_set in
@@ -335,4 +346,5 @@ let gen_call_seq out_channel fi_set =
   } 0 [] (gen_call out_channel)
 
 let gen_driver out_channel pt_set pf_set = 
+  output_standard_header out_channel;
   gen_call_seq out_channel pf_set
