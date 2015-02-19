@@ -56,11 +56,6 @@ pub struct Abstract {
     x: uint,
 }
 
-pub fn crust_abort() -> ! {
-    unsafe { core::intrinsics::abort() }
-}
-
-
 
 pub struct Cell<T> {
     value: UnsafeCell<T>,
