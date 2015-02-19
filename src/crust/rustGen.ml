@@ -57,7 +57,7 @@ type ty_state = {
 }
 
 type action_call = 
-  | Open_Block of string * string * (method_arg list)
+  | Open_Block of string * Types.mono_type * string * (method_arg list)
   | Close_Block
 
 class rust_pp buf = object(self)
@@ -136,16 +136,16 @@ class rust_pp buf = object(self)
       self#concretize_aux (self#update_drop state) accum (Close_Block::cc) t
     | ((fn,m_args) as inst)::t ->
       let (arg_types,ret_type) = memo_get_fn_types inst in
-      let (call_combinations : method_arg list list) = self#get_args state arg_types in
+      let call_combinations = self#get_args state arg_types in
       let out_var = self#next_var in
       List.fold_left (fun accum c_args ->
-          self#concretize_aux (self#update_call state ret_type out_var) accum ((Open_Block (out_var,fn,c_args))::cc) t
+          self#concretize_aux (self#update_call state ret_type out_var) accum ((Open_Block (out_var,ret_type,fn,c_args))::cc) t
         ) accum call_combinations
 
   method private get_args state arg_types = 
     self#get_args_aux [] [] state arg_types
 
-  method private get_args_aux (t_accum : method_arg list list) (a_accum : method_arg list) state arg_types =
+  method private get_args_aux t_accum a_accum state arg_types =
     match arg_types with
     | [] -> (List.rev a_accum)::t_accum
     | h::t -> 
