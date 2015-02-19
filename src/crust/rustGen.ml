@@ -204,7 +204,11 @@ class rust_pp buf = object(self)
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
-    self#put_all [ "let ("; (String.concat ", " init_vars); ") = crust_init();" ];
+    match init_vars with
+    | [] -> ()
+    | [v] -> self#put_all [ "let ("; v; ",) = crust_init();" ]
+    | t -> self#put_all [ "let ("; (String.concat ", " init_vars); ") = crust_init();" ]
+      ;
     self#newline ();
     let open_blocks = List.fold_left (fun accum b ->
         match b with
