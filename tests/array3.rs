@@ -10,14 +10,14 @@ use core::ptr::{PtrExt, MutPtrExt};
 use core::ptr;
 
 
-struct Vec<T> {
+pub struct Vec<T> {
     ptr: *mut T,
     len: usize,
     cap: usize,
 }
 
 impl<T: Copy> Vec<T> {
-    fn with_capacity(cap: usize) -> Vec<T> {
+    pub fn with_capacity(cap: usize) -> Vec<T> {
         // BUG: forgetting to multiply by size_of::<T> allows out-of-bounds access
         let size = cap * core::mem::size_of::<T>();
         let align = core::mem::align_of::<T>();
@@ -29,7 +29,7 @@ impl<T: Copy> Vec<T> {
         }
     }
 
-    fn grow(&mut self) {
+    pub fn grow(&mut self) {
         let new_cap = self.cap * 2;
         let new_size = new_cap * core::mem::size_of::<T>();
         let align = core::mem::align_of::<T>();
@@ -41,7 +41,7 @@ impl<T: Copy> Vec<T> {
         self.ptr = new_ptr;
     }
 
-    fn push(&mut self, val: T) {
+    pub fn push(&mut self, val: T) {
         if (self.len == self.cap) {
             self.grow();
             // BUG: without this assert, staring with capacity 0 will lead to memory errors
@@ -56,7 +56,7 @@ impl<T: Copy> Vec<T> {
         }
     }
 
-    fn pop(&mut self) -> Option<T> {
+    pub fn pop(&mut self) -> Option<T> {
         if (self.len == 0) {
             return None;
         }
@@ -69,7 +69,7 @@ impl<T: Copy> Vec<T> {
         }
     }
 
-    fn get(&self, i : u32) -> T {
+    pub fn get(&self, i : u32) -> T {
         if((i as usize)  >= self.len) {
             panic!("out of bounds!");
         }
@@ -112,4 +112,4 @@ impl<T> Drop for Vec<T> {
     }
 }
 
-fn crust_init() -> (Vec<u8>,) { (Vec::with_capacity(2),/*Vec::with_capacity(2)*/) }
+pub fn crust_init() -> (Vec<u8>,Vec<u8>) { (Vec::with_capacity(2),Vec::with_capacity(2)) }
