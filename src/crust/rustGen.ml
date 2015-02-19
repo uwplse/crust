@@ -60,6 +60,46 @@ type action_call =
   | Open_Block of string * Types.mono_type * string * (method_arg list)
   | Close_Block
 
+module UnionFind = struct
+  (* a very stupid union find implementation  
+   * that doesn't use the height optimization
+  *)
+
+  type 'a t = ('a,'a) Hashtbl.t
+
+  let add_element uf a = Hashtbl.add uf a a
+
+  let ensure_add uf a = 
+    if Hashtbl.mem uf a then () else add_element uf a
+
+  let find uf a =
+    let rec find_loop a = 
+      let r = Hashtbl.find uf a in
+      if r = a then r else find_loop r
+    in
+    find_loop a
+
+  let union uf a b =
+    ensure_add uf a;
+    ensure_add uf b;
+    let a_rep = find uf a in
+    let b_rep = find uf b in
+    if a_rep = b_rep then
+      ()
+    else
+      Hashtbl.replace uf b_rep a_rep
+
+  let create () = Hashtbl.create 10
+  
+  (*let all_congruence uf = 
+    let representatives = Hashtbl.fold (fun k v accum ->
+        if k = v then
+          k::accum
+        else accum
+      ) uf [] in
+    List.length representatives = 1*)
+end
+
 class rust_pp buf = object(self)
   inherit Emit.emitter buf
   val mutable var_counter = 0
@@ -67,9 +107,11 @@ class rust_pp buf = object(self)
   method emit_sequence sequence =
     var_counter <- 0;
     let init_vars,concrete_call_seqs = self#concretize sequence in
+    let interfering_calls = List.filter self#compute_interference concrete_call_seqs in
+    let ic_nosym = self#break_symmetry interfering_calls in
     List.iter (fun cc_seq ->
         self#emit_cc_sequence init_vars cc_seq
-    ) concrete_call_seqs
+    ) ic_nosym
 
   method private init_state = 
     let init_vars = List.map (fun ty ->
@@ -255,6 +297,77 @@ class rust_pp buf = object(self)
         self#put_many ", " self#emit_arg tl;
         self#put ")"
       end
+
+  method private compute_interference cc_seq = 
+    let ref_vars = self#walk_call_seq SSet.add SSet.empty cc_seq in
+    (* now compute the congruence closure *)
+    let uf = UnionFind.create () in
+    SSet.iter (fun v ->
+        UnionFind.add_element uf v
+      ) ref_vars;
+    List.iter (function 
+        | Close_Block -> ()
+        | Open_Block (v,_,_,l) ->
+          let ref_vars = self#walk_args SSet.add SSet.empty l in
+          let to_union = v in
+          SSet.iter (fun elem ->
+              UnionFind.union uf elem to_union
+            ) ref_vars
+      ) cc_seq;
+    (* now ensure that all referenced variables are in the same congruence class *)
+    let rep_vars = SSet.fold (fun elem accum ->
+        SSet.add (UnionFind.find uf elem) accum
+      ) ref_vars SSet.empty in
+    SSet.cardinal rep_vars = 1
+
+  method private walk_call_seq :
+    'a.(string -> 'a -> 'a) -> 'a -> action_call list -> 'a = fun f accum cc_seq ->
+    match cc_seq with
+    | Close_Block::t -> self#walk_call_seq f accum t
+    | Open_Block (_,_,_,l)::t -> self#walk_call_seq f (self#walk_args f accum l) t
+    | [] -> accum
+
+  method private walk_args :
+    'a.(string -> 'a -> 'a) -> 'a -> method_arg list -> 'a =
+    fun f accum m_list ->
+    List.fold_left (fun accum l ->
+        match l with
+        | Primitive _ -> accum
+        | Var v
+        | Var_ref v 
+        | Var_mut_ref v -> f v accum
+        | Tuple tl -> self#walk_args f accum tl
+      ) accum m_list
+
+  method private is_symmetric vc1 vc2 =
+    let rec is_symmetric_loop sym_map s1 s2 =
+      match s1,s2 with
+      | (h1::t1),(h2::t2) -> 
+        if SMap.mem h1 sym_map then
+          if (SMap.find h1 sym_map) = h2 then
+            is_symmetric_loop sym_map t1 t2
+          else
+            false
+        else
+          is_symmetric_loop (SMap.add h1 h2 sym_map) t1 t2
+      | [],[] -> true
+      | _,_ -> assert false
+    in
+    is_symmetric_loop SMap.empty vc1 vc2
+
+  method private break_symmetry cc_seqs =
+    let cc_vc = List.map (fun cc ->
+        cc,List.rev @@ self#walk_call_seq (fun v l -> v::l) [] cc
+      ) cc_seqs in
+    let rec break_loop l = match l with
+      | [] -> []
+      | (cc,var_choice)::t ->
+        let t' = List.filter (fun (_,var_choice') ->
+            not @@ self#is_symmetric var_choice var_choice'
+          ) t in
+        cc::(break_loop t')
+    in
+    break_loop cc_vc
 end
 
 (* (not a) stub! *)
