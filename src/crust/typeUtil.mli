@@ -26,3 +26,11 @@ val get_inst : MTSet.t -> Types.type_param list -> Types.r_type list -> inst_res
 val is_inst : Types.mono_type list -> Types.r_type list -> inst_result
 
 val is_move_type : Types.mono_type -> bool
+
+val handle_dst : 
+  (bool ->'a -> 'b) -> (bool -> 'b) -> ('a -> 'b) ->
+  ([> `Ptr of [> `Str | `Vec of 'a ]
+   | `Ptr_Mut of [> `Str | `Vec of 'a ]
+   | `Ref of Types.lifetime * [> `Str | `Vec of 'a ]
+   | `Ref_Mut of Types.lifetime * [> `Str | `Vec of 'a ] ] as 'a) -> 
+  'b

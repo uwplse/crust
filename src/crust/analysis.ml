@@ -172,7 +172,7 @@ let rec walk_type : walk_state -> Types.mono_type -> walk_state =
       raise TypeUtil.StrayDST
   in
   fun w_state ->
-    Dst.handle_dst (fun mut t ->
+    TypeUtil.handle_dst (fun mut t ->
         walk_rec_inst w_state (`Vec mut,[t]) t
       )
       (fun mut -> add_type_instance w_state (`String mut,[]))

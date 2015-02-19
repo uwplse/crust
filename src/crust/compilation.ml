@@ -102,7 +102,7 @@ let string_of_unop : Ir.un_op -> string = function
   | `UnDeref -> "*"
 
 let rec c_type_of_monomorph mono_type = 
-  Dst.handle_dst 
+  TypeUtil.handle_dst 
     (fun mut t -> 
        if mut then
          `Tuple [`Ptr_Mut (c_type_of_monomorph t); `UInt 32]
