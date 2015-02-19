@@ -709,7 +709,7 @@ let build_static_deps =
         SMap.add s_name (dep_of_static s_name) accum
       ) static_set SMap.empty
 
-module TopoSort(M : Map.S) = functor(S: Set.S with type elt = M.key) -> struct
+module TopoSort(M : Map.S)(S: Set.S with type elt = M.key) = struct
   let rec topo_sort dep_map accum = 
     let (dep_met,has_dep) = M.partition (fun _ deps ->
         S.is_empty deps
@@ -719,7 +719,7 @@ module TopoSort(M : Map.S) = functor(S: Set.S with type elt = M.key) -> struct
        M.cardinal has_dep = 0 then
       List.rev accum
     else if M.cardinal dep_met = 0 then
-      failwith "Static dependency cycle!"
+      failwith "dependency cycle!"
     else begin
       let (accum,dep_met_s) = M.fold (fun key _ (accum,dms) ->
         key::accum,S.add key dms

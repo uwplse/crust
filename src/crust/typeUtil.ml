@@ -196,8 +196,8 @@ class type_matcher = object(self)
       `Adt_type { a with Types.type_param = mono_params }
     | `T_Var t_var -> List.assoc t_var t_binding
     | #Types.simple_type as st -> st 
-    | `Ref (l,t') -> `Ref (l,(self#to_monomorph t_binding t'))
-    | `Ref_Mut (l, t') -> `Ref_Mut (l,(self#to_monomorph t_binding t'))
+    | `Ref (_,t') -> `Ref ("_dummy_",(self#to_monomorph t_binding t'))
+    | `Ref_Mut (_, t') -> `Ref_Mut ("_dummy_",(self#to_monomorph t_binding t'))
     | `Ptr_Mut t' -> `Ptr_Mut (self#to_monomorph t_binding t')
     | `Ptr t' -> `Ptr (self#to_monomorph t_binding t')
     | `Bottom -> `Bottom

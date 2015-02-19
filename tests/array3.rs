@@ -9,10 +9,6 @@ use core::prelude::{Copy, Drop};
 use core::ptr::{PtrExt, MutPtrExt};
 use core::ptr;
 
-fn crust_abort() -> ! {
-    unsafe { core::intrinsics::abort() };
-}
-
 
 struct Vec<T> {
     ptr: *mut T,
@@ -73,6 +69,17 @@ impl<T: Copy> Vec<T> {
         }
     }
 
+    fn get(&self, i : u32) -> T {
+        if((i as usize)  >= self.len) {
+            panic!("out of bounds!");
+        }
+        unsafe {
+            let ptr = self.ptr.offset(i as isize);
+            let val = ptr::read(ptr);
+            val
+        }
+    }
+
     /*
     // BUG: removing 'a from self allows inappropriate aliasing (with get_mut)
     fn get<'a>(&'a self, index: usize) -> &'a T {
@@ -105,4 +112,4 @@ impl<T> Drop for Vec<T> {
     }
 }
 
-fn crust_init() -> (Vec<u8>,) { (Vec::with_capacity(2),) }
+fn crust_init() -> (Vec<u8>,) { (Vec::with_capacity(2),/*Vec::with_capacity(2)*/) }
