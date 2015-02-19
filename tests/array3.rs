@@ -46,7 +46,7 @@ impl<T: Copy> Vec<T> {
             self.grow();
             // BUG: without this assert, staring with capacity 0 will lead to memory errors
             if (self.len == self.cap) {
-                crust_abort();
+                panic!();
             }
         }
         unsafe {
