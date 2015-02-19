@@ -232,8 +232,8 @@ desugarIndex ix = everywhereWithLocation (\loc -> mkT $ go loc)
         deref (call methodName [] [typeOf idx, typeOf arr] [arrRef, idxRef])
       where
         (mutbl, methodName) = case loc of
-            LvalueMut -> (MMut, "core_ops_IndexMut_index_mut")
-            _ -> (MImm, "core_ops_Index_index")
+            LvalueMut -> (MMut, "core$ops$IndexMut$index_mut")
+            _ -> (MImm, "core$ops$Index$index")
     go loc e = e
 
 desugarRange = everywhere (mkT go)
