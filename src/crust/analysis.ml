@@ -101,6 +101,20 @@ let find_constructors () =
       else accum
     ) Env.fn_env accum
 
+let rec is_primitive t = 
+  match t with
+  | #Types.simple_type -> true
+  | `Tuple _ -> false
+  | `Bottom -> false
+  | `Str
+  | `Fixed_Vec _
+  | `Adt_type _
+  | `Vec _ -> false
+  | `Ptr t
+  | `Ptr_Mut t
+  | `Ref_Mut (_,t)
+  | `Ref (_,t) -> is_primitive t
+
 let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
   fun abstract_name param_args ->
@@ -125,7 +139,7 @@ let resolve_abstract_fn =
     raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
   | l -> 
     (* ugly hack *)
-    let all_prim = List.for_all (fun x -> match x with | #Types.simple_type -> true | _ -> false) param_args in
+    let all_prim = List.for_all is_primitive param_args in
     if all_prim then List.hd l else
       let inst_dump = String.concat "/" @@ List.map snd possible_insts in
       let fail_args = arg_str param_args in
@@ -300,7 +314,6 @@ and walk_fn w_state fn_name m_args  =
     | _ -> failwith "Invalid type arity of drop_glue"
   else walk_fn_def w_state (Env.EnvMap.find Env.fn_env fn_name) m_args
 and walk_fn_def w_state fn_def m_args = 
-(*  prerr_endline @@ "walking :" ^ fn_def.Ir.fn_name;*)
   let f_inst = fn_def.fn_name,m_args in
   if FISet.mem f_inst w_state.fn_inst then
     w_state
@@ -343,7 +356,7 @@ let walk_public_fn fn_def f_state m_args =
       let w_state' = walk_fn_def w_state fn_def m_args in
       { f_state with w_state = w_state' }
     with 
-    | ResolutionFailed _ -> { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
+    | ResolutionFailed e -> (*prerr_endline ("Method resolution failed: " ^ e); *) { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
     | TypeUtil.TyResolutionFailed -> {
         f_state with fail_inst = FISet.add f_inst f_state.fail_inst
       }
@@ -352,13 +365,6 @@ let get_inst t_set fn_def =
     let arg_types = List.map snd fn_def.Ir.fn_args in
     match TypeUtil.get_inst t_set fn_def.Ir.fn_tparams arg_types with
     | `Inst t_bindings -> 
-(*      prerr_endline @@  "found instantiation for " ^ fn_def.Ir.fn_name;
-      List.iter (fun t_binding ->
-          let to_print = "{ " ^ (String.concat ", " @@ List.map (fun (t_name,t) ->
-              t_name ^ " -> " ^ (Types.pp_t (t : Types.mono_type :> Types.r_type))
-                ) t_binding) ^ "}" in
-          prerr_endline to_print
-        ) t_bindings;*)
       Some (List.map (fun t_binding ->
           List.map (t_binding |> rev_app List.assoc) fn_def.Ir.fn_tparams
         ) t_bindings)
