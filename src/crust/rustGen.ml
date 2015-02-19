@@ -200,6 +200,17 @@ class rust_pp buf = object(self)
     var_counter <- var_counter + 1;
     to_ret
 
+  val replace_regex = Str.regexp_string "$"
+
+  method private rust_name fn_name =
+    let fn_def = Env.EnvMap.find Env.fn_env fn_name in
+    let to_transmute =
+      match fn_def.Ir.fn_impl with
+      | None -> fn_name
+      | Some i -> i.Ir.abstract_name
+    in
+    Str.global_replace replace_regex "::" to_transmute
+
   method private emit_cc_sequence init_vars cc_sequence = 
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
@@ -214,9 +225,10 @@ class rust_pp buf = object(self)
         match b with
         | Close_Block -> 
           (self#close_block(); self#newline (); (pred accum))
-        | Open_Block (v,fn,args) -> begin
+        | Open_Block (v,_,fn,args) -> begin
+            let rust_name = self#rust_name fn in
             self#open_block ();
-            self#put_all [ "let "; v ; " = "; fn; "(" ];
+            self#put_all [ "let mut "; v ; " = "; rust_name; "(" ];
             self#put_many ", " self#emit_arg args;
             self#put_all [ ");" ];
             self#newline ();
