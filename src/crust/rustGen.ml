@@ -370,16 +370,61 @@ class rust_pp buf = object(self)
     break_loop cc_vc
 end
 
+let rec has_drop ty = match ty with
+  | #Types.simple_type -> false
+  | `Tuple tl -> List.exists has_drop tl
+  | `Vec _ -> false
+  | `Str -> false
+  | `Fixed_Vec (_,t) -> has_drop t
+  | `Bottom 
+  | `Ref _
+  | `Ref_Mut _ 
+  | `Ptr _
+  | `Ptr_Mut _ -> false
+  | `Adt_type a -> match (Env.get_adt_drop a.Types.type_name) with
+    | Some _ -> true
+    | None -> false
+                  
+  
+
+let filter_drop call_seq = 
+  let (dropped_types,_) =
+    List.fold_left (fun (dropped_types,type_stack) ((fn_name,args) as inst) -> 
+      if fn_name = drop_fn then
+        match type_stack with
+        | h::t -> (h::dropped_types,t)
+        | _ -> assert false
+      else
+        let (_,ret_type) = memo_get_fn_types inst in
+        (dropped_types,ret_type::type_stack)
+    ) ([],[]) call_seq in
+  match dropped_types with 
+  | [] -> true
+  | _ -> 
+    (*let a = *)
+    List.exists has_drop dropped_types
+    (*in
+    Printf.fprintf stdout "// RESULT -> %b\n" a;
+    if a then begin
+      Printf.fprintf stdout "// drop judgment: ";
+      List.iter (fun ty ->
+          Printf.fprintf stdout "%s -> %b, " (Types.pp_t (ty :  Types.mono_type :> Types.r_type)) @@ has_drop ty
+        ) dropped_types
+    end else ();
+    a*)
+
 (* (not a) stub! *)
 let gen_call = 
   let buf = Buffer.create 1000 in
   let pp = new rust_pp buf in
   fun out_channel sequence ->
   let call_seq = List.rev sequence in
-  Printf.fprintf out_channel "//%s\n" (String.concat " -> " @@ List.map fst call_seq);
-  Buffer.clear buf;
-  pp#emit_sequence @@ List.rev sequence;
-  Buffer.output_buffer out_channel buf
+  if not @@ filter_drop call_seq then () else begin
+    Printf.fprintf out_channel "//%s\n" (String.concat " -> " @@ List.map fst call_seq);
+    Buffer.clear buf;
+    pp#emit_sequence @@ List.rev sequence;
+    Buffer.output_buffer out_channel buf
+  end
 
   
 
