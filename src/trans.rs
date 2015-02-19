@@ -305,7 +305,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
             ty_tup(ref ts) => format!("tuple {}", ts.trans(trcx)),
             ty_projection(ref proj) => {
                 let trait_did = proj.trait_ref.def_id;
-                let name = format!("{}_{}",
+                let name = format!("{}${}",
                                    mangled_def_name(trcx, proj.trait_ref.def_id),
                                    proj.item_name.trans(trcx));
 
@@ -1107,7 +1107,7 @@ fn clean_path_elem(s: &str, out: &mut String) {
             depth -= 1;
         } else if depth == 0 {
             if c == '.' {
-                out.push_str("__");
+                out.push_str("$$");
             } else {
                 out.push(c);
             }
@@ -1119,17 +1119,17 @@ fn mangled_def_name(trcx: &mut TransCtxt, did: DefId) -> String {
     let mut name = String::new();
     if did.krate == LOCAL_CRATE {
         name.push_str(&*trcx.crate_name);
-        name.push_str("_");
+        name.push_str("$");
         trcx.tcx.map.with_path(did.node, |mut elems| {
             for elem in elems {
                 clean_path_elem(elem.name().as_str(), &mut name);
-                name.push_str("_");
+                name.push_str("$");
             }
         })
     } else {
         for elem in csearch::get_item_path(trcx.tcx, did).into_iter() {
             clean_path_elem(elem.name().as_str(), &mut name);
-            name.push_str("_");
+            name.push_str("$");
         }
     }
     name.pop();
@@ -1141,18 +1141,18 @@ fn sanitize_ident(s: &str) -> String {
     let mut last_i = 0;
     let mut result = String::with_capacity(s.len());
     for (i, c) in s.chars().enumerate() {
-        if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' {
+        if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '$' {
             continue;
         }
         result.push_str(s.slice(last_i, i));
 
         let n = c as u32;
         if n <= 0xff {
-            result.push_str(&*format!("_x{:02x}", n));
+            result.push_str(&*format!("$x{:02x}", n));
         } else if n <= 0xffff {
-            result.push_str(&*format!("_u{:04x}", n));
+            result.push_str(&*format!("$u{:04x}", n));
         } else {
-            result.push_str(&*format!("_U{:08x}", n));
+            result.push_str(&*format!("$U{:08x}", n));
         }
         last_i = i + 1;
     }
@@ -1309,7 +1309,7 @@ fn trans_impl_clause(trcx: &mut TransCtxt,
             panic!("unsupported ParenthesizedParameters"),
     };
 
-    format!("{}_{} {}",
+    format!("{}${} {}",
             mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
             name.trans(trcx),
             substs)

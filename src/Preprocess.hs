@@ -88,13 +88,13 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
     aborts :: S.Set String
     aborts = everything S.union (S.empty `mkQ` collectAborts) items
     collectAborts (FnDef f_name _ _ _ _ _ _)
-      | isSuffixOf "_crust_abort" f_name = S.singleton f_name
+      | isSuffixOf "$crust_abort" f_name = S.singleton f_name
     collectAborts _ = S.empty
    
     canonAbort = S.findMin aborts
     
     renameAbortCall (ECall r l t e)
-      | isSuffixOf "_crust_abort" r =
+      | isSuffixOf "$crust_abort" r =
           ECall "crust_abort" l t e
     renameAbortCall e = e
     
@@ -107,10 +107,10 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
     
     inits :: S.Set String
     inits = everything S.union (S.empty `mkQ` collectInits) items
-    collectInits (FnDef f_name _ _ _ _ _ _) | isSuffixOf "crust_init" f_name = S.singleton f_name
+    collectInits (FnDef f_name _ _ _ _ _ _) | isSuffixOf "$crust_init" f_name = S.singleton f_name
     collectInits _ = S.empty
 
-    isAbort (IFn (FnDef f_name _ _ _ _ _ _)) = isSuffixOf "_crust_abort" f_name
+    isAbort (IFn (FnDef f_name _ _ _ _ _ _)) = isSuffixOf "$crust_abort" f_name
     isAbort _ = False
 
     renameInit (FnDef f_name lp tp arg rt impl e)
