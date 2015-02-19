@@ -614,6 +614,12 @@ let rec move_analysis m_args =
   in
   move_aux 0 [] m_args
 
+let compile_glob patt = 
+  let patt = Str.quote patt in
+  let patt = Str.global_replace (Str.regexp_string @@ Str.quote "*") ".+" patt in
+  let patt = "^" ^ patt ^ "$" in
+  Str.regexp patt
+
 
 let init_fn_filter f_name = 
   let in_chan = open_in f_name in
@@ -630,7 +636,8 @@ let init_fn_filter f_name =
     slurp_file []
   in
   pattern_list := List.map (fun patt ->
-      let patt = Str.global_replace (Str.regexp_string "*") ".+" patt in
-      let patt = "^" ^ patt ^ "$" in
-      Str.regexp patt
+      compile_glob patt
     ) patterns
+
+let set_fn_filter filter =
+  pattern_list := [ compile_glob filter ]

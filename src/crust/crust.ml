@@ -8,7 +8,10 @@ let do_it f =
     ("-", Arg.Unit (fun () -> input_file := "-"), "Read from stdin");
     ("-optional-init", Arg.Set Env.init_opt, "Make crust_init optional (for testing purposes only!)");
     ("-api-filter", Arg.String (fun f_name -> Analysis.init_fn_filter f_name), "Read a list of glob patterns");
-    ("-driver-gen", Arg.Set driver_gen, "Generate test driver")
+    ("-driver-gen", Arg.Set driver_gen, "Generate test driver");
+    ("-set-api-filter", Arg.String (fun filter -> 
+         Analysis.set_fn_filter filter
+       ), "Set a literal glob pattern")
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
   let (input,close) = 
