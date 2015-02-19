@@ -215,11 +215,11 @@ class rust_pp buf = object(self)
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
-    match init_vars with
+    (match init_vars with
     | [] -> ()
-    | [v] -> self#put_all [ "let ("; v; ",) = crust_init();" ]
-    | t -> self#put_all [ "let ("; (String.concat ", " init_vars); ") = crust_init();" ]
-      ;
+    | [v] -> self#put_all [ "let (mut "; v; ",) = crust_init();" ]
+    | t -> self#put_all [ "let ("; (String.concat ", " @@ List.map (fun v -> "mut " ^ v) init_vars); ") = crust_init();" ]
+    );
     self#newline ();
     let open_blocks = List.fold_left (fun accum b ->
         match b with
@@ -295,7 +295,7 @@ let valid_extend state ((fn_name,m_args) as fn_inst) =
   else
     let (arg_types,ret_type) = memo_get_fn_types fn_inst in
     match TypeUtil.get_inst state.public_types [] (arg_types : Types.mono_type list :> Types.r_type list) with
-    | `Mismatch -> prerr_endline "FUCK"; None
+    | `Mismatch -> None
     | `Inst _ -> Some { t_list = ret_type::state.t_list; public_types = MTSet.add ret_type state.public_types }
 
 (* this needs to allow move functions in the mut call sequence *)
