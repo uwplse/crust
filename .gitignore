@@ -23,3 +23,6 @@ bin/crust.*
 
 out*
 lib
+
+stdlib.ir
+lib*.ir
