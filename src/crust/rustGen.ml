@@ -362,7 +362,7 @@ class rust_pp buf = object(self)
     break_loop cc_vc
 end
 
-let rec has_drop ty = match ty with
+let rec complex_drop ty = match ty with
   | #Types.simple_type -> false
   | `Tuple tl -> List.exists has_drop tl
   | `Vec _ -> false
@@ -372,10 +372,8 @@ let rec has_drop ty = match ty with
   | `Ref _
   | `Ref_Mut _ 
   | `Ptr _
-  | `Ptr_Mut _ -> false
-  | `Adt_type a -> match (Env.get_adt_drop a.Types.type_name) with
-    | Some _ -> true
-    | None -> false
+  | `Ptr_Mut _ -> true
+  | `Adt_type a -> true
                   
   
 
@@ -394,7 +392,7 @@ let filter_drop call_seq =
   | [] -> true
   | _ -> 
     (*let a = *)
-    List.exists has_drop dropped_types
+    List.exists complex_drop dropped_types
     (*in
     Printf.fprintf stdout "// RESULT -> %b\n" a;
     if a then begin
