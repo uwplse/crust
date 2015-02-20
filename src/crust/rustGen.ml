@@ -21,8 +21,13 @@ let memo_get_fn_types =
       Hashtbl.add cache fn_inst (arg_types,ret_type);
       (arg_types,ret_type)
 
-let get_init_types () = 
-  match snd @@ memo_get_fn_types ("crust_init",[]) with
+let crust_init_name () = 
+  match Env.crust_init_name () with
+  | None -> failwith "Could not find a crust init function for driver generation!"
+  | Some cn -> cn
+
+let init_types () = 
+  match snd @@ memo_get_fn_types (crust_init_name (),[]) with
   | `Tuple tl -> tl
   | _ -> assert false
 
@@ -90,14 +95,6 @@ module UnionFind = struct
       Hashtbl.replace uf b_rep a_rep
 
   let create () = Hashtbl.create 10
-  
-  (*let all_congruence uf = 
-    let representatives = Hashtbl.fold (fun k v accum ->
-        if k = v then
-          k::accum
-        else accum
-      ) uf [] in
-    List.length representatives = 1*)
 end
 
 class rust_pp buf = object(self)
@@ -116,7 +113,7 @@ class rust_pp buf = object(self)
   method private init_state = 
     let init_vars = List.map (fun ty ->
         (ty,self#next_var)
-      ) @@ get_init_types ()  in
+      ) @@ init_types ()  in
     let var_of_ty = List.fold_left (fun accum (ty,var) ->
         if MTMap.mem ty accum then
           MTMap.add ty (SSet.add var (MTMap.find ty accum)) accum
@@ -257,10 +254,11 @@ class rust_pp buf = object(self)
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
+    let init_name = self#rust_name @@ crust_init_name () in
     (match init_vars with
     | [] -> ()
-    | [v] -> self#put_all [ "let (mut "; v; ",) = crust_init();" ]
-    | t -> self#put_all [ "let ("; (String.concat ", " @@ List.map (fun v -> "mut " ^ v) init_vars); ") = crust_init();" ]
+    | [v] -> self#put_all [ "let (mut "; v; ",) = "; init_name ; "();" ]
+    | t -> self#put_all [ "let ("; (String.concat ", " @@ List.map (fun v -> "mut " ^ v) init_vars); ") = "; init_name ; "();" ]
     );
     self#newline ();
     let open_blocks = List.fold_left (fun accum b ->
@@ -284,7 +282,6 @@ class rust_pp buf = object(self)
     self#newline ();
     self#close_block ();
     self#newline ()
-
 
   method private emit_arg arg = 
     match arg with
@@ -499,7 +496,7 @@ let gen_call_seq out_channel fi_set =
   let mut_fn_arr = Array.of_list @@ (drop_fn,[])::Analysis.FISet.elements mut_fn_set in
   let const_fn_arr = Array.of_list @@ Analysis.FISet.elements const_fn_set in
   do_gen_mut mut_fn_arr const_fn_arr 0 {
-    public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ get_init_types ();
+    public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ init_types ();
     t_list = []
   } 0 [] (gen_call out_channel)
 

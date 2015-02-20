@@ -26,3 +26,5 @@ val is_abstract_fn : string -> bool
 val is_static_var : string -> bool
 
 val associated_types : Types.associated_type list EnvMap.t
+
+val crust_init_name : unit -> string option

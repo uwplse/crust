@@ -418,7 +418,10 @@ let build_nopub_fn () =
     ) Env.fn_env @@ SSet.singleton "crust_abort"
 
 let run_analysis () = 
-  let constructor_fn = find_constructors () |> SSet.add "crust_init" in
+  let constructor_fn = find_constructors () |> (match Env.crust_init_name () with
+      | None -> fun x -> x
+      | Some cin -> SSet.add cin)
+  in
   let restrict_fn = Env.EnvMap.fold (fun type_name type_def accum ->
       match type_def with
       | `Enum_def ({ drop_fn = Some df; _ } : Ir.enum_def) ->
@@ -429,16 +432,17 @@ let run_analysis () =
     ) Env.adt_env @@ build_nopub_fn ()
   in
   let (init_def,seed_types) =
-    if !Env.init_opt && not (Env.EnvMap.mem Env.fn_env "crust_init") then (None,[])
-    else begin
-      let crust_init_def = Env.EnvMap.find Env.fn_env "crust_init" in
-      (match crust_init_def.Ir.fn_tparams with
-       | [] -> ()
-       | _ -> failwith "crust_init cannot be polymorphic");
-      match crust_init_def.Ir.ret_type with
-      | `Tuple tl -> (Some crust_init_def,List.map (TypeUtil.to_monomorph []) tl)
-      | t -> failwith @@ "crust_init must return a tuple, found: " ^ (Types.pp_t t)
-    end
+    match Env.crust_init_name () with
+    | None -> if !Env.init_opt then (None,[]) else failwith "No crust_init definition found!"
+    | Some crust_init_name -> begin
+        let crust_init_def = Env.EnvMap.find Env.fn_env crust_init_name in
+        (match crust_init_def.Ir.fn_tparams with
+         | [] -> ()
+         | _ -> failwith "crust_init cannot be polymorphic");
+        match crust_init_def.Ir.ret_type with
+        | `Tuple tl -> (Some crust_init_def,List.map (TypeUtil.to_monomorph []) tl)
+        | t -> failwith @@ "crust_init must return a tuple, found: " ^ (Types.pp_t t)
+      end
   in
   let init_state = {
     type_inst = TISet.empty;

@@ -88,3 +88,19 @@ let get_adt_drop t_name =
   | `Enum_def e -> e.Ir.drop_fn
   | `Struct_def e -> e.Ir.drop_fn
 
+let crust_init_name =
+  let comp = Lazy.from_fun (fun () ->
+      let init_regex = Str.regexp "^.+crust_init$" in
+      let a = Hashtbl.fold (fun k _ accum -> 
+          if Str.string_match init_regex k 0 then
+            k::accum
+          else
+            accum
+        ) fn_env [] in
+      match a with
+      | [] -> None
+      | [t] -> Some t
+      | _ -> failwith "Multiple crust_init definitions found!"
+    )
+  in
+  fun () -> Lazy.force comp

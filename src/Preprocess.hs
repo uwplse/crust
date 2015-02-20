@@ -83,7 +83,7 @@ fixBool = everywhere (mkT fixBoolLitExpr `extT` fixBoolLitPat)
     fixBoolLitPat p = p
 
 
-fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ everywhere (mkT fixInit) $ everywhere (mkT renameAbortCall) items
+fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ everywhere (mkT renameAbortCall) items
   where
     aborts :: S.Set String
     aborts = everything S.union (S.empty `mkQ` collectAborts) items
@@ -104,24 +104,9 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
     renameAbort e = e
 
     renameAbortDef = if S.null aborts then (\x -> x) else renameAbort
-    
-    inits :: S.Set String
-    inits = everything S.union (S.empty `mkQ` collectInits) items
-    collectInits (FnDef f_name _ _ _ _ _ _) | isSuffixOf "$crust_init" f_name = S.singleton f_name
-    collectInits _ = S.empty
 
     isAbort (IFn (FnDef f_name _ _ _ _ _ _)) = isSuffixOf "$crust_abort" f_name
     isAbort _ = False
-
-    renameInit (FnDef f_name lp tp arg rt impl e)
-      | f_name == S.findMin inits = FnDef "crust_init" lp tp arg rt impl e
-    renameInit e = e
-
-    fixInit = if S.null inits then \x -> x
-              else if (S.size inits) == 1 then
-                     renameInit
-                   else
-                     error "Multiple crust_init's found!"
 
 isExternFn (IExternFn _) = True
 isExternFn _ = False
