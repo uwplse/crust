@@ -86,11 +86,6 @@ let i_list = arith_intrinsics @ [
     i_params = ["t1"];
     i_body = Template "{t1} {mname}() { {t1} to_ret; return to_ret; }"
   };
-(*  {
-    i_name = "core$intrinsics$offset";
-    i_params = ["t1"];
-    i_body = Inline "(({t1}*)(((size_t){arg1}) + {arg2}))"
-  }; *)
   {
     i_name = "core$intrinsics$offset";
     i_params = ["t1"];
@@ -129,7 +124,10 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "alloc$heap$allocate";
     i_params = [];
-    i_body = Inline "((char*)malloc({arg1}))"
+    i_body = Template ("rs_u8 *{mname}(size_t to_alloc, size_t align) {\n" ^
+                       "\t __CPROVER_assume(to_alloc < 16);\n" ^
+                       "\t return (rs_u8*)malloc(to_alloc);\n" ^
+                       "}")
   };
   {
     i_name = "alloc$heap$deallocate";
@@ -139,7 +137,25 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "alloc$heap$reallocate";
     i_params = [];
-    i_body = Inline "((char*)realloc({arg1}, {arg3}))"
+    i_body = Template (
+        "rs_u8* {mname}(rs_u8* ptr, size_t old_size, size_t new_size, size_t unused) {\n" ^
+        "\t if(ptr == NULL) {\n"^
+        "\t\t __CPROVER_assume(new_size < 16);\n" ^
+        "\t\t return malloc(new_size);\n" ^
+        "\t} else if(old_size < new_size) {\n" ^
+        "\t\t __CPROVER_assume(new_size < 16);\n" ^
+        "\t\t rs_u8 *to_ret = malloc(new_size);\n" ^
+        "\t\t memmove(to_ret, ptr, old_size);\n" ^
+        "\t\t free(ptr);\n" ^
+        "\t\t return to_ret;\n" ^
+        "\t} else {\n" ^
+        "\t\t rs_u8* to_ret = malloc(new_size);\n" ^
+        "\t\t memmove(to_ret, ptr, new_size);\n" ^
+        "\t\t free(ptr);\n" ^
+        "\t\t return to_ret;\n" ^
+        "\t}\n" ^
+        "}")
+                       
   };
   (* should this be 1? maybe... I don't think cbmc can really support this anyway,
      and alignment doesn't/shouldn't matter in symbolically executed code
