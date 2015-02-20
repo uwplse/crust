@@ -533,7 +533,8 @@ let sig_of_fdef fn_def mono_args buf =
 let emit_fn_def out_channel buf (fn_name,mono_args) = 
   if fn_name = "crust_abort" then begin
     Buffer.add_string buf @@ type_to_string `Unit;
-    Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n"
+    Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n";
+    Buffer.output_buffer out_channel buf
     end 
   else if Intrinsics.is_intrinsic_fn fn_name then 
     ()
@@ -756,7 +757,7 @@ let dump_includes out_channel =
       Printf.fprintf out_channel "#include <%s>\n" i
     ) includes
 
-let emit out_channel pub_type_set pub_fn_set t_set f_set statics = 
+let emit out_channel t_set f_set statics = 
   let t_list = order_types @@ find_dup_ty_inst @@ Analysis.TISet.elements t_set in
   let f_list = find_dup_fn_inst @@ Analysis.FISet.elements f_set in
   emit_common_typedefs out_channel;

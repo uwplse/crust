@@ -32,8 +32,6 @@ let do_it f =
     RustGen.gen_driver stdout w_state.Analysis.public_type w_state.Analysis.public_fn
   else
     Compilation.emit stdout 
-      w_state.Analysis.public_type
-      w_state.Analysis.public_fn
       w_state.Analysis.type_inst
       w_state.Analysis.fn_inst
       w_state.Analysis.static_var
