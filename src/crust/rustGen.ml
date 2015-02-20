@@ -1,5 +1,7 @@
-let max_mut_seq = 4;;
-let max_immut_seq = 2;;
+let mut_action_len = ref 4;;
+let immut_action_len = ref 2;;
+let assume_ident_init = ref true;;
+let no_mut_analysis = ref false;;
 
 module MTSet = TypeUtil.MTSet
 
@@ -99,11 +101,15 @@ class rust_pp buf = object(self)
   method emit_sequence sequence =
     var_counter <- 0;
     let init_vars,concrete_call_seqs = self#concretize sequence in
-    let interfering_calls = List.filter self#compute_interference concrete_call_seqs in
-    let ic_nosym = self#break_symmetry interfering_calls in
+    let final_call_seq = 
+      if !assume_ident_init then
+        self#break_symmetry @@ List.filter self#compute_interference concrete_call_seqs
+      else
+        concrete_call_seqs
+    in
     List.iter (fun cc_seq ->
         self#emit_cc_sequence init_vars cc_seq
-    ) ic_nosym
+    ) final_call_seq
 
   method private init_state = 
     let init_vars = List.map (fun ty ->
@@ -449,7 +455,7 @@ let valid_extend state ((fn_name,m_args) as fn_inst) =
 (* this needs to allow move functions in the mut call sequence *)
 let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f = 
 (*  prerr_endline @@ "Exploring: " ^ (string_of_int index) ^ " with length -> " ^ (string_of_int seq_len) ^ " more debug -> " ^ (string_of_int @@ List.length path);*)
-  if seq_len = max_mut_seq then
+  if seq_len = !mut_action_len then
     do_gen_immut const_fn_set 0 state 0 path f
   else if index = (Array.length mut_fn_set) then
     ()
@@ -463,7 +469,7 @@ let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f =
     do_gen_mut mut_fn_set const_fn_set seq_len state (succ index) path f
   end
 and do_gen_immut const_fn_set seq_len state index path f =
-  if seq_len = max_immut_seq then
+  if seq_len = !immut_action_len then
     f path
   else if index = (Array.length const_fn_set) then
     f path
@@ -485,7 +491,12 @@ let output_standard_header out_channel =
   List.iter (Printf.fprintf out_channel "%s\n") prelude
 
 let gen_call_seq out_channel fi_set = 
-  let (mut_fn_set,const_fn_set) = Analysis.FISet.partition mut_analysis fi_set in
+  let (mut_fn_set,const_fn_set) = 
+    if !no_mut_analysis then
+      (fi_set,Analysis.FISet.empty)
+    else
+      Analysis.FISet.partition mut_analysis fi_set
+  in
   let mut_fn_arr = Array.of_list @@ (drop_fn,[])::Analysis.FISet.elements mut_fn_set in
   let const_fn_arr = Array.of_list @@ Analysis.FISet.elements const_fn_set in
   do_gen_mut mut_fn_arr const_fn_arr 0 {
