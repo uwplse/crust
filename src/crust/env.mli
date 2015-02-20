@@ -28,3 +28,4 @@ val is_static_var : string -> bool
 val associated_types : Types.associated_type list EnvMap.t
 
 val crust_init_name : unit -> string option
+val crust_init_name_e : unit -> string

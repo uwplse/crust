@@ -21,13 +21,8 @@ let memo_get_fn_types =
       Hashtbl.add cache fn_inst (arg_types,ret_type);
       (arg_types,ret_type)
 
-let crust_init_name () = 
-  match Env.crust_init_name () with
-  | None -> failwith "Could not find a crust init function for driver generation!"
-  | Some cn -> cn
-
 let init_types () = 
-  match snd @@ memo_get_fn_types (crust_init_name (),[]) with
+  match snd @@ memo_get_fn_types (Env.crust_init_name_e (),[]) with
   | `Tuple tl -> tl
   | _ -> assert false
 
@@ -254,7 +249,7 @@ class rust_pp buf = object(self)
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
-    let init_name = self#rust_name @@ crust_init_name () in
+    let init_name = self#rust_name @@ Env.crust_init_name_e () in
     (match init_vars with
     | [] -> ()
     | [v] -> self#put_all [ "let (mut "; v; ",) = "; init_name ; "();" ]

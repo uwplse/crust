@@ -104,3 +104,9 @@ let crust_init_name =
     )
   in
   fun () -> Lazy.force comp
+
+
+let crust_init_name_e () = 
+  match crust_init_name () with
+  | Some s -> s
+  | None -> failwith "Crust init not found"
