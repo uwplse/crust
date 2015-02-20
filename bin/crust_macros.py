@@ -5,12 +5,14 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--intrinsics", action="store_true")
+parser.add_argument("--module")
 parser.add_argument("input_file", nargs="?")
 
 e = parser.parse_args()
 
 input_filename = e.input_file
 with_intrinsics = e.intrinsics
+add_module = e.module
 
 if input_filename is None:
     input_file = sys.stdin
@@ -39,6 +41,8 @@ while l:
         print macro_defs,
         if with_intrinsics:
             print intrinsic_defs,
+        if add_module:
+            print ("mod " + add_module + ";")
         print l,
         break
     l = input_file.readline()
