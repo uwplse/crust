@@ -1,27 +1,30 @@
 import re
 import sys
 import os.path
+import argparse
 
-input_file = None
+parser = argparse.ArgumentParser()
+parser.add_argument("--intrinsics", action="store_true")
+parser.add_argument("input_file", nargs="?")
 
-with_nondet = False
+e = parser.parse_args()
 
-if (len(sys.argv) > 1 and sys.argv[1] == '--nondet'):
-    with_nondet = True
-    del sys.argv[1]
+input_filename = e.input_file
+with_intrinsics = e.intrinsics
 
-if len(sys.argv) == 1:
+if input_filename is None:
     input_file = sys.stdin
 else:
-    input_file = open(sys.argv[1], 'r')
+    input_file = open(input_filename, 'r')
 
-macro_def_f = os.path.dirname(sys.argv[0]) + "/../src/crust_macros.rs"
-macro_defs = open(macro_def_f, 'r').read()
+macro_defs = None
+with open(os.path.dirname(sys.argv[0]) + "/../src/crust_macros.rs", "r") as f:
+    macro_defs = f.read()
 
-nondet_defs = None
-if with_nondet:
-    with open(os.path.dirname(sys.argv[0]) + "/../src/crust_nondet.rs") as f:
-        nondet_defs = f.read()
+intrinsic_defs = None
+if with_intrinsics:
+    with open(os.path.dirname(sys.argv[0]) + "/../src/crust_intrinsics.rs") as f:
+        intrinsic_defs = f.read()
 
 l = input_file.readline()
 while l:
@@ -34,8 +37,8 @@ while l:
         print l,
     else:
         print macro_defs,
-        if with_nondet:
-            print nondet_defs,
+        if with_intrinsics:
+            print intrinsic_defs,
         print l,
         break
     l = input_file.readline()

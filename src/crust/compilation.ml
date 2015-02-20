@@ -289,6 +289,11 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         let mangled_fname = mangle_fn_name fn_name m_args in
         if Intrinsics.is_intrinsic_fn fn_name then
           self#handle_intrinsic fn_name mangled_fname m_args args
+        else if Intrinsics.is_crust_intrinsic fn_name then
+          let method_name = Intrinsics.intrinsic_name fn_name in
+          self#put_all [ method_name; "(" ];
+          self#put_many ", " self#dump_args args;
+          self#put ")"
         else if Env.is_abstract_fn fn_name then begin
           let arg_types = List.map (fun (t,_) -> 
               (TypeUtil.to_monomorph t_bindings t)
@@ -767,6 +772,7 @@ let emit out_channel pub_type_set pub_fn_set t_set f_set statics =
       Printf.fprintf out_channel "#include \"rust_intrinsics.h\"\n"
     else ()
   );
+  Printf.fprintf out_channel "#include \"crust_intrinsics.h\"\n";
   let type_buffer = Buffer.create 1000 in
   let type_emitter = new typedef_emitter type_buffer in
   List.iter (fun t_inst ->

@@ -136,12 +136,12 @@ class rust_pp buf = object(self)
            
   method private nondet_fn ty = 
     match ty with
-    | `Int w -> "crust_nondet_i" ^ (string_of_int w) ^ "()"
+    | `Int w -> "nondet_crust_i" ^ (string_of_int w) ^ "()"
     | `Unit -> "()"
-    | `Bool -> "crust_nondet_bool()"
-    | `Float w -> "crust_nondet_f" ^ (string_of_int w) ^ "()"
-    | `UInt w -> "crust_nondet_u" ^ (string_of_int w) ^ "()"
-    | `Char -> "crust_nondet_char()"
+    | `Bool -> "nondet_crust_bool()"
+    | `Float w -> "nondet_crust_f" ^ (string_of_int w) ^ "()"
+    | `UInt w -> "nondet_crust_u" ^ (string_of_int w) ^ "()"
+    | `Char -> "nondet_crust_char()"
 
   method private update_drop state = 
     match state.var_stack with

@@ -299,6 +299,8 @@ and walk_pattern t_bindings w_state patt =
 and walk_fn w_state fn_name m_args  = 
   if Intrinsics.is_intrinsic_fn fn_name then 
     add_fn_instance w_state (fn_name,m_args)
+  else if  Intrinsics.is_crust_intrinsic fn_name then
+    w_state
   else if fn_name = "drop_glue" then
     match m_args with
     | [t] -> begin

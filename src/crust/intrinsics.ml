@@ -250,3 +250,17 @@ let need_iheader = List.exists (fun (name,_) ->
     else
       false
   )
+
+let nondet_regex = Str.regexp ("^.+" ^ (Str.quote "$") ^ "\\(nondet_crust_[^$]+\\)$");;
+
+let crust_assert_regex = Str.regexp ("^.+" ^ (Str.quote "$") ^ "crust_assert$");;
+
+let is_crust_intrinsic s = Str.string_match nondet_regex s 0 ||
+                           Str.string_match crust_assert_regex s 0
+let intrinsic_name s = 
+  if Str.string_match nondet_regex s 0 then
+    Str.global_replace nondet_regex "\\1" s
+  else if Str.string_match crust_assert_regex s 0 then
+    "assert"
+  else
+    failwith @@ "unrecognized crust intrinsic name: " ^ s
