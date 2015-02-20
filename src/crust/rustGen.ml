@@ -364,10 +364,10 @@ end
 
 let rec complex_drop ty = match ty with
   | #Types.simple_type -> false
-  | `Tuple tl -> List.exists has_drop tl
+  | `Tuple tl -> List.exists complex_drop tl
   | `Vec _ -> false
   | `Str -> false
-  | `Fixed_Vec (_,t) -> has_drop t
+  | `Fixed_Vec (_,t) -> complex_drop t
   | `Bottom 
   | `Ref _
   | `Ref_Mut _ 
