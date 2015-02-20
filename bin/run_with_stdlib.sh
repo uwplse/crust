@@ -28,6 +28,6 @@ SRC_FILE=$SCRATCH/$IN_NAME
 python $THIS_DIR/crust_macros.py "$1" > $SRC_FILE
 
 $THIS_DIR/rbmc $RBMC_FLAGS "$SRC_FILE" >out.ir
-cat out.ir stdlib.ir | $THIS_DIR/../src/Preprocess $extra >out2.ir
+cat out.ir $THIS_DIR/../stdlib.ir | $THIS_DIR/../src/Preprocess $extra >out2.ir
 <out2.ir $THIS_DIR/crust.native -api-filter $SCRATCH/api_filter -optional-init - >out.c
 #gcc -c out.c -std=c99 -I $THIS_DIR/../src
