@@ -2,6 +2,7 @@ let do_it f =
   Printexc.record_backtrace true;
   let input_file = ref "" in
   let driver_gen = ref false in
+  let test_gen = ref false in
   let arg_spec = [
     ("-gcc", Arg.Set Env.gcc_mode, "Turn on gcc mode");
     ("-infer-filter", Arg.String (fun f_name -> Env.init_inference_filter f_name), "Read a list of types for which to filter public function inference from file f (one per line)");
@@ -11,7 +12,8 @@ let do_it f =
     ("-driver-gen", Arg.Set driver_gen, "Generate test driver");
     ("-set-api-filter", Arg.String (fun filter -> 
          Analysis.set_fn_filter filter
-       ), "Set a literal glob pattern")
+       ), "Set a literal glob pattern");
+    ("-test-gen", Arg.Set test_gen, "Generate C test cases") 
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
   let (input,close) = 
@@ -27,7 +29,12 @@ let do_it f =
 	  failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in
   Env.set_env ast;
-  let w_state = Analysis.run_analysis () in
+  let w_state = 
+    if !test_gen then
+      Analysis.run_test_analysis () 
+    else
+      Analysis.run_analysis ()
+  in
   if !driver_gen then
     RustGen.gen_driver stdout w_state.Analysis.public_type w_state.Analysis.public_fn
   else

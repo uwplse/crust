@@ -466,6 +466,23 @@ let run_analysis () =
     fail_inst = FISet.empty
   }).w_state
 
+let crust_test_regex = Str.regexp ("^.+" ^ (Str.quote "$") ^ "crust_test_[0-9]+$");;
+
+let run_test_analysis () = 
+  let init_state = {
+    type_inst = TISet.empty;
+    fn_inst = FISet.empty;
+    public_type = MTSet.empty;
+    public_fn = FISet.empty;
+    static_var = SSet.empty
+  } in
+  Env.EnvMap.fold (fun k v accum ->
+      if Str.string_match crust_test_regex k 0 then
+        walk_fn_def accum v []
+      else 
+        accum
+    ) Env.fn_env init_state
+
 (* borrow analysis *)
 let indexed_fold_left f accum l = 
   let rec fold_loop i accum l = 
