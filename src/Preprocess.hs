@@ -300,9 +300,12 @@ desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
             n <- fresh "__wild"
             skip (SLet (Pattern ty $ PVar n) (Just rhs)) ss e
         PTuple pats -> do
-            let lets = zipWith (\i (Pattern ty' p') -> SLet (Pattern ty' p')
-                    (Just $ Expr ty' $ EField rhs $ "field" ++ show i)) [0..] pats
-            go (lets ++ ss) e
+            n <- fresh "__tuple"
+            let topLet = SLet (Pattern ty $ PVar n) (Just rhs)
+                topExpr = Expr ty $ EVar n
+                fieldLets = zipWith (\i (Pattern ty' p') -> SLet (Pattern ty' p')
+                    (Just $ Expr ty' $ EField topExpr $ "field" ++ show i)) [0..] pats
+            go ([topLet] ++ fieldLets ++ ss) e
         PRefVar name -> do
             let TRef life mutbl ty' = ty
             skip (SLet (Pattern ty $ PVar name) (Just $ Expr ty $ EAddrOf rhs)) ss e
