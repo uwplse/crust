@@ -21,7 +21,8 @@ let do_it f =
     ("-no-mut-analysis", Arg.Set RustGen.no_mut_analysis, "Do not run mutation analysis, assume all methods are mutative");
     ("-o", Arg.String (fun f_name ->
          output_channel := open_out f_name
-       ), "Output to file")
+       ), "Output to file");
+    ("-max-memory", Arg.Set_int Compilation.crust_mem_limit, "Maximum bound of memory that can be allocated")
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
   let (input,close) = 

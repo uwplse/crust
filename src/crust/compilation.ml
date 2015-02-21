@@ -340,7 +340,6 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
       in
       self#drop_type drop_type arg_string;
       self#put "0"
-    (* XXX: there is a lot of overlap here with the drop action synth in driver.ml *)
     method drop_type (ty : Types.mono_type) arg_string = 
       match ty with
       | `Tuple tl -> 
@@ -758,6 +757,8 @@ let dump_includes out_channel =
       Printf.fprintf out_channel "#include <%s>\n" i
     ) includes
 
+let crust_mem_limit = ref 16;;
+
 let emit out_channel t_set f_set statics = 
   let t_list = order_types @@ find_dup_ty_inst @@ Analysis.TISet.elements t_set in
   let f_list = find_dup_fn_inst @@ Analysis.FISet.elements f_set in
@@ -768,6 +769,7 @@ let emit out_channel t_set f_set statics =
     end else ()
   end;
   dump_includes out_channel;
+  Printf.fprintf out_channel "#define CRUST_MAX_MEM %d\n" !crust_mem_limit;
   List.iter (emit_typedefs out_channel) t_list;
   (
     if Intrinsics.need_iheader (f_list :> (string * Types.r_type list) list)  then
