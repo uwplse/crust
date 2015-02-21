@@ -82,8 +82,9 @@ let rec pp_t (to_pp : r_type) = match to_pp with
   | `Ptr_Mut t -> (pp_t t) ^ "*"
   | `Tuple tl -> "(" ^ (String.concat ", " @@ List.map pp_t tl) ^ ")"
   | `Adt_type p -> 
-	 if p.type_param = [] then p.type_name 
-	 else p.type_name ^ "<" ^ (String.concat "," @@ List.map pp_t p.type_param) ^ ">"
+    let lifetimes = if p.lifetime_param = [] then "" else ("[" ^ (String.concat "," p.lifetime_param) ^ "]") in
+	if p.type_param = [] then p.type_name ^ lifetimes
+	 else p.type_name ^ lifetimes ^ "<" ^ (String.concat "," @@ List.map pp_t p.type_param) ^ ">"
   | `Abstract a ->
     "<" ^ a.a_name ^ "<" ^ (
       String.concat "," @@ List.map pp_t a.a_params

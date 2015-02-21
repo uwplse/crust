@@ -326,6 +326,20 @@ class rust_pp buf = object(self)
         self#put ")"
       end
 
+  method dump_compilation_state state =
+    prerr_endline "--> DEBUG";
+    prerr_endline @@ "--> VARIABLES: " ^ (String.concat ", " state.var_stack);
+    prerr_endline "--> VARIABLE TYPES:";
+    SMap.iter (fun k v ->
+        prerr_endline @@  "===> " ^ k ^ " -> " ^ (Types.pp_t (v : Types.mono_type :> Types.r_type))
+    ) state.ty_of_var;
+    prerr_endline "--> TYPE MAPPING:";
+    MTMap.iter (fun ty vars ->
+        prerr_endline @@ "===> " ^ (Types.pp_t (ty : Types.mono_type :> Types.r_type)) ^ " -> {" ^ 
+                         (String.concat ", " @@ SSet.elements vars) ^ "}"
+        ) state.var_of_ty;
+    
+
   method private compute_interference cc_seq = 
     let ref_vars = self#walk_call_seq SSet.add SSet.empty cc_seq in
     (* now compute the congruence closure *)
