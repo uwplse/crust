@@ -534,7 +534,8 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
   if fn_name = "crust_abort" then begin
     Buffer.add_string buf @@ type_to_string `Unit;
     Buffer.add_string buf " crust_abort() { __CPROVER_assume(0); }\n";
-    Buffer.output_buffer out_channel buf
+    Buffer.output_buffer out_channel buf;
+    Buffer.clear buf
     end 
   else if Intrinsics.is_intrinsic_fn fn_name then 
     ()
