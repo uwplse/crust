@@ -60,6 +60,7 @@ type ty_state = {
 
 type action_call = 
   | Open_Block of string * Types.mono_type * string * (method_arg list)
+  | Ptr_Assert of [`Immut | `Mut ] * string * string
   | Close_Block
 
 module UnionFind = struct
@@ -175,13 +176,35 @@ class rust_pp buf = object(self)
     | (df,[])::t when df = drop_fn ->
       self#concretize_aux (self#update_drop state) accum (Close_Block::cc) t
     | ((fn,m_args) as inst)::t ->
+(*      prerr_endline @@ "generating call for method " ^ fn;
+      self#dump_compilation_state state;*)
       let (arg_types,ret_type) = memo_get_fn_types inst in
       let call_combinations = self#get_args state arg_types in
       let out_var = self#next_var in
+      let ref_assertions = self#gen_assertions state out_var ret_type in
       List.fold_left (fun accum c_args ->
-          self#concretize_aux (self#update_call state ret_type out_var) accum ((Open_Block (out_var,ret_type,fn,c_args))::cc) t
+          self#concretize_aux (self#update_call state ret_type out_var) accum (ref_assertions@((Open_Block (out_var,ret_type,fn,c_args))::cc)) t
         ) accum call_combinations
 
+  method private gen_ty_assertions state assert_gen ty =
+    if MTMap.mem ty state.var_of_ty then
+      SSet.fold (fun t_var accum ->
+          (assert_gen t_var)::accum
+        ) (MTMap.find ty state.var_of_ty) []
+    else
+      []
+
+  method private gen_assertions state out_var returned_type = 
+    match returned_type with
+    | (`Ref_Mut (_,t) as mut_ref) ->
+      (self#gen_ty_assertions state (fun v2 ->
+           Ptr_Assert (`Mut,out_var,v2)) mut_ref
+      ) @ (self#gen_ty_assertions state (fun v2 ->
+          Ptr_Assert (`Immut,out_var,v2)) (`Ref (TypeUtil.dummy_lifetime,t)))
+    | `Ref (_,t) ->
+      self#gen_ty_assertions state (fun v1 ->
+          Ptr_Assert (`Immut,v1,out_var)) (`Ref_Mut (TypeUtil.dummy_lifetime,t))
+    | _ -> []
   method private get_args state arg_types = 
     self#get_args_aux [] [] state arg_types
 
@@ -266,6 +289,13 @@ class rust_pp buf = object(self)
         match b with
         | Close_Block -> 
           (self#close_block(); self#newline (); (pred accum))
+        | Ptr_Assert (mut_flag,v1,v2) -> begin
+            self#put_all [ "crust_assert("; v1; " as *mut _ as u64 != "; v2; " as *";
+                           (match mut_flag with `Mut -> "mut" | `Immut -> "const");
+                           " _ as u64);"];
+            self#newline ();
+            accum
+          end
         | Open_Block (v,_,fn,args) -> begin
             let rust_name = self#rust_name fn in
             self#open_block ();
@@ -304,6 +334,7 @@ class rust_pp buf = object(self)
         UnionFind.add_element uf v
       ) ref_vars;
     List.iter (function 
+        | Ptr_Assert _ -> ()
         | Close_Block -> ()
         | Open_Block (v,_,_,l) ->
           let ref_vars = self#walk_args SSet.add SSet.empty l in
@@ -321,6 +352,7 @@ class rust_pp buf = object(self)
   method private walk_call_seq :
     'a.(string -> 'a -> 'a) -> 'a -> action_call list -> 'a = fun f accum cc_seq ->
     match cc_seq with
+    | Ptr_Assert _::t -> self#walk_call_seq f accum t
     | Close_Block::t -> self#walk_call_seq f accum t
     | Open_Block (_,_,_,l)::t -> self#walk_call_seq f (self#walk_args f accum l) t
     | [] -> accum
