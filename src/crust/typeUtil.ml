@@ -14,6 +14,8 @@ type inst_result = [
   | `Inst of Types.type_binding list
 ]
 
+let dummy_lifetime = "_dummy_"
+
 type type_binding = (string * Types.mono_type) list
 
 type _ query_param = 
@@ -193,11 +195,11 @@ class type_matcher = object(self)
     match t with
     | `Adt_type a ->
       let mono_params = List.map (self#to_monomorph t_binding) a.Types.type_param in
-      `Adt_type { a with Types.type_param = mono_params }
+      `Adt_type { a with Types.type_param = mono_params; Types.lifetime_param = [] }
     | `T_Var t_var -> List.assoc t_var t_binding
     | #Types.simple_type as st -> st 
-    | `Ref (_,t') -> `Ref ("_dummy_",(self#to_monomorph t_binding t'))
-    | `Ref_Mut (_, t') -> `Ref_Mut ("_dummy_",(self#to_monomorph t_binding t'))
+    | `Ref (_,t') -> `Ref (dummy_lifetime,(self#to_monomorph t_binding t'))
+    | `Ref_Mut (_, t') -> `Ref_Mut (dummy_lifetime,(self#to_monomorph t_binding t'))
     | `Ptr_Mut t' -> `Ptr_Mut (self#to_monomorph t_binding t')
     | `Ptr t' -> `Ptr (self#to_monomorph t_binding t')
     | `Bottom -> `Bottom

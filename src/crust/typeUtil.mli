@@ -34,3 +34,5 @@ val handle_dst :
    | `Ref of Types.lifetime * [> `Str | `Vec of 'a ]
    | `Ref_Mut of Types.lifetime * [> `Str | `Vec of 'a ] ] as 'a) -> 
   'b
+
+val dummy_lifetime : string
