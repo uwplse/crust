@@ -193,14 +193,21 @@ and simplify_adt : 'a. Types.r_type -> 'a list -> ?post:(t_simple_expr -> all_ex
 and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
   match (snd expr) with
   | `Call (f_name,l,t,args) ->
-	 let (s,args') = List.fold_right 
-					   (fun arg (s_accum,arg_accum) ->
-						apply_lift_cb arg (fun stmt a -> (stmt @ s_accum,a::arg_accum))
-					   ) args ([],[]) in
-	 if s = [] then
-	   (fst expr,`Call (f_name,l,t,args'))
-	 else
-	   (fst expr,`Block (s,(fst expr,`Call (f_name,l,t,args'))))
+    if f_name = "crust_abort" then
+      let temp_var = fresh_temp () in
+      (fst expr,`Block ([
+           `Declare (temp_var,(fst expr));
+           `Expr (`Unit,`Call (f_name,l,t,[]))
+         ],((fst expr),`Var temp_var)))
+    else
+      let (s,args') = List.fold_right 
+          (fun arg (s_accum,arg_accum) ->
+             apply_lift_cb arg (fun stmt a -> (stmt @ s_accum,a::arg_accum))
+          ) args ([],[]) in
+      if s = [] then
+	    (fst expr,`Call (f_name,l,t,args'))
+      else
+        (fst expr,`Block (s,(fst expr,`Call (f_name,l,t,args'))))
   | `Address_of t -> 
 	 apply_lift (fst expr) t (fun e -> `Address_of e)
   | `Deref t -> 
