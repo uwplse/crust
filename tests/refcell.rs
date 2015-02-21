@@ -16,21 +16,22 @@
 #![no_std]
 #![feature(lang_items, unsafe_destructor)]
 
-#[macro_use] extern crate core;
+extern crate core;
+
 use core::prelude::{Copy, Drop};
 use core::ops::{Deref, DerefMut};
-//use core::prelude::{Option, Some, None};
+use core::prelude::{Option, Some, None};
 //use core::kinds::marker;
 //use core::cell::UnsafeCell;
 
 
-use Option::{None, Some};
+/*use Option::{None, Some};
 
 pub enum Option<T> {
     None,
     Some(T),
 }
-
+*/
 
 pub mod marker {
     pub struct NoCopy;
@@ -119,8 +120,8 @@ impl<T> RefCell<T> {
     pub fn borrow<'a>(&'a self) -> Ref<'a, T> {
         match self.try_borrow() {
             Some(ptr) => ptr,
-            //None => panic!("RefCell<T> already mutably borrowed")
-            None => crust_abort(),
+            None => panic!("RefCell<T> already mutably borrowed")
+            //None => crust_abort(),
         }
     }
 
@@ -137,8 +138,8 @@ impl<T> RefCell<T> {
     pub fn borrow_mut<'a>(&'a self) -> RefMut<'a, T> {
         match self.try_borrow_mut() {
             Some(ptr) => ptr,
-            //None => panic!("RefCell<T> already borrowed")
-            None => crust_abort(),
+            None => panic!("RefCell<T> already borrowed")
+            //None => crust_abort(),
         }
     }
 }
