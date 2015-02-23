@@ -997,7 +997,7 @@ impl<T> AsSlice<T> for Vec<T> {
     }
 }
 
-fn crust_init() -> (Vec<u32>,) {
+pub fn crust_init() -> (Vec<u32>,) {
     (Vec::with_capacity(10),)
 }
 /*
