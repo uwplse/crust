@@ -195,6 +195,9 @@ and simplify_adt : 'a. Types.r_type -> 'a list -> ?post:(t_simple_expr -> all_ex
 and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
   match (snd expr) with
   | `Call (f_name,l,t,args) ->
+    (* this could be generalized by checking the DECLARED return type of a 
+      function and checking for bottom... but all in time...
+    *)
     if f_name = "crust_abort" then
       let temp_var = fresh_temp () in
       (fst expr,`Block ([
@@ -440,66 +443,9 @@ let rec flatten_blocks (ir : all_expr) =
   | `Block ([],((b_t,`Block e) as b)) -> flatten_blocks b
   | _ -> ir
 
-let rec clean_ir_expr (expr : t_simple_expr) = 
-  let e_type = fst expr in
-  match (snd expr) with
-  | `Cast (e,t) ->
-    e_type,`Cast (clean_ir_expr e,t)
-  | `Struct_Field (e,f) ->
-    (* XXX: hack *)
-    let e = snd (clean_ir_expr (`Bottom,e)) in
-    e_type,`Struct_Field (e,f)
-  | `BinOp (o,e1,e2) ->
-    e_type,`BinOp (o,clean_ir_expr e1,clean_ir_expr e2)
-  | `UnOp (o,e1) ->
-    e_type,`UnOp (o,clean_ir_expr e1)
-  | `Address_of e ->
-    e_type,`Address_of (clean_ir_expr e)
-  | `Deref e ->
-    e_type,`Deref (clean_ir_expr e)
-  | `Var _ -> expr
-  | `Literal _ -> expr
-  | `Assignment (_,((_,`Call ("crust_abort",_,_,_)) as r)) ->
-    r
-  | `Assign_Op (op,e1,e2) -> 
-    e_type,`Assign_Op (op,e1,e2)
-  | `Assignment (e1,e2) ->
-    (* XXX: also a hack *)
-    let e1 = snd (clean_ir_expr (`Bottom,e1)) in
-    (e_type,`Assignment (e1,clean_ir_expr e2))
-(*  | `Call ("crust_abort", _, _, _) ->
-    failwith "crust_abort found in unsupported position"*)
-  | `Call (s,l,t,e) ->
-    e_type,`Call (s,l,t,List.map clean_ir_expr e)
-
-let rec clean_ir (expr : all_expr) = 
-  let e_type = fst expr in
-  match (snd expr) with
-  | #simple_expr as s -> (clean_ir_expr (e_type,s) :> all_expr)
-  | `Match (m,m_arms) ->
-    e_type,`Match (clean_ir_expr m,List.map (fun (cond,m) ->
-        clean_ir_expr cond,clean_ir m
-      ) m_arms)
-  | `Block (stmt,e) ->
-    let stmt = List.map (function
-        | (`Expr (_,`Call ("crust_abort",_,_,_))) as e -> e
-        | `Expr e -> `Expr (clean_ir e)
-        | `Let (v,t,e) -> `Let (v,t,clean_ir_expr e)
-        | (`Declare _) as d -> d
-        | (`Vec_Init _) as d -> d
-        | (`Vec_Assign _) as d -> d
-      ) stmt 
-    in
-    e_type,(`Block (stmt,clean_ir e))
-  | `While (cond,body) ->
-    e_type,`While (clean_ir_expr cond,clean_ir body)
-  | `Return e ->
-    e_type,`Return (clean_ir_expr e)
-
 let get_simple_ir ir = 
   instrument_return ir
   |> simplify_ir
-  |> clean_ir
   |> flatten_blocks
 
 exception Illegal_dynamic_expr;;
