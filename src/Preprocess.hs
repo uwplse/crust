@@ -50,13 +50,13 @@ main = do
     let items'' =
             dumpIr "final" $
             filter (not . isExternFn) $
-            fixBool $
             renameLocals ix $
             addCleanup ix $
             renameLocals ix $
             liftTemps ix $
             constExpand $
             ifFix $
+            fixBool $
 --            fixAbort $
             fixBottom $
             fixSpecialFn $
