@@ -10,6 +10,10 @@ let generate_driver out_chan =
   let w_state = Analysis.run_analysis () in
   RustGen.gen_driver out_chan w_state.Analysis.public_type w_state.Analysis.public_fn
 
+let do_api_dump out_chan = 
+  let w_state = Analysis.run_analysis () in
+  RustGen.dump_api out_chan w_state.Analysis.public_type w_state.Analysis.public_fn
+
 let code_gen out_chan = 
   let w_state = Analysis.run_analysis () in
   Compilation.emit out_chan 
@@ -22,6 +26,7 @@ let do_it f =
   let input_file = ref "" in
   let driver_gen = ref false in
   let test_gen = ref false in
+  let dump_api = ref false in
   let test_output_file = ref "" in
   let test_chunk_size = ref 300 in
   let output_channel = ref stdout in
@@ -45,7 +50,8 @@ let do_it f =
        ), "Output to file");
     ("-max-memory", Arg.Set_int Compilation.crust_mem_limit, "Maximum bound of memory that can be allocated");
     ("-test-size", Arg.Set_int test_chunk_size, "Number of test cases per file");
-    ("-test-case-prefix", Arg.Set_string test_output_file, "Prefix for test case files generated in -test-compile")
+    ("-test-case-prefix", Arg.Set_string test_output_file, "Prefix for test case files generated in -test-compile");
+    ("-dump-api", Arg.Set dump_api, "Show the inferred public api and quit")
   ] in
   Arg.parse arg_spec (fun s -> input_file := s) "Compile Rust IR to C";
   let (input,close) = 
@@ -65,16 +71,9 @@ let do_it f =
     compile_tests !test_chunk_size !test_output_file 
   else if !driver_gen then
     generate_driver !output_channel
+  else if !dump_api then
+    do_api_dump !output_channel
   else
     code_gen !output_channel
-(*    
-  in
-  if !driver_gen then
-    RustGen.gen_driver !output_channel w_state.Analysis.public_type w_state.Analysis.public_fn
-  else
-    Compilation.emit !output_channel 
-      w_state.Analysis.type_inst
-      w_state.Analysis.fn_inst
-      w_state.Analysis.static_var*)
 
 let _ = do_it Sys.argv.(1)

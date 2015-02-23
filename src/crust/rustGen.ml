@@ -37,6 +37,21 @@ let fresh_name () =
   incr counter;
   to_ret
 
+let unmangle_name = 
+  let replace_regex = Str.regexp_string "$" in
+  Str.global_replace replace_regex "::"
+
+let rust_name fn_name =
+  let fn_def = Env.EnvMap.find Env.fn_env fn_name in
+  let to_transmute =
+    match fn_def.Ir.fn_impl with
+    | None -> fn_name
+    | Some i -> i.Ir.abstract_name
+  in
+  unmangle_name to_transmute
+  
+
+
 type method_arg = 
   | Primitive of string
   | Var of string
@@ -176,8 +191,6 @@ class rust_pp buf = object(self)
     | (df,[])::t when df = drop_fn ->
       self#concretize_aux (self#update_drop state) accum (Close_Block::cc) t
     | ((fn,m_args) as inst)::t ->
-(*      prerr_endline @@ "generating call for method " ^ fn;
-      self#dump_compilation_state state;*)
       let (arg_types,ret_type) = memo_get_fn_types inst in
       let call_combinations = self#get_args state arg_types in
       let out_var = self#next_var in
@@ -263,22 +276,12 @@ class rust_pp buf = object(self)
     var_counter <- var_counter + 1;
     to_ret
 
-  val replace_regex = Str.regexp_string "$"
-
-  method private rust_name fn_name =
-    let fn_def = Env.EnvMap.find Env.fn_env fn_name in
-    let to_transmute =
-      match fn_def.Ir.fn_impl with
-      | None -> fn_name
-      | Some i -> i.Ir.abstract_name
-    in
-    Str.global_replace replace_regex "::" to_transmute
 
   method private emit_cc_sequence init_vars cc_sequence = 
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
-    let init_name = self#rust_name @@ Env.crust_init_name_e () in
+    let init_name = rust_name @@ Env.crust_init_name_e () in
     (match init_vars with
     | [] -> ()
     | [v] -> self#put_all [ "let (mut "; v; ",) = "; init_name ; "();" ]
@@ -297,7 +300,7 @@ class rust_pp buf = object(self)
             accum
           end
         | Open_Block (v,_,fn,args) -> begin
-            let rust_name = self#rust_name fn in
+            let rust_name = rust_name fn in
             self#open_block ();
             self#put_all [ "let mut "; v ; " = "; rust_name; "(" ];
             self#put_many ", " self#emit_arg args;
@@ -553,3 +556,29 @@ let gen_call_seq out_channel fi_set =
 let gen_driver out_channel pt_set pf_set = 
   output_standard_header out_channel;
   gen_call_seq out_channel pf_set
+
+let dump_api out_channel pt_set pf_set = 
+  let buf = Buffer.create 1000 in
+  Buffer.add_string buf "-- PUBLIC TYPES --\n";
+  MTSet.iter (fun ty -> 
+      (* will this work??? I hope so... *)
+      Buffer.add_string buf "* ";
+      Buffer.add_string buf @@ unmangle_name @@ Types.pp_t (ty : Types.mono_type :> Types.r_type);
+      Buffer.add_string buf "\n"
+    ) pt_set;
+  Buffer.output_buffer out_channel buf;
+  Buffer.clear buf;
+  Buffer.add_string buf "-- PUBLIC API --\n";
+  Analysis.FISet.iter (fun (fn_name,m_args) ->
+      Buffer.add_string buf "* ";
+      let fn_name = rust_name fn_name in
+      let suffix =
+        match m_args with
+        | [] -> ""
+        | _ -> "::<" ^ (String.concat ", " @@ List.map Types.pp_t (m_args : Types.mono_type list :> Types.r_type list)) ^ ">"
+      in
+      Buffer.add_string buf fn_name;
+      Buffer.add_string buf suffix;
+      Buffer.add_string buf "\n";
+    ) pf_set;
+  Buffer.output_buffer out_channel buf
