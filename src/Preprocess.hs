@@ -147,9 +147,9 @@ ifFix = everywhere (mkT fixIf)
         (EMatch e
                 [MatchArm (Pattern TBool (PSimpleLiteral "1")) e1,
                  MatchArm (Pattern TBool (PSimpleLiteral "0")) e2]) =
-         EMatch (mkCast e (TInt 32))
-                [MatchArm (Pattern (TInt 32) (PSimpleLiteral "0")) e2,
-                 MatchArm (Pattern (TInt 32) (PWild)) e1]
+         EMatch (mkCast e (TInt $ BitSize 32))
+                [MatchArm (Pattern (TInt $ BitSize 32) (PSimpleLiteral "0")) e2,
+                 MatchArm (Pattern (TInt $ BitSize 32) (PWild)) e1]
     fixIf x = x
 
 -- fixAbort = everywhere (mkT go)

@@ -57,8 +57,10 @@ ppTy ty = case ty of
     TStr -> tell "str"
     TVec ty -> brackets $ ppTy ty
     TFixedVec len ty -> brackets $ ppTy ty >> tell "; " >> tell (show len)
-    TInt size -> tell $ "i" ++ show size
-    TUint size -> tell $ "u" ++ show size
+    TInt (BitSize b) -> tell $ "i" ++ show b
+    TInt PtrSize -> tell "isize"
+    TUint (BitSize b) -> tell $ "u" ++ show b
+    TUint PtrSize -> tell "usize"
     TFloat size -> tell $ "f" ++ show size
     TBool -> tell "bool"
     TChar -> tell "char"

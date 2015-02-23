@@ -50,8 +50,8 @@ data Ty =
     | TStr
     | TVec Ty
     | TFixedVec Int Ty
-    | TInt Int
-    | TUint Int
+    | TInt IntSize
+    | TUint IntSize
     | TFloat Int
     | TBool
     | TChar
@@ -64,6 +64,9 @@ data Ty =
 type Lifetime = Name
 
 type Name = String
+
+data IntSize = BitSize Int | PtrSize
+  deriving (Eq, Show, Data, Typeable)
 
 type Abi = Name
 type LifetimeParam = Name
@@ -197,8 +200,8 @@ ty = tagged
     , ("str", return TStr)
     , ("vec", TVec <$> ty)
     , ("fixed_vec", TFixedVec <$> int <*> ty)
-    , ("int", TInt <$> int)
-    , ("uint", TUint <$> int)
+    , ("int", TInt <$> intSize)
+    , ("uint", TUint <$> intSize)
     , ("float", TFloat <$> int)
     , ("bool", return TBool)
     , ("char", return TChar)
@@ -210,6 +213,9 @@ ty = tagged
 
 lifetime = name
 name = word
+
+intSize = (exactWord "size" >> return PtrSize) <|> (BitSize <$> int)
+
 abi = name
 lifetimeParam = name
 tyParam = name
@@ -371,6 +377,10 @@ instance Pp Ty where
         TBottom ->          ppGo "bottom"   []
         TAbstract a b c ->  ppGo "abstract" [pp a, pp b, pp c]
     pp x = "[" ++ intercalate " " (pp' x) ++ "]"
+
+instance Pp IntSize where
+    pp' (BitSize b) = [show b]
+    pp' (PtrSize) = ["size"]
 
 instance Pp AbstractTypeDef where
     pp' (AbstractTypeDef a b c) = ppGo "abstract_type" [pp a, pp b, pp c]

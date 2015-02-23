@@ -62,8 +62,8 @@ fn UnsafeCell_new<0><1: T>
 #          | "str"
 #          | "vec" type
 #          | "fixed_vec" word(len) type
-#          | "int" word(bits)
-#          | "uint" word(bits)
+#          | "int" word(bits|"size")
+#          | "uint" word(bits|"size")
 #          | "float" word(bits)
 #          | "bool"
 #          | "char"
