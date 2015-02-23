@@ -1,7 +1,10 @@
 import sys
 
 input_file = sys.argv[1]
-failing_lines = set([ int(s) for s in sys.argv[2].split(",") ])
+
+failing_lines = set()
+for l in sys.stdin:
+    failing_lines.add(int(l))
 
 def readline(i, f):
     l = f.readline()
