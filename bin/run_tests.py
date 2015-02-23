@@ -12,11 +12,10 @@ import time
 
 cbmc_binary = None
 unwind_bound = None
-test_file = None
 include_dir = None
 use_z3 = False
 
-def run_test_case(test_case_name):
+def run_test_case(test_file, test_case_name):
     dev_null = open("/dev/null", "w")
     ret_code = subprocess.call([ cbmc_binary, "--pointer-check", "--bounds-check", 
                                  "-I", include_dir, "--unwind", unwind_bound, 
@@ -65,20 +64,17 @@ def run_master():
     parser.add_argument("--cbmc", action="store", default="cbmc")
     parser.add_argument("-I", dest="include_dir", action="store", default=os.path.join(os.path.join(this_dir, ".."), "src"))
     parser.add_argument("--unwind", action="store", type = int)
-    parser.add_argument("input", action="store")
     parser.add_argument("--z3", action="store_true")
     parser.add_argument("test_names", action="store", nargs = "?")
 
     opts = parser.parse_args()
     global cbmc_binary
     global unwind_bound
-    global test_file
     global include_dir
     global use_z3
 
     cbmc_binary = opts.cbmc
     unwind_bound = str(opts.unwind)
-    test_file = opts.input
     include_dir = opts.include_dir
     use_z3 = opts.use_z3
     
@@ -88,7 +84,7 @@ def run_master():
             if len(l.strip()) == 0:
                 continue
             else:
-                test_names.append(l.strip())
+                test_names.append(l.strip().split(":"))
 
     if opts.test_names is None:
         slurp_tests(sys.stdin)

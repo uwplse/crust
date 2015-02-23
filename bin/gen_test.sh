@@ -23,6 +23,13 @@ INPUT_FILE=$1
 INPUT_MODULE=$(basename $INPUT_FILE)
 INPUT_MODULE=${INPUT_MODULE/.rs/}
 
+OUTPUT_FOLDER=${INPUT_MODULE}_tests
+
+if [ -e $OUTPUT_FOLDER ]; then
+	echo "Output location $OUTPUT_FOLDER already exists; refusing to run"
+	exit 1
+fi
+
 python $THIS_DIR/crust_macros.py $INPUT_FILE  > $SCRATCH/${INPUT_MODULE}.rs
 $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $SCRATCH/${INPUT_MODULE}.rs > $SCRATCH/module.ir
 cat $SCRATCH/module.ir $THIS_DIR/../stdlib.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/pp_module.ir
@@ -42,4 +49,5 @@ else
 	$THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $SCRATCH/${INPUT_MODULE}_tests.rs > $SCRATCH/${INPUT_MODULE}_tests.ir
 fi
 cat $SCRATCH/pp_module.ir $SCRATCH/${INPUT_MODULE}_tests.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/${INPUT_MODULE}_tests_pp.ir
-$THIS_DIR/crust.native -test-compile $SCRATCH/${INPUT_MODULE}_tests_pp.ir > ${INPUT_MODULE}_tests.c
+mkdir $OUTPUT_FOLDER
+$THIS_DIR/crust.native -test-compile -test-case-prefix "${OUTPUT_FOLDER}/${INPUT_MODULE}_test" $SCRATCH/${INPUT_MODULE}_tests_pp.ir

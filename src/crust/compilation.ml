@@ -791,4 +791,4 @@ let emit out_channel t_set f_set statics =
   emit_fsigs out_channel f_list;
   let fn_buffer = Buffer.create 1000 in
   List.iter (emit_fn_def out_channel fn_buffer) f_list;
-  print_newline ()
+  Printf.fprintf out_channel "\n"
