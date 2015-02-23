@@ -85,10 +85,10 @@ let rec pp_t (to_pp : r_type) = match to_pp with
   | `Bool -> "bool"
   | `Char -> "char"
   | `Float i -> "float" ^ (string_of_int i)
-  | `Ptr t
-  | `Ref (_,t) -> "const " ^ (pp_t t) ^ "*"
-  | `Ref_Mut (_,t)
-  | `Ptr_Mut t -> (pp_t t) ^ "*"
+  | `Ptr t -> "*const " ^ (pp_t t)
+  | `Ref (_,t) -> "& " ^ (pp_t t)
+  | `Ref_Mut (_,t) -> "&mut " ^ (pp_t t)
+  | `Ptr_Mut t -> "*mut " ^ (pp_t t)
   | `Tuple tl -> "(" ^ (String.concat ", " @@ List.map pp_t tl) ^ ")"
   | `Adt_type p -> 
     let lifetimes = if p.lifetime_param = [] then "" else ("[" ^ (String.concat "," p.lifetime_param) ^ "]") in
