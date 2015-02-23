@@ -32,14 +32,16 @@ type _ query_param =
 let primitive_types = 
   MTSet.(
     empty
-    |> add (`Int 64)
-    |> add (`Int 32)
-    |> add (`Int 16)
-    |> add (`Int 8)
-    |> add (`UInt 64)
-    |> add (`UInt 32)
-    |> add (`UInt 16)
-    |> add (`UInt 8)
+    |> add (`Int (`Bit_Size 64))
+    |> add (`Int (`Bit_Size 32))
+    |> add (`Int (`Bit_Size 16))
+    |> add (`Int (`Bit_Size 8))
+    |> add (`Int `Ptr_Size)
+    |> add (`UInt (`Bit_Size 64))
+    |> add (`UInt (`Bit_Size 32))
+    |> add (`UInt (`Bit_Size 16))
+    |> add (`UInt (`Bit_Size 8))
+    |> add (`Int `Ptr_Size)
     |> add `Bool
     |> add `Unit
   );;
@@ -127,22 +129,6 @@ let sort_uniq l =
   let l = List.sort Pervasives.compare l in
   uniq_list l
 
-
-(* extend me as needed *)
-let primitive_types = 
-  MTSet.(
-    empty
-    |> add (`Int 64)
-    |> add (`Int 32)
-    |> add (`Int 16)
-    |> add (`Int 8)
-    |> add (`UInt 64)
-    |> add (`UInt 32)
-    |> add (`UInt 16)
-    |> add (`UInt 8)
-    |> add `Bool
-    |> add `Unit
-  );;
 exception StrayDST;;
 exception TyResolutionFailed;;
 

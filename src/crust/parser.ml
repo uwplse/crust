@@ -94,10 +94,16 @@ let consume_int tokens cb = match tokens with
 	 end
   | _ -> raise (Unexpected_stream_end "consume_int")
 
+let parse_int_size tokens cb = match tokens with
+  | "size"::t -> cb `Ptr_Size t
+  | _ -> consume_int tokens (fun b -> cb (`Bit_Size b))
+
 let parse_simple_type tokens cb = match tokens with
   | "unit"::t -> cb `Unit t
-  | "int"::w::t -> cb (`Int (int_of_string w)) t
-  | "uint"::w::t -> cb (`UInt (int_of_string w)) t
+  | "int"::t -> 
+    parse_int_size t (fun size -> cb (`Int size))
+  | "uint"::t -> 
+    parse_int_size t (fun size -> cb (`UInt size))
   | "bool"::t -> cb `Bool t
   | "var"::t_var::t -> cb (`T_Var t_var) t
   | "bottom"::t -> cb `Bottom t

@@ -4,6 +4,8 @@ let field_label = format_of_string "field%d";;
 let tuple_field = field_label;;
 let data_field = "data";;
 
+let struct_tag_type = `Int (`Bit_Size 32);;
+
 let rec instrument_return : Ir.expr -> Ir.expr = fun expr ->
   match (snd expr) with
   | `Unsafe (s,e) ->
@@ -258,7 +260,7 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 	 in
 	 let rhs = fun _ e -> e in
 	 let post = fun adt_var ->
-	   let tag_rhs = (`Int 4,(`Literal (string_of_int tag))) in
+	   let tag_rhs = (struct_tag_type,(`Literal (string_of_int tag))) in
 	   let discriminant_field = tag_field (snd adt_var) in
 	   let assignment = `Assignment (discriminant_field,tag_rhs) in
 	   [(`Unit,assignment)] in
@@ -408,8 +410,8 @@ and compile_pattern : ((t_simple_expr * t_simple_expr) list * 'b) -> 'c -> Ir.pa
   | `Enum (_,tag,patts) -> 
 	 let fields = List.mapi (fun i _ -> enum_field matchee tag i) patts in
 	 let (predicates',bindings) = List.fold_left2 compile_pattern (predicates,bindings) fields patts in
-	 let tag_rhs = (`Int 32,tag_field matchee) in
-	 let tag_lhs = (`Int 32,`Literal (string_of_int tag)) in
+	 let tag_rhs = (struct_tag_type,tag_field matchee) in
+	 let tag_lhs = (struct_tag_type,`Literal (string_of_int tag)) in
 	 (tag_lhs,tag_rhs)::predicates',bindings
   | `Ref b_name ->
     (* XXX(jtoman): THE WORST HACK

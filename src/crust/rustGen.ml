@@ -138,11 +138,11 @@ class rust_pp buf = object(self)
            
   method private nondet_fn ty = 
     match ty with
-    | `Int w -> "nondet_crust_i" ^ (string_of_int w) ^ "()"
+    | `Int w -> "nondet_crust_i" ^ (Types.string_of_intsize w) ^ "()"
     | `Unit -> "()"
     | `Bool -> "nondet_crust_bool()"
     | `Float w -> "nondet_crust_f" ^ (string_of_int w) ^ "()"
-    | `UInt w -> "nondet_crust_u" ^ (string_of_int w) ^ "()"
+    | `UInt w -> "nondet_crust_u" ^ (Types.string_of_intsize w) ^ "()"
     | `Char -> "nondet_crust_char()"
 
   method private update_drop state = 

@@ -1,10 +1,15 @@
 type lifetime = string
 type type_param = string
 type variant_name = string
+
+type int_size = [
+  | `Ptr_Size
+  | `Bit_Size of int
+]
 					  
 type simple_type = [
-  | `Int of int
-  | `UInt of int
+  | `Int of int_size
+  | `UInt of int_size
   | `Bool
   | `Unit
   | `Float of int
@@ -69,6 +74,8 @@ val type_binding : type_param list -> 'a list -> (type_param * 'a) list
 
 val pp_t :  r_type -> string
 val pp_tb : (string * mono_type) list -> string
+val string_of_intsize : int_size -> string
+
 (*val rust_tuple_name : string*)
 
 type type_binding = (string * mono_type) list

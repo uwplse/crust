@@ -3,6 +3,7 @@ val arm_field : (int -> string, unit, string, string, string, string) format6
 val field_label : (int -> string, unit, string, string, string, string) format6
 val tuple_field : (int -> string, unit, string, string, string, string) format6
 val data_field : string
+val struct_tag_type : Types.simple_type
 
 type static_expr = [
   | `Var of string

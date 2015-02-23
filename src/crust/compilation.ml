@@ -16,8 +16,8 @@ let rec adt_type_name = function
   | `Adt_type a -> mangle_adt_name a
   | `Ptr t -> (adt_type_name t) ^ "_ptr"
   | `Ptr_Mut t -> "const_" ^ (adt_type_name t) ^ "_ptr"
-  | `Int n -> "i" ^ string_of_int n
-  | `UInt n -> "u" ^ string_of_int n
+  | `Int n -> "i" ^ Types.string_of_intsize n
+  | `UInt n -> "u" ^ Types.string_of_intsize n
   | `Char -> "c"
   | `Float i -> "f" ^ (string_of_int i)
   | `Bool -> "bool"
@@ -62,8 +62,8 @@ let mangle_fn_name fn_name mono_args =
   | _ -> fn_name ^ "_" ^ (String.concat "_" (List.map adt_type_name mono_args))
 
 let rec type_to_string : c_types -> string = function
-  | `Int n -> "rs_i" ^ string_of_int n
-  | `UInt n -> "rs_u" ^ string_of_int n
+  | `Int n -> "rs_i" ^ Types.string_of_intsize n
+  | `UInt n -> "rs_u" ^ Types.string_of_intsize n
   | `Bool -> "rs_bool"
   | `Unit -> "rs_unit"
   | `Float i -> "rs_f" ^ (string_of_int i)
@@ -101,19 +101,22 @@ let string_of_unop : Ir.un_op -> string = function
   | `UnNeg -> "-"
   | `UnDeref -> "*"
 
+let slice_len_type = `UInt (`Bit_Size 32);;
+let char_data_type = `UInt (`Bit_Size 8);;
+
 let rec c_type_of_monomorph mono_type = 
   TypeUtil.handle_dst 
     (fun mut t -> 
        if mut then
-         `Tuple [`Ptr_Mut (c_type_of_monomorph t); `UInt 32]
+         `Tuple [`Ptr_Mut (c_type_of_monomorph t); slice_len_type]
        else
-         `Tuple [`Ptr_Mut (c_type_of_monomorph t); `UInt 32]
+         `Tuple [`Ptr_Mut (c_type_of_monomorph t); slice_len_type]
     )
     (fun mut ->
        if mut then
-         `Tuple [`Ptr_Mut (`UInt 8); `UInt 32]
+         `Tuple [`Ptr_Mut char_data_type; slice_len_type]
        else
-         `Tuple [`Ptr (`UInt 8); `UInt 32]
+         `Tuple [`Ptr char_data_type; slice_len_type]
     )
     (function
       | #Types.simple_type as s -> s
@@ -184,7 +187,7 @@ class typedef_emitter buf =
     method private dump_struct t_binding (s : Ir.struct_def) =
       self#dump_fields @@ self#monomorphize_fields t_binding s.Ir.struct_fields
     method private dump_enum t_binding enum = 
-      self#dump_field_def (CRep.struct_tag_field,`Int 32);
+      self#dump_field_def (CRep.struct_tag_field,(CRep.struct_tag_type :> c_types));
       let has_data = List.exists (fun v -> 
           v.Ir.variant_fields <> []) 
           enum.Ir.variants
@@ -449,10 +452,14 @@ let simple_type_repr t =
   match t with
   | `Unit -> "char"
   | `Bool -> "uint8_t"
-  | `Int w ->
+  | `Int (`Bit_Size w) ->
     Printf.sprintf "int%d_t" w
-  | `UInt w -> 
+  | `UInt (`Bit_Size w) -> 
     Printf.sprintf "uint%d_t" w
+  | `Int `Ptr_Size ->
+    "int64_t"
+  | `UInt `Ptr_Size ->
+    "uint64_t"
   | `Float i -> if i = 32 then "float" else if i = 64 then "double" else assert false
   | `Char -> "uint32_t"
 
@@ -494,9 +501,11 @@ let emit_common_typedefs out_channel =
   emit_type (`Float 32);
   emit_type (`Float 64);
   List.iter (fun size ->
-      emit_type (`UInt size);
-      emit_type (`Int size)
-    ) int_sizes
+      emit_type (`UInt (`Bit_Size size));
+      emit_type (`Int (`Bit_Size size))
+    ) int_sizes;
+  emit_type (`UInt `Ptr_Size);
+  emit_type (`Int `Ptr_Size)
 
 let emit_typedefs out_channel inst = 
   match inst with
@@ -607,16 +616,16 @@ let rec uniq_list = function
 let find_dup_ty_inst =
   let make_dst_inst mut wrapped = 
   if mut then
-    `Tuple,[`Ptr_Mut (c_type_of_monomorph wrapped); `UInt 32]
+    `Tuple,[`Ptr_Mut (c_type_of_monomorph wrapped); slice_len_type]
   else
-    `Tuple,[`Ptr (c_type_of_monomorph wrapped); `UInt 32]
+    `Tuple,[`Ptr (c_type_of_monomorph wrapped); slice_len_type]
   in
   fun insts ->
     let simple_inst = 
       List.map (fun (inst_flag,m_args) ->
           match inst_flag with
           | `String mut ->
-            make_dst_inst mut (`UInt 8)
+            make_dst_inst mut char_data_type
           | `Vec mut ->
             make_dst_inst mut (List.hd m_args)
           | (`Fixed_Vec _ as n)

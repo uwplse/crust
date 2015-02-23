@@ -3,11 +3,13 @@ extern {
     fn nondet_crust_u16_e() -> u16;
     fn nondet_crust_u32_e() -> u32;
     fn nondet_crust_u64_e() -> u64;
+    fn nondet_crust_usize_e() -> usize;
 
     fn nondet_crust_i8_e() -> i8;
     fn nondet_crust_i16_e() -> i16;
     fn nondet_crust_i32_e() -> i32;
     fn nondet_crust_i64_e() -> i64;
+    fn nondet_crust_isize_e() -> isize;
 
     fn nondet_crust_char_e() -> char;
     
@@ -40,6 +42,12 @@ fn nondet_crust_u64() -> u64 {
     }
 }
 
+fn nondet_crust_usize() -> usize {
+    unsafe {
+        nondet_crust_usize_e()
+    }
+}
+
 fn nondet_crust_i8() -> i8 {
     unsafe {
         nondet_crust_i8_e()
@@ -58,6 +66,12 @@ fn nondet_crust_i32() -> i32 {
 fn nondet_crust_i64() -> i64 {
     unsafe {
         nondet_crust_i64_e()
+    }
+}
+
+fn nondet_crust_isize() -> isize {
+    unsafe {
+        nondet_crust_isize_e()
     }
 }
 

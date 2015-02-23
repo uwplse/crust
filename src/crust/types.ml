@@ -1,10 +1,15 @@
 type lifetime = string
 type type_param = string
 type variant_name = string
+
+type int_size = [
+  | `Ptr_Size
+  | `Bit_Size of int
+]
 					  
 type simple_type = [
-  | `Int of int
-  | `UInt of int
+  | `Int of int_size
+  | `UInt of int_size
   | `Bool
   | `Unit
   | `Float of int
@@ -67,11 +72,15 @@ type type_binding = (string * mono_type) list
 let type_binding tv ty = 
   List.map2 (fun t_name t -> (t_name, t)) tv ty
 
+let string_of_intsize = function
+  | `Ptr_Size -> "size"
+  | `Bit_Size i -> string_of_int i
+
 let rec pp_t (to_pp : r_type) = match to_pp with
   | `Bottom -> "!"
   | `T_Var t -> "var " ^ t
-  | `Int s -> "int" ^ (string_of_int s)
-  | `UInt s -> "uint" ^ (string_of_int s)
+  | `Int s -> "int" ^ (string_of_intsize s)
+  | `UInt s -> "uint" ^ (string_of_intsize s)
   | `Unit -> "()"
   | `Bool -> "bool"
   | `Char -> "char"
