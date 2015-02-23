@@ -300,8 +300,8 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
         let e1' = snd t_e1 in
         `Unit,(`Assign_Op (op,e1',e2'))
       )
-  | `Cast (e,t) ->
-	 apply_lift (fst expr) e (fun e' -> `Cast (e',t))
+  | `Cast e ->
+	 apply_lift (fst expr) e (fun e' -> `Cast (e',(fst expr)))
   | `While (cond,b) ->
     let b' = simplify_ir b in
     apply_lift_cb cond (fun stmt c' ->

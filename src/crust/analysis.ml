@@ -258,8 +258,7 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
     List.fold_left (walk_expr t_bindings) w_state el
   | `UnOp (_,e1) ->
     walk_expr t_bindings w_state e1
-  | `Cast (e,t) -> 
-    let w_state = inst_walk_type t_bindings w_state t in
+  | `Cast e -> 
     walk_expr t_bindings w_state e
   | `While (e1,e2) ->
     List.fold_left (walk_expr t_bindings) w_state [e1;e2]

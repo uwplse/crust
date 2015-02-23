@@ -249,7 +249,7 @@ let rec parse_expr_var tokens cb = match tokens with
   | "addr_of"::t ->
 	 parse_expr t (fun e rest -> cb (`Address_of e) rest)
   | "cast"::t ->
-	 (parse_expr >> parse_type) t (fun c rest -> cb (`Cast c) rest)
+	 parse_expr t (fun c rest -> cb (`Cast c) rest)
   | "binop"::t ->
 	 (parse_binop >> parse_expr >> parse_expr) t (fun ((op,lhs),rhs) rest ->
 												  cb (`BinOp (op,lhs,rhs)) rest

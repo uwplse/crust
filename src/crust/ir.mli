@@ -38,7 +38,7 @@ type expr_variant = [
   | `Unsafe of (stmt list) * expr
   | `Return of expr
   | `Assignment of expr * expr
-  | `Cast of expr * r_type
+  | `Cast of expr
   | `BinOp of bin_op * expr * expr
   | `UnOp of un_op * expr
   | `Tuple of expr list
