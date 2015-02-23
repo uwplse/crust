@@ -50,13 +50,13 @@ main = do
     let items'' =
             dumpIr "final" $
             filter (not . isExternFn) $
-            fixBool $
             renameLocals ix $
             addCleanup ix $
             renameLocals ix $
             liftTemps ix $
             constExpand $
             ifFix $
+            fixBool $
 --            fixAbort $
             fixBottom $
             fixSpecialFn $
@@ -147,9 +147,9 @@ ifFix = everywhere (mkT fixIf)
         (EMatch e
                 [MatchArm (Pattern TBool (PSimpleLiteral "1")) e1,
                  MatchArm (Pattern TBool (PSimpleLiteral "0")) e2]) =
-         EMatch (mkCast e (TInt 32))
-                [MatchArm (Pattern (TInt 32) (PSimpleLiteral "0")) e2,
-                 MatchArm (Pattern (TInt 32) (PWild)) e1]
+         EMatch (mkCast e (TInt $ BitSize 32))
+                [MatchArm (Pattern (TInt $ BitSize 32) (PSimpleLiteral "0")) e2,
+                 MatchArm (Pattern (TInt $ BitSize 32) (PWild)) e1]
     fixIf x = x
 
 -- fixAbort = everywhere (mkT go)
@@ -331,7 +331,7 @@ scrub items = scrubbed'
     goExpr _ _ = True
 
 
-mkCast e t = Expr t (ECast e t)
+mkCast e t = Expr t (ECast e)
 
 exprToPat (ESimpleLiteral s) = PSimpleLiteral s
 exprToPat e = error $ "exprToPat: can't convert: " ++ show e

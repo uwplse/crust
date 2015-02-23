@@ -57,8 +57,10 @@ ppTy ty = case ty of
     TStr -> tell "str"
     TVec ty -> brackets $ ppTy ty
     TFixedVec len ty -> brackets $ ppTy ty >> tell "; " >> tell (show len)
-    TInt size -> tell $ "i" ++ show size
-    TUint size -> tell $ "u" ++ show size
+    TInt (BitSize b) -> tell $ "i" ++ show b
+    TInt PtrSize -> tell "isize"
+    TUint (BitSize b) -> tell $ "u" ++ show b
+    TUint PtrSize -> tell "usize"
     TFloat size -> tell $ "f" ++ show size
     TBool -> tell "bool"
     TChar -> tell "char"
@@ -164,7 +166,7 @@ ppExpr (Expr ty e) = case e of
         maybe (return ()) ppExpr low >>
         tell " .. " >>
         maybe (return ()) ppExpr high
-    ECast expr ty -> ppExpr expr >> tell " as " >> ppTy ty
+    ECast expr -> ppExpr expr >> tell " as " >> ppTy ty
     EBinOp op a b -> parens $ ppExpr a >> tell " `" >> tell op >> tell "` " >> ppExpr b
     EUnOp op a -> parens $ tell "`" >> tell op >> tell "` " >> ppExpr a
     ECall name las tas args -> do

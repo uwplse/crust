@@ -250,19 +250,23 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
         let s = match self.sty {
             ty_bool => format!("bool"),
             ty_char => format!("char"),
+            ty_int(TyIs(_)) => format!("int size"),
             ty_int(ity) => format!("int {}",
                                    match ity {
                                        TyI64 => 64us,
-                                       TyI32 | TyIs(_) => 32,
+                                       TyI32 => 32,
                                        TyI16 => 16,
                                        TyI8 => 8,
+                                       TyIs(_) => unreachable!(),
                                    }),
+            ty_uint(TyUs(_)) => format!("uint size"),
             ty_uint(uty) => format!("uint {}",
                                     match uty {
                                         TyU64 => 64us,
-                                        TyU32 | TyUs(_) => 32,
+                                        TyU32 => 32,
                                         TyU16 => 16,
                                         TyU8 => 8,
+                                        TyUs(_) => unreachable!(),
                                     }),
             ty_float(fty) => format!("float {}",
                                      match fty {
@@ -557,10 +561,8 @@ impl Trans for Expr {
             },
             ExprLit(ref lit) =>
                 format!("simple_literal {}", lit.trans(trcx)),
-            ExprCast(ref e, ref ty) =>
-                format!("cast {} {}",
-                        e.trans(trcx),
-                        ty.trans(trcx)),
+            ExprCast(ref e, _) =>
+                format!("cast {}", e.trans(trcx)),
             ExprIf(ref cond, ref then, ref opt_else) => {
                 let ty = trcx.tcx.node_types.borrow()[then.id];
 
