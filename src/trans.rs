@@ -561,10 +561,8 @@ impl Trans for Expr {
             },
             ExprLit(ref lit) =>
                 format!("simple_literal {}", lit.trans(trcx)),
-            ExprCast(ref e, ref ty) =>
-                format!("cast {} {}",
-                        e.trans(trcx),
-                        ty.trans(trcx)),
+            ExprCast(ref e, _) =>
+                format!("cast {}", e.trans(trcx)),
             ExprIf(ref cond, ref then, ref opt_else) => {
                 let ty = trcx.tcx.node_types.borrow()[then.id];
 

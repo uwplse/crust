@@ -166,7 +166,7 @@ ppExpr (Expr ty e) = case e of
         maybe (return ()) ppExpr low >>
         tell " .. " >>
         maybe (return ()) ppExpr high
-    ECast expr ty -> ppExpr expr >> tell " as " >> ppTy ty
+    ECast expr -> ppExpr expr >> tell " as " >> ppTy ty
     EBinOp op a b -> parens $ ppExpr a >> tell " `" >> tell op >> tell "` " >> ppExpr b
     EUnOp op a -> parens $ tell "`" >> tell op >> tell "` " >> ppExpr a
     ECall name las tas args -> do

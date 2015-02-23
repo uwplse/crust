@@ -331,7 +331,7 @@ scrub items = scrubbed'
     goExpr _ _ = True
 
 
-mkCast e t = Expr t (ECast e t)
+mkCast e t = Expr t (ECast e)
 
 exprToPat (ESimpleLiteral s) = PSimpleLiteral s
 exprToPat e = error $ "exprToPat: can't convert: " ++ show e

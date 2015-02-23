@@ -108,7 +108,7 @@ fn UnsafeCell_new<0><1: T>
 #                  | "addr_of" expr
 #                  | "index" expr expr
 #                  | "range" expr? expr?
-#                  | "cast" expr type
+#                  | "cast" expr
 #                  | "binop" op expr expr
 #                  | "unop" op expr expr
 #                  | "call" name(fn) lifetime* type* expr(arg)*

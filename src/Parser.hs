@@ -122,7 +122,7 @@ data Expr_ =
     | EAddrOf Expr
     | EIndex Expr Expr
     | ERange (Maybe Expr) (Maybe Expr)
-    | ECast Expr Ty
+    | ECast Expr
     | EBinOp String Expr Expr
     | EUnOp String Expr
     | ECall Name [Lifetime] [Ty] [Expr]
@@ -281,7 +281,7 @@ expr_ = tagged
     , ("addr_of", EAddrOf <$> expr)
     , ("index", EIndex <$> expr <*> expr)
     , ("range", ERange <$> optional expr <*> optional expr)
-    , ("cast", ECast <$> expr <*> ty)
+    , ("cast", ECast <$> expr)
     , ("binop", EBinOp <$> word <*> expr <*> expr)
     , ("unop", EUnOp <$> word <*> expr)
     , ("call", ECall <$> name <*> counted lifetime <*> counted ty <*> counted expr)
@@ -445,7 +445,7 @@ instance Pp Expr_ where
         EAddrOf a ->            ppGo "addr_of"          [pp a]
         EIndex a b ->           ppGo "index"            [pp a, pp b]
         ERange a b ->           ppGo "range"            [pp a, pp b]
-        ECast a b ->            ppGo "cast"             [pp a, pp b]
+        ECast a ->              ppGo "cast"             [pp a]
         EBinOp a b c ->         ppGo "binop"            [pp a, pp b, pp c]
         EUnOp a b ->            ppGo "unop"             [pp a, pp b]
         ECall a b c d ->        ppGo "call"             [pp a, pp b, pp c, pp d]
