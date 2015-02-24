@@ -16,3 +16,4 @@ val run_test_analysis : unit -> walk_state
 val resolve_abstract_fn : string -> Types.mono_type list -> (Types.mono_type list * string)
 val init_fn_filter : string -> unit
 val set_fn_filter : string -> unit
+val init_type_filter : string -> unit

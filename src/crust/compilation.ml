@@ -768,13 +768,14 @@ let dump_includes out_channel =
     ) includes
 
 let crust_mem_limit = ref 5;;
+let gcc_mode = ref false;;
 
 let emit out_channel t_set f_set statics = 
   let t_list = order_types @@ find_dup_ty_inst @@ Analysis.TISet.elements t_set in
   let f_list = find_dup_fn_inst @@ Analysis.FISet.elements f_set in
   emit_common_typedefs out_channel;
   begin
-    if !Env.gcc_mode then begin
+    if !gcc_mode then begin
       Printf.fprintf out_channel "#define assert(x)\n#define __CPROVER_assume(x) 0\n"
     end else ()
   end;

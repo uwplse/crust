@@ -10,15 +10,9 @@ module EnvMap = struct
   let mem = Hashtbl.mem
 end
 
-module EnvSet = struct
-  type 'b t = ('b,unit) Hashtbl.t
-  let mem = Hashtbl.mem
-end
-
 type adt_env_t = (string,Ir.type_expr) Hashtbl.t
 let adt_env = Hashtbl.create 10;;
 let fn_env = Hashtbl.create 10;;
-let type_infr_filter = Hashtbl.create 10;;
 let abstract_impl = Hashtbl.create 10;;
 let associated_types = Hashtbl.create 10;;
 let static_env = Hashtbl.create 10;;
@@ -63,24 +57,12 @@ let rec set_env = function
   | `Abstract_Fn _::t ->
     set_env t
 
-let gcc_mode = ref false;;
 let init_opt = ref false;;
 
 let is_abstract_fn = Hashtbl.mem abstract_impl
 let is_static_var = Hashtbl.mem static_env
 
-let init_inference_filter file_name = 
-  let f_in = open_in file_name in
-  let rec read_loop () = 
-    try
-      let l = input_line f_in in
-      if l = "" then read_loop () else (
-        Hashtbl.add type_infr_filter l ();
-        read_loop ()
-      )
-    with End_of_file -> close_in f_in
-  in
-  read_loop ()
+
 
 let get_adt_drop t_name = 
   let t_def = Hashtbl.find adt_env t_name in

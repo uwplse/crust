@@ -138,7 +138,7 @@ let resolve_abstract_fn =
   | [] -> 
     raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
   | l -> 
-    (* ugly hack *)
+    (* ugly hack (that isn't necessary anymore???) *)
     let all_prim = List.for_all is_primitive param_args in
     if all_prim then List.hd l else
       let inst_dump = String.concat "/" @@ List.map snd possible_insts in
@@ -376,6 +376,7 @@ let has_inst w_state f_name =
       f_name = f_name') w_state.fn_inst
 
 let pattern_list = ref [Str.regexp ""];;
+let type_filters = ref SSet.empty;;
 
 let rec find_fn find_state = 
   let old_size = state_size find_state.w_state in
@@ -410,7 +411,7 @@ let build_nopub_fn () =
               match t with
               | `Ref (_,`Adt_type a)
               | `Ref_Mut (_,`Adt_type a)
-              | `Adt_type a when Env.EnvSet.mem Env.type_infr_filter a.Types.type_name ->
+              | `Adt_type a when SSet.mem a.Types.type_name !type_filters ->
                 SSet.add fn_def.Ir.fn_name accum
               | _ -> accum
             end
@@ -509,3 +510,15 @@ let init_fn_filter f_name =
 
 let set_fn_filter filter =
   pattern_list := [ compile_glob filter ]
+
+let init_type_filter file_name = 
+  let f_in = open_in file_name in
+  let rec read_loop accum = 
+    try
+      let l = input_line f_in in
+      if l = "" then read_loop accum else (
+        read_loop @@ SSet.add l accum
+      )
+    with End_of_file -> (close_in f_in; accum)
+  in
+  type_filters := read_loop SSet.empty

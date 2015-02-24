@@ -27,8 +27,8 @@ let do_it f =
   let test_chunk_size = ref 300 in
   let output_channel = ref stdout in
   let arg_spec = [
-    ("-gcc", Arg.Set Env.gcc_mode, "Turn on gcc mode");
-    ("-infer-filter", Arg.String (fun f_name -> Env.init_inference_filter f_name), "Read a list of types for which to filter public function inference from file f (one per line)");
+    ("-gcc", Arg.Set Compilation.gcc_mode, "Turn on gcc mode");
+    ("-infer-filter", Arg.String (fun f_name -> Analysis.init_type_filter f_name), "Read a list of types for which to filter public function inference from file f (one per line)");
     ("-", Arg.Unit (fun () -> input_file := "-"), "Read from stdin");
     ("-optional-init", Arg.Set Env.init_opt, "Make crust_init optional (for testing purposes only!)");
     ("-api-filter", Arg.String (fun f_name -> Analysis.init_fn_filter f_name), "Read a list of glob patterns");
