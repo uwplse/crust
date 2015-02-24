@@ -475,25 +475,12 @@ let run_test_analysis test_chunk_size =
     public_fn = FISet.empty;
     static_var = SSet.empty
   } in
-  let monomorphized = 
-    Env.EnvMap.fold (fun k v accum ->
-        if Str.string_match crust_test_regex k 0 then
-          walk_fn_def accum v []
-        else 
-          accum
-      ) Env.fn_env init_state in
-  if test_chunk_size = 0 then [monomorphized] else
-    let (test_fn,api_fn) = FISet.partition (fun (s,_) -> Str.string_match crust_test_regex s 0) monomorphized.fn_inst in
-    let (_,curr,accum) = FISet.fold (fun test_inst (num_test,curr,accum) ->
-        if num_test = test_chunk_size then
-          (0,FISet.singleton test_inst,curr::accum)
-        else
-          (succ num_test,FISet.add test_inst curr,accum)
-      ) test_fn (0,FISet.empty,[]) in
-    let test_slices = if FISet.is_empty curr then accum else curr::accum in
-    List.map (fun test_slice ->
-        { monomorphized with fn_inst = FISet.union test_slice api_fn }
-      ) test_slices
+  Env.EnvMap.fold (fun k v accum ->
+      if Str.string_match crust_test_regex k 0 then
+        walk_fn_def accum v []
+      else 
+        accum
+    ) Env.fn_env init_state
 
 let compile_glob patt = 
   let patt = Str.quote patt in

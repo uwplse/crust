@@ -12,7 +12,7 @@ type walk_state = {
 exception ResolutionFailed of string
 
 val run_analysis : unit -> walk_state
-val run_test_analysis : int -> walk_state list
+val run_test_analysis : unit -> walk_state
 val resolve_abstract_fn : string -> Types.mono_type list -> (Types.mono_type list * string)
 val init_fn_filter : string -> unit
 val set_fn_filter : string -> unit

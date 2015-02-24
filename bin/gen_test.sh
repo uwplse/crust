@@ -31,27 +31,50 @@ if [ -e $OUTPUT_FOLDER ]; then
 fi
 
 function do_scrub() {
+	TO_SCRUB=$1
 	for i in $(seq 0 2); do
-		if $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $SCRATCH/${INPUT_MODULE}_tests.rs > $SCRATCH/${INPUT_MODULE}_tests.ir 2> $SCRATCH/failing_tests; then
+		if $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $TO_SCRUB > $SCRATCH/tests.ir 2> $SCRATCH/failing_tests; then
 			return
 		fi
-		cp $SCRATCH/${INPUT_MODULE}_tests.rs $SCRATCH/${INPUT_MODULE}_tests-ps${i}.rs
-		egrep -o '.+error:' $SCRATCH/failing_tests | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python $THIS_DIR/filter_errors.py $SCRATCH/${INPUT_MODULE}_tests.rs > $SCRATCH/scrubbed-${i}.rs;		
-		cp $SCRATCH/scrubbed-${i}.rs $SCRATCH/${INPUT_MODULE}_tests.rs
+		cp $TO_SCRUB $SCRATCH/pre_scrubbed_${i}.rs
+		egrep -o '.+error:' $SCRATCH/failing_tests | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python $THIS_DIR/filter_errors.py $TO_SCRUB > $SCRATCH/scrubbed_${i}.rs;		
+		cp $SCRATCH/scrubbed_${i}.rs $TO_SCRUB
 	done
 	echo "Failed to scrub tests"
 	exit 1
 }
 
-python $THIS_DIR/crust_macros.py $INPUT_FILE  > $SCRATCH/${INPUT_MODULE}.rs
+TEST_FILES=$SCRATCH/tests
+TRANS_FILES=$SCRATCH/$OUTPUT_FOLDER
+
+mkdir $TEST_FILES $TRANS_FILES
+
+cp $INPUT_FILE $TEST_FILES
+
+function trans_test() {
+	TO_TRANS=$1;
+	shift 1;
+	OUT_NAME=$(basename $TO_TRANS)
+	OUT_PATH=$TRANS_FILES/$OUT_NAME
+	OUT_PATH=${OUT_PATH/.rs/.c}
+
+	python $THIS_DIR/crust_macros.py --intrinsics --module $INPUT_MODULE $TO_TRANS > $SCRATCH/temp.rs
+	mv $SCRATCH/temp.rs $TO_TRANS
+
+	do_scrub $TO_TRANS
+	
+	cat $SCRATCH/pp_module.ir $SCRATCH/tests.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/pp_test.ir
+
+	$THIS_DIR/crust.native -test-compile $SCRATCH/pp_test.ir > $OUT_PATH
+}
+
+python $THIS_DIR/crust_macros.py $INPUT_FILE > $SCRATCH/${INPUT_MODULE}.rs
 $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $SCRATCH/${INPUT_MODULE}.rs > $SCRATCH/module.ir
 cat $SCRATCH/module.ir $THIS_DIR/../stdlib.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/pp_module.ir
+$THIS_DIR/crust.native $GEN_ARGS -driver-gen -set-api-filter "${INPUT_MODULE}\$*" -test-case-prefix $TEST_FILES/${INPUT_MODULE}_test $SCRATCH/pp_module.ir
+for i in $TEST_FILES/${INPUT_MODULE}_test_*.rs; do
+	trans_test $i
+done
 
-$THIS_DIR/crust.native $GEN_ARGS -driver-gen -set-api-filter "${INPUT_MODULE}\$*" $SCRATCH/pp_module.ir > $SCRATCH/${INPUT_MODULE}_tests_temp.rs;
-python $THIS_DIR/crust_macros.py --intrinsics --module $INPUT_MODULE $SCRATCH/${INPUT_MODULE}_tests_temp.rs > $SCRATCH/${INPUT_MODULE}_tests.rs
 
-cp $INPUT_FILE $SCRATCH
-do_scrub;
-cat $SCRATCH/pp_module.ir $SCRATCH/${INPUT_MODULE}_tests.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/${INPUT_MODULE}_tests_pp.ir
-mkdir $OUTPUT_FOLDER
-$THIS_DIR/crust.native -test-compile -test-case-prefix "${OUTPUT_FOLDER}/${INPUT_MODULE}_test" $SCRATCH/${INPUT_MODULE}_tests_pp.ir
+mv $TRANS_FILES .

@@ -1,14 +1,10 @@
-let compile_tests test_chunk_size output_prefix = 
-  let test_slices = Analysis.run_test_analysis test_chunk_size in
-  List.iteri (fun test_num test_slice ->
-      let out_chan = open_out @@ Printf.sprintf "%s_%d.c" output_prefix test_num in
-      Compilation.emit out_chan test_slice.Analysis.type_inst test_slice.Analysis.fn_inst test_slice.Analysis.static_var;
-      close_out out_chan
-    ) test_slices
+let compile_tests out_channel = 
+  let w_state = Analysis.run_test_analysis () in
+  Compilation.emit out_channel w_state.Analysis.type_inst w_state.Analysis.fn_inst w_state.Analysis.static_var
 
-let generate_driver out_chan = 
+let generate_driver test_prefix test_slice = 
   let w_state = Analysis.run_analysis () in
-  RustGen.gen_driver out_chan w_state.Analysis.public_type w_state.Analysis.public_fn
+  RustGen.gen_driver test_prefix test_slice w_state.Analysis.public_type w_state.Analysis.public_fn
 
 let do_api_dump out_chan = 
   let w_state = Analysis.run_analysis () in
@@ -68,9 +64,9 @@ let do_it f =
   in
   Env.set_env ast;
   if !test_gen then
-    compile_tests !test_chunk_size !test_output_file 
+    compile_tests !output_channel
   else if !driver_gen then
-    generate_driver !output_channel
+    generate_driver !test_output_file !test_chunk_size
   else if !dump_api then
     do_api_dump !output_channel
   else

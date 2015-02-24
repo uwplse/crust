@@ -110,10 +110,20 @@ module UnionFind = struct
   let create () = Hashtbl.create 10
 end
 
-class rust_pp buf = object(self)
+let prelude = [
+  "#![crate_type = \"lib\"]";
+  "#![no_std]";
+  "#![feature(unsafe_destructor)]";
+  "extern crate core;";
+  "extern crate alloc;"
+]
+
+class rust_pp buf output_file_prefix num_tests = object(self)
   inherit Emit.emitter buf
   val mutable var_counter = 0
-    
+  val mutable curr_tests = 0
+  val mutable test_counter = 0
+
   method emit_sequence sequence =
     var_counter <- 0;
     let init_vars,concrete_call_seqs = self#concretize sequence in
@@ -126,6 +136,30 @@ class rust_pp buf = object(self)
     List.iter (fun cc_seq ->
         self#emit_cc_sequence init_vars cc_seq
     ) final_call_seq
+
+  method private reset_buffer () =
+    Buffer.clear buf
+
+  method flush_buffer () = 
+    if curr_tests = 0 then () else begin
+      let file_name = Printf.sprintf "%s_%d.rs" output_file_prefix test_counter in
+      let f = open_out file_name in
+      List.iter (fun l ->
+          output_string f l;
+          output_string f "\n"
+        ) prelude;
+      Buffer.output_buffer f buf;
+      close_out f;
+      self#reset_buffer ();
+      curr_tests <- 0;
+      test_counter <- test_counter + 1
+    end
+
+  method private ensure_limit () = 
+    if curr_tests = num_tests then
+      self#flush_buffer ()
+    else ()
+    
 
   method private init_state = 
     let init_vars = List.map (fun ty ->
@@ -276,8 +310,9 @@ class rust_pp buf = object(self)
     var_counter <- var_counter + 1;
     to_ret
 
-
   method private emit_cc_sequence init_vars cc_sequence = 
+    self#ensure_limit ();
+    curr_tests <- curr_tests + 1;
     let test_name = fresh_name () in
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
@@ -460,15 +495,10 @@ let filter_drop call_seq =
 
 (* (not a) stub! *)
 let gen_call = 
-  let buf = Buffer.create 1000 in
-  let pp = new rust_pp buf in
-  fun out_channel sequence ->
+  fun pp sequence ->
   let call_seq = List.rev sequence in
   if not @@ filter_drop call_seq then () else begin
-    Printf.fprintf out_channel "//%s\n" (String.concat " -> " @@ List.map fst call_seq);
-    Buffer.clear buf;
-    pp#emit_sequence @@ List.rev sequence;
-    Buffer.output_buffer out_channel buf
+    pp#emit_sequence @@ List.rev sequence
   end
 
   
@@ -528,18 +558,7 @@ and do_gen_immut const_fn_set seq_len state index path f =
     | None -> ()
   end
 
-let prelude = [
-  "#![crate_type = \"lib\"]";
-  "#![no_std]";
-  "#![feature(unsafe_destructor)]";
-  "extern crate core;";
-  "extern crate alloc;"
-]
-
-let output_standard_header out_channel = 
-  List.iter (Printf.fprintf out_channel "%s\n") prelude
-
-let gen_call_seq out_channel fi_set = 
+let gen_call_seq pp fi_set = 
   let (mut_fn_set,const_fn_set) = 
     if !no_mut_analysis then
       (fi_set,Analysis.FISet.empty)
@@ -551,11 +570,13 @@ let gen_call_seq out_channel fi_set =
   do_gen_mut mut_fn_arr const_fn_arr 0 {
     public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ init_types ();
     t_list = []
-  } 0 [] (gen_call out_channel)
+  } 0 [] (gen_call pp)
 
-let gen_driver out_channel pt_set pf_set = 
-  output_standard_header out_channel;
-  gen_call_seq out_channel pf_set
+let gen_driver output_prefix test_slice pt_set pf_set = 
+  let out_buffer = Buffer.create 1000 in
+  let pp_rust = new rust_pp out_buffer output_prefix test_slice in
+  gen_call_seq pp_rust pf_set;
+  pp_rust#flush_buffer ()
 
 let dump_api out_channel pt_set pf_set = 
   let buf = Buffer.create 1000 in
