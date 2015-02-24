@@ -1,6 +1,6 @@
 RUSTC=rustc
 RUST_FLAGS=-A warnings -C rpath
-GHC=ghc
+GHC=ghc -O3
 ALEX=alex
 .PHONY: all crust clean archive
 MAKE=make

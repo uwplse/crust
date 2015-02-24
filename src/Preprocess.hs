@@ -36,19 +36,25 @@ data Config = Config
 
 main = do
     args <- getArgs
-    let (shouldScrub, pprintOnly) = case args of
-            ["--scrub"] -> (True, False)
-            ["--pprint"] -> (False, True)
-            [] -> (False, False)
+    let (shouldScrub, pprintOnly, doFilter, filterFile) = case args of
+            ["--scrub"] -> (True, False, False, "")
+            ["--pprint"] -> (False, True, False, "")
+            ["--filter", f] -> (False, False, True, f)
+            [] -> (False, False, False, "")
             _ -> error $ "bad command line arguments: " ++ show args
-
+    itemFilter <- if doFilter then do
+                                content <- readFile filterFile
+                                let item_set = S.fromList $ lines content
+                                return (Just item_set)
+                  else return Nothing
     items <- parseContents item
+    if doFilter then putStrLn $ concatMap pp $ filterItems items itemFilter else do
     if pprintOnly then evaluate (dumpIr "pprint" $ items) >> return () else do
 
     let items' = if shouldScrub then scrub items else items
     let ix = mkIndex items'
     let items'' =
-            dumpIr "final" $
+--            dumpIr "final" $
             filter (not . isExternFn) $
             renameLocals ix $
             addCleanup ix $
@@ -305,6 +311,21 @@ desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
         cur <- get
         modify (+1)
         return $ base ++ show cur
+
+filterItems items (Just itemFilter) = filter isAllowed items
+    where
+      isAllowed (IConst _) = True
+      isAllowed (IMeta _) = True
+      isAllowed (IAssociatedType _) = True
+      isAllowed (IExternFn _) = True
+      isAllowed (IAbstractType _) = True
+
+      isAllowed (IStatic (StaticDef n _ _)) = S.member n itemFilter
+      isAllowed (IFn (FnDef n _ _ _ _ _ _)) = S.member n itemFilter
+      isAllowed (IAbstractFn (AbstractFnDef n _ _ _ _)) = S.member n itemFilter
+      isAllowed (IStruct (StructDef n _ _ _ _)) = S.member n itemFilter
+      isAllowed (IEnum (EnumDef n _ _ _ _)) = S.member n itemFilter
+filterItems items Nothing = error "no filter name specified"
 
 scrub items = scrubbed'
   where

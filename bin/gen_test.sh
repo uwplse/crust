@@ -69,8 +69,12 @@ function trans_test() {
 }
 
 python $THIS_DIR/crust_macros.py $INPUT_FILE > $SCRATCH/${INPUT_MODULE}.rs
+
+#generate our minified stdlib
 $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $SCRATCH/${INPUT_MODULE}.rs > $SCRATCH/module.ir
-cat $SCRATCH/module.ir $THIS_DIR/../stdlib.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/pp_module.ir
+cat $SCRATCH/module.ir $THIS_DIR/../stdlib.ir | $THIS_DIR/Preprocess 2> /dev/null > $SCRATCH/pp_module_all.ir
+$THIS_DIR/crust.native -set-api-filter "${INPUT_MODULE}\$*" -dump-items $SCRATCH/pp_module_all.ir > $SCRATCH/used_items
+$THIS_DIR/Preprocess --filter $SCRATCH/used_items < $SCRATCH/pp_module_all.ir > $SCRATCH/pp_module.ir
 $THIS_DIR/crust.native $GEN_ARGS -driver-gen -set-api-filter "${INPUT_MODULE}\$*" -test-case-prefix $TEST_FILES/${INPUT_MODULE}_test $SCRATCH/pp_module.ir
 for i in $TEST_FILES/${INPUT_MODULE}_test_*.rs; do
 	trans_test $i
