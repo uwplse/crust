@@ -17,11 +17,10 @@ use_z3 = False
 
 def run_test_case(test_file, test_case_name):
     dev_null = open("/dev/null", "w")
-    ret_code = subprocess.call([ cbmc_binary, "--pointer-check", "--bounds-check", 
-                                 "-I", include_dir, "--unwind", unwind_bound, 
-                                 "--z3" if use_z3 else "", 
-                                 "--function", test_case_name, 
-                                 test_file], 
+    ret_code = subprocess.call([ cbmc_binary, "--pointer-check", "--bounds-check",
+                                 "-I", include_dir, "--unwind", unwind_bound ] +
+                               (["--z3"] if use_z3 else []) +
+                               ["--function", test_case_name, test_file],
                                stdout = dev_null, stderr = subprocess.STDOUT)
     return ret_code
 
@@ -76,7 +75,7 @@ def run_master():
     cbmc_binary = opts.cbmc
     unwind_bound = str(opts.unwind)
     include_dir = opts.include_dir
-    use_z3 = opts.use_z3
+    use_z3 = opts.z3
     
     test_names = []
     def slurp_tests(f):
