@@ -758,7 +758,8 @@ let includes = [
   "stdint.h";
   "stdlib.h";
   "string.h";
-  "stddef.h"
+  "stddef.h";
+  "assert.h"
 ]
 
 let dump_includes out_channel = 

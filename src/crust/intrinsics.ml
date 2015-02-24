@@ -277,6 +277,6 @@ let intrinsic_name s =
   if Str.string_match nondet_regex s 0 then
     Str.global_replace nondet_regex "\\1" s
   else if Str.string_match crust_assert_regex s 0 then
-    "assert"
+    "crust_assert"
   else
     failwith @@ "unrecognized crust intrinsic name: " ^ s

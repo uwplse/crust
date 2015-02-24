@@ -16,3 +16,8 @@ rs_bool nondet_crust_bool();
 
 rs_f32 nondet_crust_f32();
 rs_f64 nondet_crust_f64();
+
+rs_unit crust_assert(int cond) {
+  assert(cond);
+  return 0;
+}
