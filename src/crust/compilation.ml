@@ -767,7 +767,7 @@ let dump_includes out_channel =
       Printf.fprintf out_channel "#include <%s>\n" i
     ) includes
 
-let crust_mem_limit = ref 16;;
+let crust_mem_limit = ref 5;;
 
 let emit out_channel t_set f_set statics = 
   let t_list = order_types @@ find_dup_ty_inst @@ Analysis.TISet.elements t_set in
