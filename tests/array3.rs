@@ -80,6 +80,25 @@ impl<T: Copy> Vec<T> {
         }
     }
 
+    pub fn append(&mut self, other: &mut Self) {
+        let other_len = other.len;
+        let need_memory = other.len + self.len > self.cap;
+        if need_memory {
+            let new_capacity = other.len + self.len;
+            let new_ptr = unsafe { alloc::heap::allocate(new_capacity, core::mem::align_of::<T>()) as *mut T };
+            let old_size = self.len * core::mem::size_of::<T>();
+            unsafe {
+                core::intrinsics::copy_nonoverlapping_memory(new_ptr, self.ptr, old_size);
+            }
+            self.cap = new_capacity;
+            self.ptr = new_ptr;
+        }
+        let to_copy = other.len * core::mem::size_of::<T>();
+        unsafe {
+            core::intrinsics::copy_nonoverlapping_memory(self.ptr.offset(self.len as isize), other.ptr, to_copy);
+        }
+    }
+
     /*
     // BUG: removing 'a from self allows inappropriate aliasing (with get_mut)
     fn get<'a>(&'a self, index: usize) -> &'a T {
@@ -112,4 +131,11 @@ impl<T> Drop for Vec<T> {
     }
 }
 
-pub fn crust_init() -> (Vec<u8>,Vec<u8>) { (Vec::with_capacity(2),Vec::with_capacity(2)) }
+pub fn crust_init(e1 : u8, vec_size : usize) -> (Vec<u8>,Vec<u8>) {
+    let mut v1 = Vec::with_capacity(vec_size);
+    let mut v2 = Vec::with_capacity(vec_size);
+    v1.push(e1);
+    v2.push(e1);
+    (v1,v2)
+}
+
