@@ -124,6 +124,8 @@ class rust_pp buf output_file_prefix num_tests = object(self)
   val mutable curr_tests = 0
   val mutable test_counter = 0
 
+  val mutable init_arg_list = []
+
   method emit_sequence sequence =
     var_counter <- 0;
     let init_vars,concrete_call_seqs = self#concretize sequence in
@@ -317,10 +319,15 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     self#put_all [ "fn "; test_name; "() "];
     self#open_block ();
     let init_name = rust_name @@ Env.crust_init_name_e () in
+    let put_args () = 
+      self#put_all [ init_name; "(" ];
+      self#put_many ", " self#emit_arg init_arg_list;
+      self#put ");"
+    in
     (match init_vars with
     | [] -> ()
-    | [v] -> self#put_all [ "let (mut "; v; ",) = "; init_name ; "();" ]
-    | t -> self#put_all [ "let ("; (String.concat ", " @@ List.map (fun v -> "mut " ^ v) init_vars); ") = "; init_name ; "();" ]
+    | [v] -> self#put_all [ "let (mut "; v; ",) = " ]; put_args ()
+    | t -> self#put_all [ "let ("; (String.concat ", " @@ List.map (fun v -> "mut " ^ v) init_vars); ") = " ]; put_args ()
     );
     self#newline ();
     let open_blocks = List.fold_left (fun accum b ->
@@ -450,6 +457,18 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         cc::(break_loop t')
     in
     break_loop cc_vc
+
+  initializer 
+    let (init_args,_) = memo_get_fn_types (Env.crust_init_name_e(), []) in
+    let empty_state = {
+      var_of_ty = MTMap.empty;
+      var_stack = [];
+      ty_of_var = SMap.empty 
+    } in
+    match self#get_args empty_state init_args with
+    | [t] -> init_arg_list <- t
+    | [] -> failwith "No resolution found for crust_init arguments"
+    | _ -> failwith "Ambiguous argument resolution found for crust_init"
 end
 
 let rec complex_drop ty = match ty with
