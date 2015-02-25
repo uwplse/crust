@@ -59,6 +59,7 @@ main = do
             items
     let ix = mkIndex items'
     let items'' =
+            generateDropGlues $
 --            dumpIr "final" $
             filter (not . isExternFn) $
             renameLocals ix $
