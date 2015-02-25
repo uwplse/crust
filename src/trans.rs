@@ -590,7 +590,11 @@ impl Trans for Expr {
                         guard.trans(trcx),
                         body.trans(trcx)),
             // ExprWhileLet
-            // ExprForLoop
+            ExprForLoop(ref patt, ref expr, ref body, _ident) =>
+                format!("for {} {} {}",
+                        patt.trans(trcx),
+                        expr.trans(trcx),
+                        body.trans(trcx)),
             // ExprLoop
             ExprMatch(ref expr, ref arms, _src) =>
                 format!("match {} {}",

@@ -132,6 +132,7 @@ data Expr_ =
     | EWhile Expr Expr
     | EReturn Expr
     | EVec [Expr]
+    | EFor Pattern Expr Expr_
   deriving (Eq, Show, Data, Typeable)
 
 data Field = Field Name Expr
@@ -291,6 +292,7 @@ expr_ = tagged
     , ("while", EWhile <$> expr <*> expr)
     , ("assign_op", EAssignOp <$> word <*> expr <*> expr)
     , ("vec", EVec <$> counted expr)
+    , ("for", EFor <$> pattern <*> expr <*> expr_)
     ]
 field = Field <$> name <*> expr
 
@@ -455,6 +457,7 @@ instance Pp Expr_ where
         EWhile a b ->           ppGo "while"            [pp a,pp b]
         EAssignOp a b c ->      ppGo "assign_op"        [pp a,pp b,pp c]
         EVec e ->               ppGo "vec"              [pp e]
+        EFor a b c ->           ppGo "for"              [pp a,pp b,pp c]
 
 instance Pp Field where
     pp' (Field a b) = map pp [pp a, pp b]

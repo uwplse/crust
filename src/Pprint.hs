@@ -184,6 +184,8 @@ ppExpr (Expr ty e) = case e of
       tell "vec["
       commaSep $ map ppExpr exprs
       tell "]"
+    EFor patt expr body ->
+        inline (tell "for " >> ppPat patt >> tell " in " >> ppExpr expr >> tell " {") (tell "}") $ ppExpr (Expr TUnit body)
 
 ppPat (Pattern ty p) = case p of
     PVar name -> tell name
