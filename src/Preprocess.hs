@@ -5,19 +5,21 @@ import Control.Exception (evaluate)
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.State
+import Control.Monad.Writer
 import Data.Char (toLower)
 import Data.Generics hiding (typeOf)
 import Data.List (intercalate, isPrefixOf, isSuffixOf)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe
+import Numeric
 import System.Environment
 import Text.Parsec hiding (label, State)
 
 import Lexer
 import Parser
 import Index
-import TempLift
+import TempLift hiding (fresh)
 import Rename
 import Pprint
 import DropGlue
@@ -51,7 +53,10 @@ main = do
     if doFilter then putStrLn $ concatMap pp $ filterItems items itemFilter else do
     if pprintOnly then evaluate (dumpIr "pprint" $ items) >> return () else do
 
-    let items' = if shouldScrub then scrub items else items
+    let items' =
+            liftStrings $
+            (if shouldScrub then scrub else id) $
+            items
     let ix = mkIndex items'
     let items'' =
 --            dumpIr "final" $
@@ -307,10 +312,41 @@ desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
 
     go [] e = return ([], e)
 
-    fresh base = do
-        cur <- get
-        modify (+1)
-        return $ base ++ show cur
+fresh base = do
+    cur <- get
+    modify (+1)
+    return $ base ++ show cur
+
+liftStrings x = x'''
+  where
+    x' = everywhereM (mkM goExpr) x
+    x'' = evalStateT x' 0
+    x''' = let (a, b) = runWriter x'' in a ++ b
+
+    goExpr orig@(Expr (TRef life mutbl TStr) (ESimpleLiteral lit)) = do
+        let bytes = unhex lit
+        traceShow bytes $ return ()
+
+        n <- fresh "__static_str"
+
+        let count = length bytes
+            u8 = TUint $ BitSize 8
+            vecTy = TFixedVec count u8
+            vecExpr = Expr vecTy $ EVec $
+                map (\b -> Expr u8 $ ESimpleLiteral $ show b) bytes
+        tell . (:[]) $ IStatic $ StaticDef n vecTy vecExpr
+
+        let dataExpr = Expr (TPtr MImm u8) $ ECast $
+                Expr (TRef "r_static" MImm vecTy) $ EAddrOf $
+                    Expr vecTy $ EVar n
+            lenExpr = Expr (TUint PtrSize) $ ESimpleLiteral $ show count
+            tupleLit = ETupleLiteral [dataExpr, lenExpr]
+
+        return $ Expr (TRef life mutbl TStr) tupleLit
+    goExpr e = return e
+
+    unhex [] = []
+    unhex (a:b:xs) = (fst . head . readHex $ a:b:[]) : unhex xs
 
 filterItems items (Just itemFilter) = filter isAllowed items
     where
