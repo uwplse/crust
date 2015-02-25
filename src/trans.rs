@@ -816,7 +816,13 @@ fn find_variant(trcx: &mut TransCtxt, id: NodeId) -> Option<(String, usize)> {
 impl Trans for Lit {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         match self.node {
-            // LitStr
+            LitStr(ref s, ref style) => {
+                let mut result = String::new();
+                for b in s.get().bytes() {
+                    result.push_str(&*format!("{:02x}", b));
+                }
+                result
+            },
             // LitBinary
             LitByte(b) => format!("{}", b),
             // LitChar

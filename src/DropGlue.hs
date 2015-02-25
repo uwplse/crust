@@ -17,10 +17,21 @@ import Builder
 import Debug.Trace
 
 
-generateDropGlues items = map (IFn . mkDropGlue ix . snd) (M.toList $ i_types ix) ++ items
-  where ix = mkIndex items
+generateDropGlues items =
+        map (IFn . mkDropGlue ix . snd) (M.toList $ i_types ix) ++
+        map applyDropGlue items
+  where
+    ix = mkIndex items
 
-mkDropGlue ix ty = FnDef ("drop_glue_" ++ ty_name ty) lifetimes tyParams [argDecl] TUnit Nothing body
+    applyDropGlue (IStruct (StructDef name a b c _)) =
+        IStruct $ StructDef name a b c (Just $ dropGlueName name)
+    applyDropGlue (IEnum (EnumDef name a b c _)) =
+        IEnum $ EnumDef name a b c (Just $ dropGlueName name)
+    applyDropGlue i = i
+
+dropGlueName name = name ++ "$__drop_glue"
+
+mkDropGlue ix ty = FnDef (dropGlueName $ ty_name ty) lifetimes tyParams [argDecl] TUnit Nothing body
   where
     lifetimes = ty_lifetimeParams ty
     tyParams = ty_tyParams ty
