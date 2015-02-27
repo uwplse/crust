@@ -97,6 +97,11 @@ let i_list = arith_intrinsics @ [
     i_body = Inline "(__CPROVER_assume(0),0)"
   };
   {
+    i_name = "core$panicking$panic";
+    i_params = [];
+    i_body = Inline "(__CPROVER_assume(0),0)"
+  };
+  {
     i_name = "core$intrinsics$move_val_init";
     i_params = ["t1"];
     i_body = Inline "memcpy({arg1}, &{arg2}, sizeof({t1}))"

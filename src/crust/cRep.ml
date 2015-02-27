@@ -24,6 +24,7 @@ type static_expr = [
   | `Init of static_expr list
   | `Tagged_Init of string * static_expr list
   | `UnOp of Ir.un_op * static_expr
+  | `Cast of Types.r_type * static_expr
 ]
 
 (* A note on t_simple_expr vs. simple_expr: t_simple_expr is a simple
@@ -461,7 +462,6 @@ let rec simplify_static_ir : Ir.expr -> static_expr =
     | `Call _ 
     | `While _
     | `Assignment _
-    | `Cast _
     | `Unsafe _
     | `Return _
     | `Match _
@@ -469,6 +469,7 @@ let rec simplify_static_ir : Ir.expr -> static_expr =
     | `Struct_Field _
     | `Assign_Op _ -> raise Illegal_dynamic_expr
     | `Var s -> `Var s
+    | `Cast e -> `Cast (e_type, simplify_static_ir e)
     | `Literal l -> `Literal l
     | `BinOp (op,e1,e2) -> `BinOp (op,simplify_static_ir e1,simplify_static_ir e2)
     | `Vec e_list

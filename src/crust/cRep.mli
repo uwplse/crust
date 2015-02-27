@@ -14,6 +14,7 @@ type static_expr = [
   | `Init of static_expr list
   | `Tagged_Init of string * static_expr list
   | `UnOp of Ir.un_op * static_expr 
+  | `Cast of Types.r_type * static_expr
 ]
 
 type simple_expr = [

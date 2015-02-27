@@ -446,6 +446,12 @@ class static_emitter buf =
         self#put_all [ "{ ."; tag; " = { "];
         self#put_many ", " self#dump_static_expr tl;
         self#put "}"
+      | `Cast (cast_ty,e) ->
+        self#put "((";
+        self#put @@ type_to_string @@ to_monomorph_c_type [] cast_ty;
+        self#put ")";
+        self#dump_static_expr e;
+        self#put ")"
   end
 
 let simple_type_repr t = 
@@ -714,6 +720,7 @@ let build_static_deps =
       List.fold_left static_dep_aux accum tl
     | `BinOp (_,e1,e2) ->
       List.fold_left static_dep_aux accum [e1;e2]
+    | `Cast (_,e) -> static_dep_aux accum e
   in
   let dep_of_static static_name =
     let (_,s_def) = memo_get_simple_static static_name in
