@@ -297,7 +297,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                           },
                                           r.trans(trcx),
                                           mt.ty.trans(trcx)),
-            //ty_bare_fn(_, _) => format!("fn"),
+            ty_bare_fn(_, _) => format!("fn"),
             // ty_closure
             // ty_trait
             // TODO: handle substs
@@ -701,10 +701,10 @@ impl Trans for Expr {
     }
 }
 
-fn adjust_expr(trcx: &mut TransCtxt,
-               adj: &ty::AutoAdjustment,
-               expr: &Expr,
-               unadjusted: String) -> String {
+fn adjust_expr<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
+                         adj: &ty::AutoAdjustment<'tcx>,
+                         expr: &Expr,
+                         unadjusted: String) -> String {
     let mut result = unadjusted;
     let mut result_ty = trcx.tcx.node_types.borrow()[expr.id];
 
@@ -716,30 +716,72 @@ fn adjust_expr(trcx: &mut TransCtxt,
                 result_ty = new_result_ty;
             }
 
-            match adr.autoref {
-                None => {},
-                Some(ty::AutoPtr(region, mutbl, ref autoref)) => {
-                    assert!(autoref.is_none());
-                    let mt = ty::mt { ty: result_ty, mutbl: mutbl };
-                    result_ty = ty::mk_t(trcx.tcx, ty::ty_rptr(trcx.tcx.mk_region(region), mt));
-                    result = format!("({} addr_of {})",
-                                     result_ty.trans(trcx),
-                                     result);
-                },
-                Some(ty::AutoUnsafe(mutbl, ref autoref)) => {
-                    assert!(autoref.is_none());
-                    let mt = ty::mt { ty: result_ty, mutbl: mutbl };
-                    result_ty = ty::mk_t(trcx.tcx, ty::ty_ptr(mt));
-                    result = format!("({} addr_of {})",
-                                     result_ty.trans(trcx),
-                                     result);
-                },
-                _ => panic!("unsupported AutoRef variant"),
+            fn go_autoref<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
+                                    autoref: &ty::AutoRef<'tcx>,
+                                    mut result: String,
+                                    mut result_ty: ty::Ty<'tcx>) -> (String, ty::Ty<'tcx>) {
+                match *autoref {
+                    ty::AutoPtr(region, mutbl, ref next_autoref) => {
+                        if let Some(ref ar) = *next_autoref {
+                            let (new_result, new_result_ty) =
+                                    go_autoref(trcx, &**ar, result, result_ty);
+                            result = format!("(( {} ))", new_result);
+                            result_ty = new_result_ty;
+                        }
+
+                        let mt = ty::mt { ty: result_ty, mutbl: mutbl };
+                        result_ty = ty::mk_t(trcx.tcx, ty::ty_rptr(trcx.tcx.mk_region(region), mt));
+                        result = format!("({} addr_of {})",
+                                         result_ty.trans(trcx),
+                                         result);
+                    },
+
+                    ty::AutoUnsafe(mutbl, ref next_autoref) => {
+                        if let Some(ref ar) = *next_autoref {
+                            let (new_result, new_result_ty) =
+                                    go_autoref(trcx, &**ar, result, result_ty);
+                            result = format!("(( {} ))", new_result);
+                            result_ty = new_result_ty;
+                        }
+
+                        let mt = ty::mt { ty: result_ty, mutbl: mutbl };
+                        result_ty = ty::mk_t(trcx.tcx, ty::ty_ptr(mt));
+                        result = format!("({} addr_of {})",
+                                         result_ty.trans(trcx),
+                                         result);
+                    },
+
+                    ty::AutoUnsize(ref unsize) => {
+                        match *unsize {
+                            ty::UnsizeLength(len) => {
+                                result_ty = match result_ty.sty {
+                                    ty::ty_vec(item_ty, _) =>
+                                        ty::mk_vec(trcx.tcx, item_ty, None),
+                                    _ => panic!("UnsizeLength of non-ty_vec"),
+                                };
+                                result = format!("({} unsize_len {} {})",
+                                                 result_ty.trans(trcx),
+                                                 len,
+                                                 result);
+                            },
+
+                            _ => panic!("unsupported UnsizeKind variant"),
+                        }
+                    },
+
+                    _ => panic!("unsupported AutoRef variant"),
+                }
+
+                (result, result_ty)
             }
 
-            //assert!(adr.autoref.is_none());
+            if let Some(ref autoref) = adr.autoref {
+                let (new_result, new_result_ty) = go_autoref(trcx, autoref, result, result_ty);
+                result = new_result;
+                result_ty = new_result_ty;
+            }
         },
-        ty::AdjustReifyFnPointer(_) => panic!("unsupported AdjustAddEnv"),
+        ty::AdjustReifyFnPointer(_) => {}, //panic!("unsupported AdjustAddEnv"),
     }
 
     result
@@ -817,7 +859,7 @@ impl Trans for Lit {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         match self.node {
             LitStr(ref s, ref style) => {
-                let mut result = String::new();
+                let mut result = String::from_str("str_");
                 for b in s.get().bytes() {
                     result.push_str(&*format!("{:02x}", b));
                 }

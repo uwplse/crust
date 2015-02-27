@@ -33,53 +33,92 @@ dumpIr msg ir = trace text ir
 data Config = Config
     { c_scrub :: Bool
     , c_pprint :: Bool
-    , c_remove_extern :: Bool
+    , c_filter_file :: Maybe String
+    , c_passes :: Maybe [String]
     }
+
+defaultConfig = Config
+    { c_scrub = False
+    , c_pprint = False
+    , c_filter_file = Nothing
+    , c_passes = Nothing
+    }
+
+readArgs config args = go args config
+  where
+    go ("--scrub" : args) config = go args $ config { c_scrub = True }
+    go ("--pprint" : args) config = go args $ config { c_pprint = True }
+    go ("--filter" : path : args) config = go args $ config { c_filter_file = Just path }
+    go ("--passes" : passes : args) config = go args $
+        config { c_passes = Just $ words $ map (\c -> case c of ',' -> ' '; c -> c) passes }
+    go [] config = config
 
 main = do
     args <- getArgs
-    let (shouldScrub, pprintOnly, doFilter, filterFile) = case args of
-            ["--scrub"] -> (True, False, False, "")
-            ["--pprint"] -> (False, True, False, "")
-            ["--filter", f] -> (False, False, True, f)
-            [] -> (False, False, False, "")
-            _ -> error $ "bad command line arguments: " ++ show args
-    itemFilter <- if doFilter then do
-                                content <- readFile filterFile
-                                let item_set = S.fromList $ lines content
-                                return (Just item_set)
-                  else return Nothing
-    items <- parseContents item
-    if doFilter then putStrLn $ concatMap pp $ filterItems items itemFilter else do
-    if pprintOnly then evaluate (dumpIr "pprint" $ items) >> return () else do
+    let config = readArgs defaultConfig args
 
-    let items' =
-            liftStrings $
-            (if shouldScrub then scrub else id) $
-            items
-    let ix = mkIndex items'
-    let items'' =
-            generateDropGlues $
---            dumpIr "final" $
-            filter (not . isExternFn) $
-            renameLocals ix $
-            addCleanup ix $
-            renameLocals ix $
-            liftTemps ix $
-            constExpand $
-            ifFix $
-            fixBool $
---            fixAbort $
-            fixBottom $
-            fixSpecialFn $
-            fixAddress $
-            desugarFor $
-            desugarPatternLets $
-            desugarArgPatterns $
-            desugarRange $
-            desugarIndex ix $
-            items'
-    putStrLn $ concatMap pp items''
+    items <- parseContents item
+
+    if c_pprint config then do
+        evaluate (dumpIr "pprint" $ items)
+        return ()
+    else if isJust $ c_filter_file config then do
+        content <- readFile $ fromJust $ c_filter_file config
+        let filt = S.fromList $ lines content
+        putStrLn $ concatMap pp $ filterItems items filt
+    else if isJust $ c_passes config then do
+        let items' = foldl (flip runPass) items $ fromJust $ c_passes config
+        evaluate (dumpIr "pprint" $ items')
+        return ()
+    else do
+        let items' =
+                liftStrings $
+                (if c_scrub config then scrub else id) $
+                items
+        let ix = mkIndex items'
+        let items'' =
+                generateDropGlues $
+    --            dumpIr "final" $
+                filter (not . isExternFn) $
+                renameLocals ix $
+                addCleanup ix $
+                renameLocals ix $
+                liftTemps ix $
+                constExpand $
+                ifFix $
+                fixBool $
+    --            fixAbort $
+                fixBottom $
+                fixSpecialFn $
+                fixAddress $
+                desugarUnsize $
+                desugarFor $
+                desugarPatternLets $
+                desugarArgPatterns $
+                desugarRange $
+                desugarIndex ix $
+                items'
+        putStrLn $ concatMap pp items''
+
+runPass "desugar-index" = \is -> desugarIndex (mkIndex is) is
+runPass "desugar-range" = desugarRange
+runPass "desugar-arg-patterns" = desugarArgPatterns
+runPass "desugar-pattern-lets" = desugarPatternLets
+runPass "desugar-for" = desugarFor
+runPass "desugar-unsize" = desugarUnsize
+runPass "fix-address" = fixAddress
+runPass "fix-special-fn" = fixSpecialFn
+runPass "fix-bottom" = fixBottom
+runPass "fix-bool" = fixBool
+runPass "fix-if" = ifFix
+runPass "const-expand" = constExpand
+runPass "lift-temps" = \is -> liftTemps (mkIndex is) is
+runPass "rename-locals" = \is -> renameLocals (mkIndex is) is
+runPass "add-cleanup" = \is -> addCleanup (mkIndex is) is
+runPass "filter-extern-fns" = filter (not . isExternFn)
+runPass "generate-drop-glues" = generateDropGlues
+runPass "lift-strings" = liftStrings
+runPass "scrub" = scrub
 
 fixBool = everywhere (mkT fixBoolLitExpr `extT` fixBoolLitPat)
   where
@@ -147,10 +186,14 @@ constExpand items = everywhere (mkT fixExpr `extT` fixPat) items
     isConst (IConst _) = True
     isConst _ = False
 
-    fixExpr (EConst n) = consts M.! n
+    fixExpr (EConst n) = case M.lookup n consts of
+        Just c -> c
+        Nothing -> EVar n --error $ "no constant " ++ n ++ " for expr"
     fixExpr e = e
 
-    fixPat (PConst n) = exprToPat $ consts M.! n
+    fixPat (PConst n) = case M.lookup n consts of
+        Just c -> exprToPat c
+        Nothing -> error $ "no constant " ++ n ++ " for pattern"
     fixPat e = e
 
 
@@ -352,7 +395,7 @@ liftStrings x = x'''
     x''' = let (a, b) = runWriter x'' in a ++ b
 
     goExpr orig@(Expr (TRef life mutbl TStr) (ESimpleLiteral lit)) = do
-        let bytes = unhex lit
+        let bytes = unhex $ drop 4 lit   -- drop "str_" prefix
         traceShow bytes $ return ()
 
         n <- fresh "__static_str"
@@ -376,7 +419,17 @@ liftStrings x = x'''
     unhex [] = []
     unhex (a:b:xs) = (fst . head . readHex $ a:b:[]) : unhex xs
 
-filterItems items (Just itemFilter) = filter isAllowed items
+desugarUnsize = everywhere (mkT goExpr)
+  where
+    goExpr (Expr tyRef@(TRef l m (TVec tyElem)) (EAddrOf (Expr tyVec (EUnsizeLen len e)))) =
+        let tyVecRef = TRef l m tyVec
+            vecRef = Expr tyVecRef $ EAddrOf e
+            dataExpr = Expr (TPtr MImm tyElem) $ ECast $ vecRef
+            lenExpr = Expr (TUint PtrSize) $ ESimpleLiteral $ show len
+        in Expr tyRef $ ETupleLiteral [dataExpr, lenExpr]
+    goExpr e = e
+
+filterItems items itemFilter = filter isAllowed items
     where
       isAllowed (IConst _) = True
       isAllowed (IMeta _) = True
@@ -389,7 +442,6 @@ filterItems items (Just itemFilter) = filter isAllowed items
       isAllowed (IAbstractFn (AbstractFnDef n _ _ _ _)) = S.member n itemFilter
       isAllowed (IStruct (StructDef n _ _ _ _)) = S.member n itemFilter
       isAllowed (IEnum (EnumDef n _ _ _ _)) = S.member n itemFilter
-filterItems items Nothing = error "no filter name specified"
 
 scrub items = scrubbed'
   where
@@ -406,6 +458,7 @@ scrub items = scrubbed'
     isValid item =
       (everything (&&) (True `mkQ` goTy (itemName item)) item)
       && (everything (&&) (True `mkQ` goExpr (itemName item)) item)
+      && adtHasValidDrop item
 
     goTy loc (TAdt name _ _) = name `M.member` i_types ix || traceShow ("discard", loc, "missing type", name) False
     goTy loc (TFixedVec _ _) = traceShow ("discard", loc, "used fixedvec") False
@@ -414,6 +467,12 @@ scrub items = scrubbed'
     goExpr loc (ECall name _ _ _) = name `M.member` i_fns ix || traceShow ("discard", loc, "missing", name) False
     goExpr loc (EConst name) = name `M.member` i_consts ix || traceShow ("discard", loc, "missing", name) False
     goExpr _ _ = True
+
+    adtHasValidDrop (IStruct (StructDef loc _ _ _ (Just name))) =
+        name `M.member` i_fns ix || traceShow ("discard", loc, "missing drop", name) False
+    adtHasValidDrop (IEnum (EnumDef loc _ _ _ (Just name))) =
+        name `M.member` i_fns ix || traceShow ("discard", loc, "missing drop", name) False
+    adtHasValidDrop _ = True
 
 
 mkCast e t = Expr t (ECast e)

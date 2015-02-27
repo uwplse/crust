@@ -72,7 +72,7 @@ withEmptyScope a = do
 
 initState ix = RenamerState nameMap usedNames
   where
-    names = M.keys (i_consts ix) ++ M.keys (i_statics ix)
+    names = M.keys (i_consts ix) ++ M.keys (i_statics ix) ++ M.keys (i_fns ix)
     nameMap = M.fromList $ zip names names
     usedNames = M.fromList $ zip names (repeat 0)
 

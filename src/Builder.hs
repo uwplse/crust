@@ -99,7 +99,9 @@ matchEnum e mkArm = do
             pattern = Pattern (typeOf e) $ PEnum name idx varPatterns
         body <- mkArm idx varExprs
         return $ MatchArm pattern body
-    let (MatchArm _ (Expr matchTy _) : _) = arms
+    let matchTy = case arms of
+            (MatchArm _ (Expr mt _) : _) -> mt
+            _ -> TUnit
     return $ Expr matchTy $ EMatch e arms
 
 true = return $ Expr TBool $ ESimpleLiteral "true"

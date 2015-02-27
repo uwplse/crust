@@ -186,6 +186,8 @@ ppExpr (Expr ty e) = case e of
       tell "]"
     EFor patt expr body ->
         inline (tell "for " >> ppPat patt >> tell " in " >> ppExpr expr >> tell " {") (tell "}") $ ppExpr (Expr TUnit body)
+    EUnsizeLen len expr ->
+        tell "unsize(" >> tell (show len) >> tell ", " >> ppExpr expr >> tell ")"
 
 ppPat (Pattern ty p) = case p of
     PVar name -> tell name
