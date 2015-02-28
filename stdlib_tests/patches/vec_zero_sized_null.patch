@@ -1,0 +1,250 @@
+diff --git a/src/liballoc/heap.rs b/src/liballoc/heap.rs
+index a2643f4..1673c2a 100644
+--- a/src/liballoc/heap.rs
++++ b/src/liballoc/heap.rs
+@@ -265,7 +265,7 @@ mod imp {
+           unix))]
+ mod imp {
+     use core::cmp;
+-    use core::ptr;
++    use core::ptr::{self, null_mut, PtrExt};
+     use libc;
+     use super::MIN_ALIGN;
+ 
+@@ -277,7 +277,9 @@ mod imp {
+ 
+     #[inline]
+     pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+-        if align <= MIN_ALIGN {
++        if size == 0 {
++            null_mut()
++        } else if align <= MIN_ALIGN {
+             libc::malloc(size as libc::size_t) as *mut u8
+         } else {
+             let mut out = ptr::null_mut();
+@@ -294,7 +296,10 @@ mod imp {
+ 
+     #[inline]
+     pub unsafe fn reallocate(ptr: *mut u8, old_size: uint, size: uint, align: uint) -> *mut u8 {
+-        if align <= MIN_ALIGN {
++        if size == 0 {
++            deallocate(ptr, old_size, align);
++            null_mut()
++        } else if align <= MIN_ALIGN {
+             libc::realloc(ptr as *mut libc::c_void, size as libc::size_t) as *mut u8
+         } else {
+             let new_ptr = allocate(size, align);
+@@ -312,7 +317,9 @@ mod imp {
+ 
+     #[inline]
+     pub unsafe fn deallocate(ptr: *mut u8, _old_size: uint, _align: uint) {
+-        libc::free(ptr as *mut libc::c_void)
++        if !ptr.is_null() {
++            libc::free(ptr as *mut libc::c_void)
++        }
+     }
+ 
+     #[inline]
+diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
+index 0de9b57..4c8480d 100644
+--- a/src/libcollections/vec.rs
++++ b/src/libcollections/vec.rs
+@@ -136,7 +136,7 @@ use core::uint;
+ #[unsafe_no_drop_flag]
+ #[stable]
+ pub struct Vec<T> {
+-    ptr: NonZero<*mut T>,
++    ptr: *mut T,
+     len: uint,
+     cap: uint,
+ }
+@@ -165,7 +165,7 @@ impl<T> Vec<T> {
+         // non-null value which is fine since we never call deallocate on the ptr
+         // if cap is 0. The reason for this is because the pointer of a slice
+         // being NULL would break the null pointer optimization for enums.
+-        Vec { ptr: unsafe { NonZero::new(EMPTY as *mut T) }, len: 0, cap: 0 }
++        Vec { ptr: 0 as *mut T, len: 0, cap: 0 }
+     }
+ 
+     /// Constructs a new, empty `Vec<T>` with the specified capacity.
+@@ -196,16 +196,13 @@ impl<T> Vec<T> {
+     #[inline]
+     #[stable]
+     pub fn with_capacity(capacity: uint) -> Vec<T> {
+-        if mem::size_of::<T>() == 0 {
+-            Vec { ptr: unsafe { NonZero::new(EMPTY as *mut T) }, len: 0, cap: uint::MAX }
+-        } else if capacity == 0 {
++        if capacity == 0 {
+             Vec::new()
+         } else {
+             let size = capacity.checked_mul(mem::size_of::<T>())
+                                .expect("capacity overflow");
+             let ptr = unsafe { allocate(size, mem::min_align_of::<T>()) };
+-            if ptr.is_null() { ::alloc::oom() }
+-            Vec { ptr: unsafe { NonZero::new(ptr as *mut T) }, len: 0, cap: capacity }
++            Vec { ptr: ptr as *mut T, len: 0, cap: capacity }
+         }
+     }
+ 
+@@ -246,7 +243,7 @@ impl<T> Vec<T> {
+     #[stable]
+     pub unsafe fn from_raw_parts(ptr: *mut T, length: uint,
+                                  capacity: uint) -> Vec<T> {
+-        Vec { ptr: NonZero::new(ptr), len: length, cap: capacity }
++        Vec { ptr: ptr, len: length, cap: capacity }
+     }
+ 
+     /// Creates a vector by copying the elements from a raw pointer.
+@@ -347,12 +344,10 @@ impl<T> Vec<T> {
+     /// ```
+     #[stable]
+     pub fn shrink_to_fit(&mut self) {
+-        if mem::size_of::<T>() == 0 { return }
+-
+         if self.len == 0 {
+             if self.cap != 0 {
+                 unsafe {
+-                    dealloc(*self.ptr, self.cap)
++                    dealloc(self.ptr as *mut u8, self.cap)
+                 }
+                 self.cap = 0;
+             }
+@@ -360,12 +355,11 @@ impl<T> Vec<T> {
+             unsafe {
+                 // Overflow check is unnecessary as the vector is already at
+                 // least this large.
+-                let ptr = reallocate(*self.ptr as *mut u8,
++                let ptr = reallocate(self.ptr as *mut u8,
+                                      self.cap * mem::size_of::<T>(),
+                                      self.len * mem::size_of::<T>(),
+                                      mem::min_align_of::<T>()) as *mut T;
+-                if ptr.is_null() { ::alloc::oom() }
+-                self.ptr = NonZero::new(ptr);
++                self.ptr = ptr;
+             }
+             self.cap = self.len;
+         }
+@@ -426,7 +420,7 @@ impl<T> Vec<T> {
+     pub fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T] {
+         unsafe {
+             mem::transmute(RawSlice {
+-                data: *self.ptr,
++                data: self.ptr,
+                 len: self.len,
+             })
+         }
+@@ -449,7 +443,7 @@ impl<T> Vec<T> {
+     #[stable]
+     pub fn into_iter(self) -> IntoIter<T> {
+         unsafe {
+-            let ptr = *self.ptr;
++            let ptr = self.ptr;
+             let cap = self.cap;
+             let begin = ptr as *const T;
+             let end = if mem::size_of::<T>() == 0 {
+@@ -633,27 +627,19 @@ impl<T> Vec<T> {
+     #[inline]
+     #[stable]
+     pub fn push(&mut self, value: T) {
+-        if mem::size_of::<T>() == 0 {
+-            // zero-size types consume no memory, so we can't rely on the
+-            // address space running out
+-            self.len = self.len.checked_add(1).expect("length overflow");
+-            unsafe { mem::forget(value); }
+-            return
+-        }
+         if self.len == self.cap {
+             let old_size = self.cap * mem::size_of::<T>();
+             let size = max(old_size, 2 * mem::size_of::<T>()) * 2;
+             if old_size > size { panic!("capacity overflow") }
+             unsafe {
+-                let ptr = alloc_or_realloc(*self.ptr, old_size, size);
+-                if ptr.is_null() { ::alloc::oom() }
+-                self.ptr = NonZero::new(ptr);
++                let ptr = alloc_or_realloc(self.ptr, old_size, size);
++                self.ptr = ptr;
+             }
+             self.cap = max(self.cap, 2) * 2;
+         }
+ 
+         unsafe {
+-            let end = (*self.ptr).offset(self.len as int);
++            let end = (self.ptr).offset(self.len as int);
+             ptr::write(&mut *end, value);
+             self.len += 1;
+         }
+@@ -735,11 +721,11 @@ impl<T> Vec<T> {
+     #[unstable = "matches collection reform specification, waiting for dust to settle"]
+     pub fn drain<'a>(&'a mut self) -> Drain<'a, T> {
+         unsafe {
+-            let begin = *self.ptr as *const T;
++            let begin = self.ptr as *const T;
+             let end = if mem::size_of::<T>() == 0 {
+-                (*self.ptr as uint + self.len()) as *const T
++                (self.ptr as uint + self.len()) as *const T
+             } else {
+-                (*self.ptr).offset(self.len() as int) as *const T
++                (self.ptr).offset(self.len() as int) as *const T
+             };
+             self.set_len(0);
+             Drain {
+@@ -1162,15 +1148,12 @@ impl<T> Vec<T> {
+     /// If the capacity for `self` is already equal to or greater than the
+     /// requested capacity, then no action is taken.
+     fn grow_capacity(&mut self, capacity: uint) {
+-        if mem::size_of::<T>() == 0 { return }
+-
+         if capacity > self.cap {
+             let size = capacity.checked_mul(mem::size_of::<T>())
+                                .expect("capacity overflow");
+             unsafe {
+-                let ptr = alloc_or_realloc(*self.ptr, self.cap * mem::size_of::<T>(), size);
+-                if ptr.is_null() { ::alloc::oom() }
+-                self.ptr = NonZero::new(ptr);
++                let ptr = alloc_or_realloc(self.ptr, self.cap * mem::size_of::<T>(), size);
++                self.ptr = ptr;
+             }
+             self.cap = capacity;
+         }
+@@ -1189,11 +1172,9 @@ unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T
+ 
+ #[inline]
+ unsafe fn dealloc<T>(ptr: *mut T, len: uint) {
+-    if mem::size_of::<T>() != 0 {
+-        deallocate(ptr as *mut u8,
+-                   len * mem::size_of::<T>(),
+-                   mem::min_align_of::<T>())
+-    }
++    deallocate(ptr as *mut u8,
++               len * mem::size_of::<T>(),
++               mem::min_align_of::<T>())
+ }
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+@@ -1451,7 +1432,7 @@ impl<T> AsSlice<T> for Vec<T> {
+     fn as_slice<'a>(&'a self) -> &'a [T] {
+         unsafe {
+             mem::transmute(RawSlice {
+-                data: *self.ptr,
++                data: self.ptr,
+                 len: self.len
+             })
+         }
+@@ -1480,7 +1461,7 @@ impl<T> Drop for Vec<T> {
+                 for x in self.iter() {
+                     ptr::read(x);
+                 }
+-                dealloc(*self.ptr, self.cap)
++                dealloc(self.ptr, self.cap)
+             }
+         }
+     }
+@@ -1560,7 +1541,7 @@ impl<T> IntoIter<T> {
+             for _x in self { }
+             let IntoIter { allocation, cap, ptr: _ptr, end: _end } = self;
+             mem::forget(self);
+-            Vec { ptr: NonZero::new(allocation), cap: cap, len: 0 }
++            Vec { ptr: allocation as *mut T, cap: cap, len: 0 }
+         }
+     }
+ }
