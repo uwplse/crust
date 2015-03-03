@@ -22,5 +22,5 @@ Lexer.hs: Lexer.x
 
 clean:
 	rm -f rbmc
-	bash -c "rm -f Lexer.hs {Lexer,Parser,Preprocess,TempLift,Index,Builder,Pprint,Rename}.{o,hi} Preprocess"
+	bash -c "rm -f Lexer.hs {DropGlue,Lexer,Parser,Preprocess,TempLift,Index,Builder,Pprint,Rename}.{o,hi} Preprocess"
 	$(MAKE) -C crust clean
