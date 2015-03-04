@@ -297,7 +297,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                           },
                                           r.trans(trcx),
                                           mt.ty.trans(trcx)),
-            ty_bare_fn(_, _) => format!("fn"),
+            //ty_bare_fn(_, _) => format!("fn"),
             // ty_closure
             // ty_trait
             // TODO: handle substs
@@ -831,7 +831,7 @@ fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
                                        expr_str);
             (new_expr_str, ty)
         },
-        _ => panic!("unexpected ty variant"),
+        _ => panic!("unexpected ty variant {}", expr_ty.repr(trcx.tcx)),
     }
 }
 
