@@ -96,9 +96,25 @@ newtype Tr m a d = Tr { unTr :: a -> d -> m (d, a) }
 extTr def ext = unTr ((Tr def) `ext0` (Tr ext))
 mkTr = extTr (\a d -> return (d, a))
 
-liftTempsM :: Data a => a -> LifterM a
-liftTempsM x = traverse go concat x >>= return . fst
+liftTempsM :: [Item] -> LifterM [Item]
+liftTempsM x = goItems x
   where
+    goItems [] = return []
+    goItems (i : is) = do
+        i' <- goItem i
+        is' <- goItems is
+        return (i' ++ is')
+
+    goItem (IFn f) = do
+        (f', ds) <- traverse go concat f
+        return [IFn f']
+    goItem (IStatic s) = do
+        (s', ds) <- traverse go concat s
+        ss <- forM ds $ \(name, expr@(Expr ty _)) -> do
+            return (IStatic $ StaticDef name ty expr)
+        return $ [IStatic s'] ++ ss
+    goItem i = return [i]
+
     go = mkTr (consumeDecls goStmt) `extTr` goExpr
 
     applyDecls decls e = do

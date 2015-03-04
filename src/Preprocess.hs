@@ -71,34 +71,30 @@ main = do
         evaluate (dumpIr "pprint" $ items')
         return ()
     else do
-        let items' =
-                liftStrings $
-                (if c_scrub config then scrub else id) $
-                items
-        let ix = mkIndex items'
-        let items'' =
-                generateDropGlues $
-    --            dumpIr "final" $
-                filter (not . isExternFn) $
-                renameLocals ix $
-                addCleanup ix $
-                renameLocals ix $
-                liftTemps ix $
-                constExpand $
-                ifFix $
-                fixBool $
-    --            fixAbort $
-                fixBottom $
-                fixSpecialFn $
-                fixAddress $
-                desugarUnsize $
-                desugarFor $
-                desugarPatternLets $
-                desugarArgPatterns $
-                desugarRange $
-                desugarIndex ix $
-                items'
-        putStrLn $ concatMap pp items''
+        let passes = [
+                "lift-strings",
+                if c_scrub config then "scrub" else "id",
+                "desugar-index",
+                "desugar-range",
+                "desugar-arg-patterns",
+                "desugar-pattern-lets",
+                "desugar-for",
+                "desugar-unsize",
+                "fix-address",
+                "fix-special-fn",
+                "fix-bottom",
+                "fix-bool",
+                "fix-if",
+                "const-expand",
+                "lift-temps",
+                "rename-locals",
+                "add-cleanup",
+                "rename-locals",
+                "filter-extern-fns",
+                "generate-drop-glues"
+                ]
+        let items' = foldl (flip runPass) items passes
+        putStrLn $ concatMap pp items'
 
 runPass "desugar-index" = \is -> desugarIndex (mkIndex is) is
 runPass "desugar-range" = desugarRange
@@ -119,6 +115,9 @@ runPass "filter-extern-fns" = filter (not . isExternFn)
 runPass "generate-drop-glues" = generateDropGlues
 runPass "lift-strings" = liftStrings
 runPass "scrub" = scrub
+runPass "dump" = dumpIr "dump"
+runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
+runPass "id" = id
 
 fixBool = everywhere (mkT fixBoolLitExpr `extT` fixBoolLitPat)
   where
