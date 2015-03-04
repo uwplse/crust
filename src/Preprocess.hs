@@ -170,8 +170,11 @@ fixAddress = everywhere (mkT stripAddr)
     stripAddr (Expr _ (EDeref (Expr _ (EAddrOf e)))) = e
     stripAddr e = e
 
-constExpand items = everywhere (mkT fixExpr `extT` fixPat) items
+constExpand items = go items
   where
+    go :: Data a => a -> a
+    go = everywhere (mkT fixExpr `extT` fixPat)
+
     consts :: M.Map Name Expr_
     consts = everything M.union (M.empty `mkQ` collectItem) items
     collectItem (IConst (ConstDef name _ (Expr _ expr))) = M.singleton name (cleanup expr)
@@ -186,12 +189,12 @@ constExpand items = everywhere (mkT fixExpr `extT` fixPat) items
     isConst _ = False
 
     fixExpr (EConst n) = case M.lookup n consts of
-        Just c -> c
+        Just c -> go c
         Nothing -> EVar n --error $ "no constant " ++ n ++ " for expr"
     fixExpr e = e
 
     fixPat (PConst n) = case M.lookup n consts of
-        Just c -> exprToPat c
+        Just c -> exprToPat $ go c
         Nothing -> error $ "no constant " ++ n ++ " for pattern"
     fixPat e = e
 
