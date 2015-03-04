@@ -17,7 +17,7 @@ use syntax::ast::*;
 use syntax::ast_map;
 use syntax::ast_util;
 use syntax::ast_util::local_def;
-use syntax::codemap::Span;
+use syntax::codemap::{self, Span};
 use syntax::ptr::P;
 use syntax::visit::Visitor;
 use syntax::visit::{FnKind, FkItemFn, FkMethod, FkFnBlock};
@@ -787,15 +787,22 @@ fn adjust_expr<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
     result
 }
 
+fn auto_ref_ty<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
+                         expr: &Expr,
+                         mutbl: Option<Mutability>,
+                         ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
+    let region = ty::ReScope(region::CodeExtent::Misc(expr.id));
+    let mt = ty::mt { ty: ty, mutbl: mutbl.unwrap_or(MutImmutable) };
+    ty::mk_t(trcx.tcx, ty::ty_rptr(trcx.tcx.mk_region(region), mt))
+}
+
 fn do_auto_ref(trcx: &mut TransCtxt,
                expr: &Expr,
                unadjusted: String) -> String {
     let result = unadjusted;
     let mut result_ty = trcx.tcx.node_types.borrow()[expr.id];
+    result_ty = auto_ref_ty(trcx, expr, None, result_ty);
 
-    let region = ty::ReScope(region::CodeExtent::Misc(expr.id));
-    let mt = ty::mt { ty: result_ty, mutbl: MutImmutable };
-    result_ty = ty::mk_t(trcx.tcx, ty::ty_rptr(trcx.tcx.mk_region(region), mt));
     format!("({} addr_of {})",
             result_ty.trans(trcx),
             result)
@@ -810,14 +817,27 @@ fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
         if let Some(callee) = trcx.tcx.method_map.borrow().get(&ty::MethodCall::autoderef(expr.id, level)) {
             let arg_str = do_auto_ref(trcx, expr, expr_str);
             let new_expr_variant = trans_method_call(trcx, callee, vec![arg_str]);
-            let new_expr_ty = match callee.ty.subst(trcx.tcx, &callee.substs).sty {
-                ty::ty_bare_fn(_did, bare_fn_ty) =>
-                    match bare_fn_ty.sig.0.output {
-                        ty::FnConverging(t) => t,
-                        ty::FnDiverging => panic!("unexpected FnDiverging"),
-                    },
+
+            let method_ret = match ty::ty_fn_ret(callee.ty).0 {
+                ty::FnConverging(ty) => ty,
+                ty::FnDiverging => panic!("unexpected FnDiverging"),
+            };
+            let adj = ty::AdjustDerefRef(ty::AutoDerefRef {
+                autoderefs: 1,
+                autoref: None,
+            });
+            let deref_ty = ty::adjust_ty(trcx.tcx,
+                                         codemap::DUMMY_SP,
+                                         expr.id,
+                                         expr_ty,
+                                         Some(&adj),
+                                         |_| Some(callee.ty));
+            let mutbl = match method_ret.sty {
+                ty::ty_rptr(_, mt) => mt.mutbl,
                 _ => panic!("unexpected ty variant"),
             };
+            let new_expr_ty = auto_ref_ty(trcx, expr, Some(mutbl), deref_ty);
+
             (format!("({} {})", new_expr_ty.trans(trcx), new_expr_variant), new_expr_ty)
         } else {
             (expr_str, expr_ty)
@@ -831,7 +851,7 @@ fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
                                        expr_str);
             (new_expr_str, ty)
         },
-        _ => panic!("unexpected ty variant {}", expr_ty.repr(trcx.tcx)),
+        _ => panic!("unexpected ty variant: {}", expr_ty.repr(trcx.tcx)),
     }
 }
 
