@@ -1319,7 +1319,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
         ItemImpl(_, _, ref generics, ref trait_ref, ref self_ty, _) =>
             (false, generics, trait_ref.as_ref(), self_ty.trans(trcx)),
         ItemTrait(_, ref generics, _, _) =>
-            (true, generics, None, String::from_str("var s_Self")),
+            (true, generics, None, String::from_str("var s_0")),
         _ => panic!("expected ItemImpl"),
     };
 
@@ -1385,7 +1385,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                 impl_generics.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)).collect();
             let mut ty_params: Vec<_> =
                 range(0, impl_generics.ty_params.len()).map(|i| format!("var t_{}", i)).collect();
-            ty_params.push(String::from_str("var s_Self"));
+            ty_params.push(String::from_str("var s_0"));
 
             format!("1 {}${}$$__default {} {}",
                     mangled_def_name(trcx, local_def(trait_.id)),
@@ -1396,7 +1396,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
 
     let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics);
     if is_default {
-        ty_params.push(String::from_str("s_Self"));
+        ty_params.push(String::from_str("s_0"));
     }
 
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
