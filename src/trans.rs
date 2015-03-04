@@ -884,7 +884,7 @@ impl Trans for Lit {
             },
             // LitBinary
             LitByte(b) => format!("{}", b),
-            // LitChar
+            LitChar(c) => format!("{}", c as u32),
             LitInt(i, _) => format!("{}", i),
             // LitFloat
             // LitFloatUnsuffixed
