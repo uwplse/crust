@@ -46,7 +46,7 @@ index a2643f4..1673c2a 100644
  
      #[inline]
 diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
-index 0de9b57..4c8480d 100644
+index 5259029..d72c866 100644
 --- a/src/libcollections/vec.rs
 +++ b/src/libcollections/vec.rs
 @@ -136,7 +136,7 @@ use core::uint;
@@ -247,4 +247,39 @@ index 0de9b57..4c8480d 100644
 +            Vec { ptr: allocation as *mut T, cap: cap, len: 0 }
          }
      }
+ }
+diff --git a/src/libcore/macros.rs b/src/libcore/macros.rs
+index 1c37126..1acfd52 100644
+--- a/src/libcore/macros.rs
++++ b/src/libcore/macros.rs
+@@ -19,12 +19,13 @@ macro_rules! panic {
+         ::core::panicking::panic(&_MSG_FILE_LINE)
+     });
+     ($fmt:expr, $($arg:tt)*) => ({
++        panic!("trans_panic");
+         // The leading _'s are to avoid dead code warnings if this is
+         // used inside a dead function. Just `#[allow(dead_code)]` is
+         // insufficient, since the user may have
+         // `#[forbid(dead_code)]` and which cannot be overridden.
+-        static _FILE_LINE: (&'static str, usize) = (file!(), line!());
+-        ::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
++        //static _FILE_LINE: (&'static str, usize) = (file!(), line!());
++        //::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
+     });
+ }
+ 
+@@ -56,12 +57,12 @@ macro_rules! panic {
+ macro_rules! assert {
+     ($cond:expr) => (
+         if !$cond {
+-            panic!(concat!("assertion failed: ", stringify!($cond)))
++            panic!(/*concat!("assertion failed: ", stringify!($cond))*/)
+         }
+     );
+     ($cond:expr, $($arg:tt)+) => (
+         if !$cond {
+-            panic!($($arg)+)
++            panic!(/*$($arg)+*/)
+         }
+     );
  }
