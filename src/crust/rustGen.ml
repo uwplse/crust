@@ -76,6 +76,7 @@ type ty_state = {
 type action_call = 
   | Open_Block of string * Types.mono_type * string * (method_arg list)
   | Ptr_Assert of [`Immut | `Mut ] * string * string
+  | Null_Assert of string
   | Close_Block
 
 module UnionFind = struct
@@ -243,16 +244,21 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     else
       []
 
+  method private gen_null_assert var = 
+    Null_Assert var
+
   method private gen_assertions state out_var returned_type = 
     match returned_type with
     | (`Ref_Mut (_,t) as mut_ref) ->
       (self#gen_ty_assertions state (fun v2 ->
            Ptr_Assert (`Mut,out_var,v2)) mut_ref
       ) @ (self#gen_ty_assertions state (fun v2 ->
-          Ptr_Assert (`Immut,out_var,v2)) (`Ref (TypeUtil.dummy_lifetime,t)))
+          Ptr_Assert (`Immut,out_var,v2)) (`Ref (TypeUtil.dummy_lifetime,t))) 
+        @ [ self#gen_null_assert out_var ]
     | `Ref (_,t) ->
       self#gen_ty_assertions state (fun v1 ->
           Ptr_Assert (`Immut,v1,out_var)) (`Ref_Mut (TypeUtil.dummy_lifetime,t))
+      @ [ self#gen_null_assert out_var ]
     | _ -> []
   method private get_args state arg_types = 
     self#get_args_aux [] [] state arg_types
@@ -341,6 +347,11 @@ class rust_pp buf output_file_prefix num_tests = object(self)
             self#newline ();
             accum
           end
+        | Null_Assert out_var ->
+          self#put_all [
+             "crust_assert("; out_var; " as *mut _ as u64 != 0);"
+          ];
+          accum
         | Open_Block (v,_,fn,args) -> begin
             let rust_name = rust_name fn in
             self#open_block ();
@@ -393,6 +404,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         UnionFind.add_element uf v
       ) ref_vars;
     List.iter (function 
+        | Null_Assert _
         | Ptr_Assert _ -> ()
         | Close_Block -> ()
         | Open_Block (v,_,_,l) ->
@@ -411,6 +423,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
   method private walk_call_seq :
     'a.(string -> 'a -> 'a) -> 'a -> action_call list -> 'a = fun f accum cc_seq ->
     match cc_seq with
+    | Null_Assert _::t
     | Ptr_Assert _::t -> self#walk_call_seq f accum t
     | Close_Block::t -> self#walk_call_seq f accum t
     | Open_Block (_,_,_,l)::t -> self#walk_call_seq f (self#walk_args f accum l) t
