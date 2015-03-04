@@ -1174,6 +1174,21 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 let mangled_name = mangled_def_name(trcx, local_def(self.id));
                 format!("static {} {} {}", mangled_name, ty.trans(trcx), ex.trans(trcx))
             },
+            ItemTrait(unsafety, ref trait_generics, ref bounds, ref items) => {
+                let mut result = String::new();
+                for item in items.iter() {
+                    let part = match *item {
+                        ProvidedMethod(ref method) => {
+                            let name = mangled_def_name(trcx, local_def(method.id));
+                            try_str(|| trans_method(trcx, self, &**method), &*name)
+                        },
+                        _ => format!("# non-method trait item"),
+                    };
+                    result.push_str(part.as_slice());
+                    result.push_str("\n");
+                }
+                result
+            },
             _ => format!(""),
         }
     }
@@ -1300,14 +1315,11 @@ fn find_trait_item_ast<'tcx>(tcx: &ty::ctxt<'tcx>, did: DefId) -> Option<&'tcx T
 fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String {
     let mangled_name = mangled_def_name(trcx, local_def(method.id));
 
-    /*
-    if filter_fn.contains(&mangled_name) {
-        return format!("");
-    };
-    */
-
-    let (impl_generics, trait_ref, self_ty, items) = match trait_.node {
-        ItemImpl(_, _, ref a, ref b, ref c, ref d) => (a, b, c, d),
+    let (is_default, impl_generics, trait_ref, self_ty_str) = match trait_.node {
+        ItemImpl(_, _, ref generics, ref trait_ref, ref self_ty, _) =>
+            (false, generics, trait_ref.as_ref(), self_ty.trans(trcx)),
+        ItemTrait(_, ref generics, _, _) =>
+            (true, generics, None, String::from_str("var s_Self")),
         _ => panic!("expected ItemImpl"),
     };
 
@@ -1324,7 +1336,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
         SelfStatic => None,
         SelfValue(ref name) => {
             Some(format!("({} var {})",
-                         self_ty.trans(trcx),
+                         self_ty_str,
                          name.trans(trcx)))
         },
         SelfRegion(ref opt_lifetime, mutbl, ref name) => {
@@ -1338,7 +1350,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                                  lifetime.trans(trcx),
                              None => format!("r_anon_0"),
                          },
-                         self_ty.trans(trcx),
+                         self_ty_str,
                          name.trans(trcx)))
         },
         SelfExplicit(ref ty, ref name) => {
@@ -1355,20 +1367,37 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
         None => 0,
     };
 
-    let impl_clause = match *trait_ref {
-        Some(ref trait_ref) => {
-            let name_str = name.trans(trcx);
-            let self_str = self_ty.trans(trcx);
-            format!("1 {}",
-                    trans_impl_clause(trcx,
-                                      trait_ref,
-                                      name_str,
-                                      self_str))
-        },
-        None => format!("0"),
-    };
+    let impl_clause =
+        if !is_default {
+            match trait_ref {
+                Some(trait_ref) => {
+                    let name_str = name.trans(trcx);
+                    format!("1 {}",
+                            trans_impl_clause(trcx,
+                                              trait_ref,
+                                              name_str,
+                                              self_ty_str))
+                },
+                None => format!("0"),
+            }
+        } else {
+            let lifetimes: Vec<_> =
+                impl_generics.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)).collect();
+            let mut ty_params: Vec<_> =
+                range(0, impl_generics.ty_params.len()).map(|i| format!("var t_{}", i)).collect();
+            ty_params.push(String::from_str("var s_Self"));
 
-    let (lifetimes, ty_params) = combine_generics(trcx, impl_generics, generics);
+            format!("1 {}${}$$__default {} {}",
+                    mangled_def_name(trcx, local_def(trait_.id)),
+                    name.trans(trcx),
+                    lifetimes.trans(trcx),
+                    ty_params.trans(trcx))
+        };
+
+    let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics);
+    if is_default {
+        ty_params.push(String::from_str("s_Self"));
+    }
 
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
     format!("fn {} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
