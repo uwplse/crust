@@ -1387,7 +1387,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                 range(0, impl_generics.ty_params.len()).map(|i| format!("var t_{}", i)).collect();
             ty_params.push(String::from_str("var s_0"));
 
-            format!("1 {}${}$$__default {} {}",
+            format!("1 {}${} {} {}",
                     mangled_def_name(trcx, local_def(trait_.id)),
                     name.trans(trcx),
                     lifetimes.trans(trcx),
@@ -1400,8 +1400,9 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
     }
 
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
-    format!("fn {} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+    format!("fn {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
             mangled_name,
+            if is_default { "$$__default" } else { "" },
             lifetimes.trans(trcx),
             ty_params.trans(trcx),
             arg_strs.trans(trcx),
