@@ -8,7 +8,7 @@ use rustc::middle::def;
 use rustc::middle::region;
 use rustc::middle::subst::ParamSpace::*;
 use rustc::middle::subst::ParamSpace;
-use rustc::middle::subst;
+use rustc::middle::subst::{self, Subst};
 use rustc::middle::ty;
 use rustc::middle::ty::{MethodCall, MethodCallee, MethodOrigin};
 //use rustc::middle::typeck;
@@ -806,6 +806,23 @@ fn deref_once<'a, 'tcx>(trcx: &mut TransCtxt<'a, 'tcx>,
                    level: usize,
                    expr_str: String,
                    expr_ty: ty::Ty<'tcx>) -> (String, ty::Ty<'tcx>) {
+    let (expr_str, expr_ty) =
+        if let Some(callee) = trcx.tcx.method_map.borrow().get(&ty::MethodCall::autoderef(expr.id, level)) {
+            let arg_str = do_auto_ref(trcx, expr, expr_str);
+            let new_expr_variant = trans_method_call(trcx, callee, vec![arg_str]);
+            let new_expr_ty = match callee.ty.subst(trcx.tcx, &callee.substs).sty {
+                ty::ty_bare_fn(_did, bare_fn_ty) =>
+                    match bare_fn_ty.sig.0.output {
+                        ty::FnConverging(t) => t,
+                        ty::FnDiverging => panic!("unexpected FnDiverging"),
+                    },
+                _ => panic!("unexpected ty variant"),
+            };
+            (format!("({} {})", new_expr_ty.trans(trcx), new_expr_variant), new_expr_ty)
+        } else {
+            (expr_str, expr_ty)
+        };
+
     match expr_ty.sty {
         ty::ty_ptr(ty::mt { ty, .. }) |
         ty::ty_rptr(_, ty::mt { ty, .. }) => {
@@ -867,7 +884,7 @@ impl Trans for Lit {
             },
             // LitBinary
             LitByte(b) => format!("{}", b),
-            // LitChar
+            LitChar(c) => format!("{}", c as u32),
             LitInt(i, _) => format!("{}", i),
             // LitFloat
             // LitFloatUnsuffixed
