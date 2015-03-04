@@ -625,8 +625,26 @@ impl Trans for Expr {
             ExprIndex(ref arr, ref idx) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
-                        let arg_strs = vec![arr.trans(trcx), idx.trans(trcx)];
-                        trans_method_call(trcx, callee, arg_strs)
+                        let idx_ty = trcx.tcx.node_types.borrow()[idx.id];
+                        let idx_str = format!("({} addr_of {})",
+                                              auto_ref_ty(trcx, &**idx, None, idx_ty)
+                                                  .trans(trcx),
+                                              idx.trans(trcx));
+                        let arg_strs = vec![arr.trans(trcx), idx_str];
+                        let call_str = trans_method_call(trcx, callee, arg_strs);
+
+                        let mutbl = match ty::ty_fn_ret(callee.ty).0 {
+                            ty::FnConverging(ty) => match ty.sty {
+                                ty::ty_rptr(_, mt) => mt.mutbl,
+                                _ => panic!("unexpected ty variant"),
+                            },
+                            ty::FnDiverging => panic!("unexpected FnDiverging"),
+                        };
+                        let result_ty = trcx.tcx.node_types.borrow()[idx.id];
+                        let result_ptr_ty = auto_ref_ty(trcx, self, Some(mutbl), result_ty);
+                        format!("deref ({} {})",
+                                result_ptr_ty.trans(trcx),
+                                call_str)
                     },
                     None => {
                         format!("index {} {}",
