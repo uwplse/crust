@@ -126,12 +126,12 @@ let i_list = arith_intrinsics @ [
     i_params = [ "t1" ];
     i_body = Inline "memcpy({arg1}, {arg2}, {arg3} * sizeof({t1}))"
   };
-  {
+(*  {
     i_name = "alloc$heap$allocate";
     i_params = [];
     i_body = Template ("rs_u8 *{mname}(size_t to_alloc, size_t align) {\n" ^
                        "\t __CPROVER_assume(to_alloc < CRUST_MAX_MEM);\n" ^
-                       "\t return (rs_u8*)malloc(to_alloc);\n" ^
+                       "\t return (rs_u8* )malloc(to_alloc);\n" ^
                        "}")
   };
   {
@@ -139,11 +139,39 @@ let i_list = arith_intrinsics @ [
     i_params = [];
     i_body = Inline "(free({arg1}),0)"
   };
+*)
   {
-    i_name = "alloc$heap$reallocate";
+    i_name = "libc$funcs$c95$stdlib$free";
+    i_params = [];
+    i_body = Inline "(free({arg1}),0)"
+  };
+  {
+    i_name = "alloc$heap$imp$posix_memalign";
     i_params = [];
     i_body = Template (
-        "rs_u8* {mname}(rs_u8* ptr, size_t old_size, size_t new_size, size_t unused) {\n" ^
+        "int {mname}(libc$types$common$c95$c_void **out_ptr, size_t _align, size_t size) {\n" ^
+        "\t assert(size != 0);\n" ^
+        "\t libc$types$common$c95$c_void* ret = (libc$types$common$c95$c_void*)malloc(size);\n" ^
+        "\t if(ret == NULL) { return 1; }\n" ^
+        "\t *out_ptr = ret;\n" ^
+        "\t return 0;\n" ^
+        "}"
+      )
+  };
+  {
+    i_name = "libc$funcs$c95$stdlib$malloc";
+    i_params = [];
+    i_body = Template ("void *{mname}(size_t to_alloc) {\n" ^
+                       "\t __CPROVER_assume(to_alloc < CRUST_MAX_MEM);\n" ^
+                       "\t return malloc(to_alloc);\n" ^
+                       "}"
+                      )
+  };
+  {
+    i_name = "libc$funcs$c95$stdlib$realloc";
+    i_params = [];
+    i_body = Template (
+        "rs_u8* {mname}(libc$types$common$c95$c_void* ptr, size_t old_size, size_t new_size, size_t unused) {\n" ^
         "\t if(ptr == NULL) {\n"^
         "\t\t __CPROVER_assume(new_size < CRUST_MAX_MEM);\n" ^
         "\t\t return malloc(new_size);\n" ^
@@ -160,7 +188,6 @@ let i_list = arith_intrinsics @ [
         "\t\t return to_ret;\n" ^
         "\t}\n" ^
         "}")
-                       
   };
   (* should this be 1? maybe... I don't think cbmc can really support this anyway,
      and alignment doesn't/shouldn't matter in symbolically executed code

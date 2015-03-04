@@ -297,7 +297,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
                                           },
                                           r.trans(trcx),
                                           mt.ty.trans(trcx)),
-            ty_bare_fn(_, _) => format!("fn"),
+            //ty_bare_fn(_, _) => format!("fn"),
             // ty_closure
             // ty_trait
             // TODO: handle substs

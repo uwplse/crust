@@ -460,7 +460,7 @@ scrub items = scrubbed'
       && adtHasValidDrop item
 
     goTy loc (TAdt name _ _) = name `M.member` i_types ix || traceShow ("discard", loc, "missing type", name) False
-    goTy loc (TFixedVec _ _) = traceShow ("discard", loc, "used fixedvec") False
+    --goTy loc (TFixedVec _ _) = traceShow ("discard", loc, "used fixedvec") False
     goTy loc e = True
 
     goExpr loc (ECall name _ _ _) = name `M.member` i_fns ix || traceShow ("discard", loc, "missing", name) False

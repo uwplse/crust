@@ -51,14 +51,14 @@ build_and_check() {
 
 
 trans_std_lib() {
-    edo ../bin/rbmc $rustc_args src/lib${1} >ir/lib${1}.ir
+    edo ../bin/rbmc $rustc_args src/lib${1}/lib.rs >ir/lib${1}.ir
 }
 
 trans_all_libs() {
     lib_irs=
     for lib in $stdlibs; do
         trans_std_lib $lib
-        lib_irs=$lib_irs ir/lib${lib}.ir
+        lib_irs="ir/lib${lib}.ir $lib_irs"
     done
 }
 
@@ -80,5 +80,9 @@ unapply_last_patch() {
     fi
 }
 
+trans_stdlib() {
+	trans_all_libs
+	cat ir/lib*.ir | ../bin/Preprocess --scrub > ./ir/stdlib.ir
+}
 
 "$@"

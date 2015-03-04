@@ -148,7 +148,7 @@ and parse_type tokens cb =
 	 parse_type t (fun r_type rest ->
 				   cb (`Ptr_Mut r_type) rest
 				  )
-  | "fn"::_ -> failwith "Function types not AT ALL supported"
+  | "fn"::_ -> raise @@ Parse_failure ("unsupported function type: parse_type", tokens)
   | "abstract"::name::t ->
     let parse_fn = parse_lifetimes >> (parse_n parse_type) in
     parse_fn t (fun (lifetimes, types) ->
