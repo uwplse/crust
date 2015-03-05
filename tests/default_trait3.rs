@@ -16,3 +16,7 @@ impl T for S {
 fn h(s: S) -> u32 {
     s.f() + s.g()
 }
+
+fn crust_init() -> (S,) {
+    (S,)
+}
