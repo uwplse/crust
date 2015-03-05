@@ -1125,11 +1125,20 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                 .unwrap_or(format!("[unit] simple_literal _ItemFn")))
                 }
             },
+
             ItemImpl(_, _, ref impl_generics, ref trait_ref, ref self_ty, ref items) => {
                 let mut result = String::new();
+
+                let mut seen_methods = HashSet::new();
                 for item in items.iter() {
                     let part = match *item {
                         MethodImplItem(ref method) => {
+                            let base_name = match method.node {
+                                MethDecl(ref ident, _, _, _, _, _, _, _) => ident.trans(trcx),
+                                MethMac(_) => panic!("unexpected MethMac"),
+                            };
+                            seen_methods.insert(base_name);
+
                             let name = mangled_def_name(trcx, local_def(method.id));
                             try_str(|| trans_method(trcx, self, &**method), &*name)
                         },
@@ -1144,7 +1153,9 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                         trans_impl_clause(trcx,
                                                           trait_ref.as_ref().unwrap(),
                                                           name_str,
-                                                          self_str),
+                                                          self_str,
+                                                          [].as_slice(),
+                                                          [].as_slice()),
                                         typ_str)
                             }, &*name)
                         },
@@ -1152,6 +1163,34 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                     result.push_str(part.as_slice());
                     result.push_str("\n");
                 }
+
+                let opt_ty_trait_ref = ty::impl_trait_ref(trcx.tcx, local_def(self.id));
+                if let Some(ty_trait_ref) = opt_ty_trait_ref {
+                    for item in ty::trait_items(trcx.tcx, ty_trait_ref.def_id).iter() {
+                        match *item {
+                            ty::MethodTraitItem(ref method) => {
+                                let base_name = method.name.trans(trcx);
+                                if !seen_methods.contains(&base_name) {
+                                    let self_ty_str = self_ty.trans(trcx);
+                                    let method_name = method.name.trans(trcx);
+                                    let i = trans_impl_clause(trcx,
+                                                              trait_ref.as_ref().unwrap(),
+                                                              method_name,
+                                                              self_ty_str,
+                                                              [].as_slice(),
+                                                              [].as_slice());
+                                    let code = format!("use_default {} {}",
+                                                       impl_generics.trans_extra(trcx, TypeSpace),
+                                                       i);
+                                    result.push_str(code.as_slice());
+                                    result.push_str("\n");
+                                }
+                            },
+                            ty::TypeTraitItem(..) => {},
+                        }
+                    }
+                }
+
                 result
             },
             ItemConst(ref ty, ref expr) => {
@@ -1212,12 +1251,16 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
     }
 }
 
-fn combine_generics(trcx: &mut TransCtxt, impl_g: &Generics, fn_g: &Generics) -> (Vec<String>, Vec<String>) {
+fn combine_generics(trcx: &mut TransCtxt,
+                    impl_g: &Generics,
+                    fn_g: &Generics,
+                    add_self: bool) -> (Vec<String>, Vec<String>) {
     let lifetimes =
             impl_g.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)).chain(
             fn_g.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id))).collect();
     let ty_params =
             range(0, impl_g.ty_params.len()).map(|i| format!("t_{}", i)).chain(
+            (if add_self { Some(String::from_str("s_0")) } else { None }).into_iter()).chain(
             range(0, fn_g.ty_params.len()).map(|i| format!("f_{}", i))).collect();
     (lifetimes, ty_params)
 }
@@ -1394,16 +1437,21 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                             trans_impl_clause(trcx,
                                               trait_ref,
                                               name_str,
-                                              self_ty_str))
+                                              self_ty_str,
+                                              generics.lifetimes.as_slice(),
+                                              generics.ty_params.as_slice()))
                 },
                 None => format!("0"),
             }
         } else {
-            let lifetimes: Vec<_> =
+            let mut lifetimes: Vec<_> =
                 impl_generics.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)).collect();
             let mut ty_params: Vec<_> =
                 range(0, impl_generics.ty_params.len()).map(|i| format!("var t_{}", i)).collect();
             ty_params.push(String::from_str("var s_0"));
+
+            add_fn_lifetimes(trcx, generics.lifetimes.as_slice(), &mut lifetimes);
+            add_fn_ty_params(trcx, generics.ty_params.as_slice(), &mut ty_params);
 
             format!("1 {}${} {} {}",
                     mangled_def_name(trcx, local_def(trait_.id)),
@@ -1412,10 +1460,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                     ty_params.trans(trcx))
         };
 
-    let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics);
-    if is_default {
-        ty_params.push(String::from_str("s_0"));
-    }
+    let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics, is_default);
 
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
     format!("fn {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
@@ -1436,22 +1481,49 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                 .unwrap_or(format!("[unit] simple_literal _method")))
 }
 
+fn add_fn_lifetimes(trcx: &mut TransCtxt,
+                    fn_lifetimes: &[LifetimeDef],
+                    lifetimes: &mut Vec<String>) {
+    lifetimes.extend(fn_lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)));
+}
+
+fn add_fn_ty_params(trcx: &mut TransCtxt,
+                    fn_ty_params: &[TyParam],
+                    ty_params: &mut Vec<String>) {
+    ty_params.extend(range(0, fn_ty_params.len()).map(|i| format!("var f_{}", i)));
+}
+
 fn trans_impl_clause(trcx: &mut TransCtxt,
                      trait_ref: &TraitRef,
                      name: String,
-                     self_ty: String) -> String {
+                     self_ty: String,
+                     fn_lifetimes: &[LifetimeDef],
+                     fn_ty_params: &[TyParam]) -> String {
     let last_seg = trait_ref.path.segments.as_slice().last().unwrap();
-    let substs = match last_seg.parameters {
-        AngleBracketedParameters(ref params) =>
-            trcx.tcx.trait_refs.borrow()[trait_ref.ref_id].substs.trans(trcx),
+    let (mut lifetimes, mut ty_params): (Vec<_>, Vec<_>) = match last_seg.parameters {
+        AngleBracketedParameters(ref params) => {
+            let trait_refs = trcx.tcx.trait_refs.borrow();
+            let substs = trait_refs[trait_ref.ref_id].substs;
+            let ls = match substs.regions {
+                subst::ErasedRegions => panic!("unsupported ErasedRegions"),
+                subst::NonerasedRegions(ref regions) =>
+                    regions.as_slice().iter().map(|r| r.trans(trcx)).collect(),
+            };
+            let ts = substs.types.as_slice().iter().map(|t| t.trans(trcx)).collect();
+            (ls, ts)
+        },
         ParenthesizedParameters(_) =>
             panic!("unsupported ParenthesizedParameters"),
     };
 
-    format!("{}${} {}",
+    add_fn_lifetimes(trcx, fn_lifetimes, &mut lifetimes);
+    add_fn_ty_params(trcx, fn_ty_params, &mut ty_params);
+
+    format!("{}${} {} {}",
             mangled_def_name(trcx, trcx.tcx.def_map.borrow()[trait_ref.ref_id].def_id()),
             name.trans(trcx),
-            substs)
+            lifetimes.trans(trcx),
+            ty_params.trans(trcx))
 }
 
 fn print_abstract_fn_decls(trcx: &mut TransCtxt) {

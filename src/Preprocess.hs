@@ -72,6 +72,7 @@ main = do
         return ()
     else do
         let passes = [
+                "generate-default-methods",
                 "lift-strings",
                 if c_scrub config then "scrub" else "id",
                 "desugar-index",
@@ -114,6 +115,7 @@ runPass "add-cleanup" = \is -> addCleanup (mkIndex is) is
 runPass "filter-extern-fns" = filter (not . isExternFn)
 runPass "generate-drop-glues" = generateDropGlues
 runPass "lift-strings" = liftStrings
+runPass "generate-default-methods" = \is -> generateDefaultMethods (mkIndex is) is
 runPass "scrub" = scrub
 runPass "dump" = dumpIr "dump"
 runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
@@ -430,6 +432,38 @@ desugarUnsize = everywhere (mkT goExpr)
             lenExpr = Expr (TUint PtrSize) $ ESimpleLiteral $ show len
         in Expr tyRef $ ETupleLiteral [dataExpr, lenExpr]
     goExpr e = e
+
+generateDefaultMethods ix items = zipWith go [0..] items
+  where
+    go idx (IUseDefault (UseDefault lps tps (ImplClause name las tas))) = IFn def
+      where 
+        AbstractFnDef _ absLps absTps absArgs absRetTy = case M.lookup name (i_fns ix) of
+            Just (FAbstract a) -> a
+            _ -> error $ "couldn't find abstract function " ++ name
+
+        doSubst = subst (absLps, absTps) (las, tas)
+
+        -- Find the function-space type and lifetime parameters.  These don't
+        -- appear in the IR because trans doesn't actually look at the method
+        -- type.
+        fnLps = drop (length lps) absLps
+        -- +1 for s_0, which is not included in the impl generics
+        fnTps = drop (length tps + 1) absTps
+
+        fnLas = fnLps
+        fnTas = map TVar fnTps
+
+        name' = name ++ "$$__default" ++ show idx
+        args' = zipWith (\i (ArgDecl (Pattern ty p)) ->
+                ArgDecl $ Pattern (doSubst ty) (PVar $ "arg" ++ show i)) [0..] absArgs
+        retTy' = doSubst absRetTy
+        clause = ImplClause name (las ++ fnLas) (tas ++ fnTas)
+        body = Expr retTy' $ ECall (name ++ "$$__default") (las ++ fnLas) (tas ++ fnTas) $
+            map (\(ArgDecl (Pattern ty (PVar name))) -> Expr ty $ EVar name) args'
+        def = FnDef name' (lps ++ fnLps) (tps ++ fnTps) args' retTy' (Just clause) $
+                Expr retTy' $ EBlock [] body
+
+    go _ i = i
 
 filterItems items itemFilter = filter isAllowed items
     where

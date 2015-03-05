@@ -215,6 +215,12 @@ ppStaticDef (StaticDef name ty expr) = line $ do
     spaceSep [tell "static", tell name, tell ":", ppTy ty, tell "=", ppExpr expr]
     tell ";"
 
+ppUseDefault (UseDefault lps tps impl) = line $
+    tell "use_default" >>
+    listNe angles (map ppLifetime lps ++ map tell tps) >>
+    tell " " >>
+    ppImplClause impl
+
 ppItem (IStruct s) = ppStructDef s
 ppItem (IEnum e) = ppEnumDef e
 ppItem (IConst c) = ppConstDef c
@@ -224,6 +230,7 @@ ppItem (IExternFn f) = ppExternFnDef f
 ppItem (IAbstractType t) = ppAbstractTypeDef t
 ppItem (IAssociatedType t) = ppAssociatedTypeDef t
 ppItem (IStatic t) = ppStaticDef t
+ppItem (IUseDefault u) = ppUseDefault u
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m
 
 runPp :: (ReaderT Int (Writer String) ()) -> String

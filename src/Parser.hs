@@ -165,6 +165,9 @@ data ConstDef = ConstDef Name Ty Expr
 data StaticDef = StaticDef Name Ty Expr
   deriving (Eq, Show, Data, Typeable)
 
+data UseDefault = UseDefault [LifetimeParam] [TyParam] ImplClause
+  deriving (Eq, Show, Data, Typeable)
+
 data Item =
       IStruct StructDef
     | IEnum EnumDef
@@ -175,6 +178,7 @@ data Item =
     | IAbstractType AbstractTypeDef
     | IAssociatedType AssociatedTypeDef
     | IStatic StaticDef
+    | IUseDefault UseDefault
     | IMeta String
   deriving (Eq, Show, Data, Typeable)
 
@@ -323,6 +327,9 @@ constDef = exactWord "const" >>
 staticDef = exactWord "static" >>
     StaticDef <$> name <*> ty <*> expr
 
+useDefault = exactWord "use_default" >>
+    UseDefault <$> counted lifetimeParam <*> counted tyParam <*> implClause
+
 item = choice
     [ IStruct <$> structDef
     , IEnum <$> enumDef
@@ -332,6 +339,7 @@ item = choice
     , IExternFn <$> externFnDef
     , IAbstractType <$> abstractTypeDef
     , IAssociatedType <$> associatedTypeDef
+    , IUseDefault <$> useDefault
     , IStatic <$> staticDef
     ]
 
@@ -494,6 +502,9 @@ instance Pp ConstDef where
 instance Pp StaticDef where
     pp' (StaticDef n t e) = ppGo "static" [pp n, pp t, pp e]
 
+instance Pp UseDefault where
+    pp' (UseDefault a b c) = ppGo "use_default" [pp a, pp b, pp c]
+
 instance Pp Item where
     pp' i =
         let a = case i of
@@ -505,6 +516,7 @@ instance Pp Item where
                     IExternFn a -> pp a
                     IAbstractType a -> pp a
                     IAssociatedType a -> pp a
-                    IMeta s -> s
+                    IUseDefault a -> pp a
                     IStatic a -> pp a
+                    IMeta s -> s
         in [pp a, "\n"]
