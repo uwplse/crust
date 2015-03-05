@@ -1444,20 +1444,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
                 None => format!("0"),
             }
         } else {
-            let mut lifetimes: Vec<_> =
-                impl_generics.lifetimes.iter().map(|l| format!("r_named_0_{}", l.lifetime.id)).collect();
-            let mut ty_params: Vec<_> =
-                range(0, impl_generics.ty_params.len()).map(|i| format!("var t_{}", i)).collect();
-            ty_params.push(String::from_str("var s_0"));
-
-            add_fn_lifetimes(trcx, generics.lifetimes.as_slice(), &mut lifetimes);
-            add_fn_ty_params(trcx, generics.ty_params.as_slice(), &mut ty_params);
-
-            format!("1 {}${} {} {}",
-                    mangled_def_name(trcx, local_def(trait_.id)),
-                    name.trans(trcx),
-                    lifetimes.trans(trcx),
-                    ty_params.trans(trcx))
+            format!("0")
         };
 
     let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics, is_default);
