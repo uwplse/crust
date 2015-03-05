@@ -18,6 +18,8 @@ rustc_args="-L lib --out-dir=lib --target=x86_64-custom-linux-gnu.json -A warnin
 stdlibs="core libc alloc unicode collections"
 
 
+SCRATCH=.
+
 copy_compiler_rt() {
     RUST_HOME=$(dirname $(dirname $(which rustc)))
     cp -v $RUST_HOME/lib/rustlib/*/lib/libcompiler-rt.a lib
@@ -62,8 +64,32 @@ trans_all_libs() {
     done
 }
 
+scrub_test_error() {
+	TO_SCRUB=$1
+	for i in $(seq 0 2); do
+		if run_rbmc $TO_SCRUB > $SCRATCH/tests.ir 2> $SCRATCH/failing_tests; then
+			return
+		fi
+		cp $TO_SCRUB $SCRATCH/pre_scrubbed_${i}.rs
+		egrep -o '.+error:' $SCRATCH/failing_tests | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python ../bin/filter_errors.py $TO_SCRUB > $SCRATCH/scrubbed_${i}.rs;
+		cp $SCRATCH/scrubbed_${i}.rs $TO_SCRUB
+	done
+	echo "Failed to scrub tests"
+	exit 1
+}
+
+compile_test () {
+	scrub_test_error $1;
+	cat $2 $SCRATCH/tests.ir | ../bin/Preprocess > $SCRATCH/tests2.ir;
+	../bin/crust.native -test-compile $SCRATCH/tests2.ir;
+}
+
+run_rbmc() {
+	../bin/rbmc $rustc_args $1
+}
+
 trans_bin() {
-    edo ../bin/rbmc $rustc_args $1 >ir/aout.ir
+    edo run_rbmc $1 >ir/aout.ir
 }
 
 
@@ -82,7 +108,44 @@ unapply_last_patch() {
 
 trans_stdlib() {
 	trans_all_libs
-	cat ir/lib*.ir | ../bin/Preprocess --scrub > ./ir/stdlib.ir
+	cat ir/lib*.ir | ../bin/Preprocess --scrub > ./ir/stdlib.ir 2> ./pp_out
+}
+
+scratch_cleanup() {
+	rm -rf $SCRATCH
+}
+
+instrument_intrinsics() {
+	python ../bin/crust_macros.py --intrinsics $1 > $SCRATCH/temp.rs
+	mv $SCRATCH/temp.rs $1
+}
+
+trans_stdlib_test() {
+	if [ \! -e $2 ]; then
+		mkdir -p $2
+	fi
+	../bin/crust.native -dump-items -api-filter $1 ir/stdlib.ir > $SCRATCH/item_filter
+	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
+	mkdir -p $SCRATCH/test_cases
+	../bin/crust.native -driver-gen -api-filter $1 -immut-length 2 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	for i in $SCRATCH/test_cases/*.rs; do
+		instrument_intrinsics $i
+		OUTPUT_NAME=$(basename $i);
+		OUTPUT_NAME=${OUTPUT_NAME/.rs/.c}
+		compile_test $i $SCRATCH/simple_ir > $2/$OUTPUT_NAME
+	done
+}
+
+with_scratch() {
+	if [ "$SCRATCH" = "." ] ; then
+		SCRATCH=$(mktemp -d /tmp/crust.XXXXXXX)
+#		mkdir $SCRATCH/ir
+		#trap scratch_cleanup EXIT;
+		"$@"
+	else
+		echo "Scratch already set!";
+		exit -1;
+	fi
 }
 
 "$@"
