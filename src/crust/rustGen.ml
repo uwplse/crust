@@ -28,7 +28,10 @@ let init_types () =
   | `Tuple tl -> tl
   | _ -> assert false
 
-let drop_fn = "__DROP_ACTION__";;
+type api_actions = 
+  | Copy
+  | Drop
+  | Fn of string * (Types.mono_type list)
 
 let counter = ref 0;;
 
@@ -78,6 +81,7 @@ type action_call =
   | Ptr_Assert of [`Immut | `Mut ] * string * string
   | Null_Assert of string
   | Close_Block
+  | Copy_Action of string * string
 
 module UnionFind = struct
   (* a very stupid union find implementation  
@@ -129,8 +133,10 @@ class rust_pp buf output_file_prefix num_tests = object(self)
 
   method emit_sequence sequence =
     var_counter <- 0;
+    self#debug_call_seq sequence;
     let init_vars,concrete_call_seqs = self#concretize sequence in
     let final_call_seq = 
+      List.filter self#all_copy_var_used @@
       if !assume_ident_init then
         self#break_symmetry @@ List.filter self#compute_interference concrete_call_seqs
       else
@@ -139,6 +145,16 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     List.iter (fun cc_seq ->
         self#emit_cc_sequence init_vars cc_seq
     ) final_call_seq
+
+  method private debug_call_seq action_seq = 
+    self#put_i "// " ;
+    self#put_many " -> " (function 
+        | Drop -> self#put "<DROP>"
+        | Copy -> self#put "<COPY>"
+        | Fn (f_name,_) -> self#put f_name
+      ) action_seq;
+    self#newline ()
+      
 
   method private reset_buffer () =
     Buffer.clear buf
@@ -225,10 +241,15 @@ class rust_pp buf output_file_prefix num_tests = object(self)
   method private concretize_aux state accum cc call_seq = 
     match call_seq with
     | [] -> (List.rev cc)::accum
-    | (df,[])::t when df = drop_fn ->
+    | Drop::t ->
       self#concretize_aux (self#update_drop state) accum (Close_Block::cc) t
-    | ((fn,m_args) as inst)::t ->
-      let (arg_types,ret_type) = memo_get_fn_types inst in
+    | Copy::t ->
+      let out_var = self#next_var in
+      let copy_var = List.hd state.var_stack in
+      let var_type = SMap.find copy_var state.ty_of_var in
+      self#concretize_aux (self#update_call state var_type out_var) accum ((Copy_Action (out_var,copy_var))::cc) t
+    | (Fn (fn,m_args))::t ->
+      let (arg_types,ret_type) = memo_get_fn_types (fn,m_args) in
       let call_combinations = self#get_args state arg_types in
       let out_var = self#next_var in
       let ref_assertions = self#gen_assertions state out_var ret_type in
@@ -351,7 +372,13 @@ class rust_pp buf output_file_prefix num_tests = object(self)
           self#put_all [
              "crust_assert("; out_var; " as *mut _ as u64 != 0);"
           ];
+          self#newline ();
           accum
+        | Copy_Action (out_var,copy_var) -> 
+          self#open_block ();
+          self#put_all [ "let mut "; out_var; " = " ; copy_var; ";"];
+          self#newline();
+          (succ accum)
         | Open_Block (v,_,fn,args) -> begin
             let rust_name = rust_name fn in
             self#open_block ();
@@ -407,6 +434,8 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         | Null_Assert _
         | Ptr_Assert _ -> ()
         | Close_Block -> ()
+        | Copy_Action (v1,v2) -> 
+          UnionFind.union uf v1 v2
         | Open_Block (v,_,_,l) ->
           let ref_vars = self#walk_args SSet.add SSet.empty l in
           let to_union = v in
@@ -426,6 +455,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     | Null_Assert _::t
     | Ptr_Assert _::t -> self#walk_call_seq f accum t
     | Close_Block::t -> self#walk_call_seq f accum t
+    | Copy_Action _::t -> self#walk_call_seq f accum t
     | Open_Block (_,_,_,l)::t -> self#walk_call_seq f (self#walk_args f accum l) t
     | [] -> accum
 
@@ -471,6 +501,15 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     in
     break_loop cc_vc
 
+  method private all_copy_var_used call_seq = 
+    let copy_vars = List.fold_left (fun accum l -> 
+        match l with
+        | Copy_Action (v,_) -> SSet.add v accum
+        | _ -> accum
+      ) SSet.empty call_seq in
+    let ref_vars = self#walk_call_seq SSet.add SSet.empty call_seq in
+    SSet.is_empty @@ SSet.diff copy_vars ref_vars
+
   initializer 
     let (init_args,_) = memo_get_fn_types (Env.crust_init_name_e(), []) in
     let empty_state = {
@@ -501,36 +540,30 @@ let rec complex_drop ty = match ty with
 
 let filter_drop call_seq = 
   let (dropped_types,_) =
-    List.fold_left (fun (dropped_types,type_stack) ((fn_name,args) as inst) -> 
-      if fn_name = drop_fn then
-        match type_stack with
-        | h::t -> (h::dropped_types,t)
-        | _ -> assert false
-      else
-        let (_,ret_type) = memo_get_fn_types inst in
-        (dropped_types,ret_type::type_stack)
+    List.fold_left (fun (dropped_types,type_stack) api_action -> 
+        match api_action with
+        | Drop ->  begin
+            match type_stack with
+            | h::t -> (h::dropped_types,t)
+            | _ -> assert false
+          end
+        | Copy ->
+          let copied_type = List.hd type_stack in
+          (dropped_types,copied_type::type_stack)
+        | Fn (fn,m_args) -> 
+          let (_,ret_type) = memo_get_fn_types (fn,m_args) in
+          (dropped_types,ret_type::type_stack)
     ) ([],[]) call_seq in
   match dropped_types with 
   | [] -> true
-  | _ -> 
-    (*let a = *)
-    List.exists complex_drop dropped_types
-    (*in
-    Printf.fprintf stdout "// RESULT -> %b\n" a;
-    if a then begin
-      Printf.fprintf stdout "// drop judgment: ";
-      List.iter (fun ty ->
-          Printf.fprintf stdout "%s -> %b, " (Types.pp_t (ty :  Types.mono_type :> Types.r_type)) @@ has_drop ty
-        ) dropped_types
-    end else ();
-    a*)
+  | _ -> List.exists complex_drop dropped_types
 
 (* (not a) stub! *)
 let gen_call = 
   fun pp sequence ->
   let call_seq = List.rev sequence in
   if not @@ filter_drop call_seq then () else begin
-    pp#emit_sequence @@ List.rev sequence
+    pp#emit_sequence call_seq
   end
 
   
@@ -548,8 +581,9 @@ let mut_analysis (fn_name,m_args) =
       | _ -> false
     ) fn_def.Ir.fn_args
 
-let valid_extend state ((fn_name,m_args) as fn_inst) = 
-  if fn_name = drop_fn then
+let valid_extend state api_action = 
+  match api_action with
+  | Drop -> begin
     match state.t_list with
     | [] -> None
     | h::t -> 
@@ -557,13 +591,20 @@ let valid_extend state ((fn_name,m_args) as fn_inst) =
         Some { state with t_list = t }
       else
         Some { t_list = t; public_types = MTSet.remove h state.public_types }
-  else
-    let (arg_types,ret_type) = memo_get_fn_types fn_inst in
+    end
+  | Copy -> begin
+      match state.t_list with
+      | [] -> None
+      | h::t -> if (match h with | #Types.simple_type -> true | _ -> false) then
+          None
+        else Some { state with t_list = h::state.t_list }
+    end
+  | Fn (fn_name,m_args) ->
+    let (arg_types,ret_type) = memo_get_fn_types (fn_name,m_args) in
     match TypeUtil.get_inst state.public_types [] (arg_types : Types.mono_type list :> Types.r_type list) with
     | `Mismatch -> None
     | `Inst _ -> Some { t_list = ret_type::state.t_list; public_types = MTSet.add ret_type state.public_types }
 
-(* this needs to allow move functions in the mut call sequence *)
 let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f = 
 (*  prerr_endline @@ "Exploring: " ^ (string_of_int index) ^ " with length -> " ^ (string_of_int seq_len) ^ " more debug -> " ^ (string_of_int @@ List.length path);*)
   if seq_len = !mut_action_len then
@@ -597,8 +638,9 @@ let gen_call_seq pp fi_set =
     else
       Analysis.FISet.partition mut_analysis fi_set
   in
-  let mut_fn_arr = Array.of_list @@ (drop_fn,[])::Analysis.FISet.elements mut_fn_set in
-  let const_fn_arr = Array.of_list @@ Analysis.FISet.elements const_fn_set in
+  let fn_action_of_set s = List.map (fun (f,m) -> Fn (f,m)) @@ Analysis.FISet.elements s in
+  let mut_fn_arr = Array.of_list @@ Drop::Copy::(fn_action_of_set mut_fn_set) in
+  let const_fn_arr = Array.of_list @@ fn_action_of_set const_fn_set in
   do_gen_mut mut_fn_arr const_fn_arr 0 {
     public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ init_types ();
     t_list = []
