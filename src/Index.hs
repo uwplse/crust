@@ -209,3 +209,4 @@ itemName (IAssociatedType (AssociatedTypeDef _ _ (ImplClause name lps tps) _)) =
     "<associated type: " ++ name ++ " " ++ show tps ++ ">"
 itemName (IStatic (StaticDef name _ _)) = name
 itemName (IMeta s) = "<metadata item: " ++ s ++ ">"
+itemName (IUseDefault (UseDefault _ _ (ImplClause name _ tps))) = "<use default: " ++ name ++ " " ++ show tps ++ ">"

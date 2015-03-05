@@ -72,9 +72,9 @@ main = do
         return ()
     else do
         let passes = [
+                if c_scrub config then "scrub" else "id",
                 "generate-default-methods",
                 "lift-strings",
-                if c_scrub config then "scrub" else "id",
                 "desugar-index",
                 "desugar-range",
                 "desugar-arg-patterns",
@@ -495,6 +495,7 @@ scrub items = scrubbed'
       (everything (&&) (True `mkQ` goTy (itemName item)) item)
       && (everything (&&) (True `mkQ` goExpr (itemName item)) item)
       && adtHasValidDrop item
+      && hasAbstractFn item
 
     goTy loc (TAdt name _ _) = name `M.member` i_types ix || traceShow ("discard", loc, "missing type", name) False
     --goTy loc (TFixedVec _ _) = traceShow ("discard", loc, "used fixedvec") False
@@ -509,6 +510,9 @@ scrub items = scrubbed'
     adtHasValidDrop (IEnum (EnumDef loc _ _ _ (Just name))) =
         name `M.member` i_fns ix || traceShow ("discard", loc, "missing drop", name) False
     adtHasValidDrop _ = True
+
+    hasAbstractFn d@(IUseDefault (UseDefault _ _ (ImplClause name _ _))) = name `M.member` i_fns ix || traceShow ("discard", (itemName d), "missing abstract fn") False
+    hasAbstractFn _ = True
 
 
 mkCast e t = Expr t (ECast e)
