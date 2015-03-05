@@ -148,6 +148,9 @@ liftTempsM x = goItems x
     goExpr ds (Expr ty (EBlock ss e)) = collectDecls [] $ do
         e' <- applyDecls ds e
         return $ Expr ty $ EBlock ss e'
+    goExpr ds (Expr ty (EUnsafe ss e)) = collectDecls [] $ do
+        e' <- applyDecls ds e
+        return $ Expr ty $ EUnsafe ss e'
     -- TODO: scrutinee of a match is sometimes a temporary that needs lifting
     goExpr ds e = collectDecls ds $ return e
 
