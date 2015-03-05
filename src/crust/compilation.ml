@@ -332,7 +332,7 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         self#put ")"
     method handle_drop fn_name m_args args = 
       let arg_buf = Buffer.create 100 in
-      self#put_i "";
+      self#put_i "(";
       let arg_string = match args with
         | [(_,a)] -> self#with_intercept ~b:arg_buf (fun () -> self#dump_simple_expr a)
         | _ -> failwith @@ "Wrong arity to drop_glue, expected 1, found " ^ (string_of_int @@ List.length args)
@@ -342,7 +342,7 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         | _ -> assert false
       in
       self#drop_type drop_type arg_string;
-      self#put "0"
+      self#put "0)"
     method drop_type (ty : Types.mono_type) arg_string = 
       match ty with
       | `Tuple tl -> 
