@@ -22,7 +22,7 @@ type _ query_param =
   | Tuple : int -> (Types.mono_type list) query_param
   | Ptr_Mut : Types.mono_type query_param
   | Ptr : Types.mono_type query_param
-  | Ref : Types.mono_type query_param
+  | Ref : bool -> Types.mono_type query_param
   | Ref_Mut : Types.mono_type query_param
   | Adt : string -> (Types.mono_type list) query_param
   | Fixed_Vec : int -> Types.mono_type query_param
@@ -67,9 +67,11 @@ let find_types : type a.MTSet.t -> a query_param -> a list =
         | `Ptr t -> t::accum
         | _ -> accum
       ) set []
-    | Ref -> MTSet.fold (fun t accum ->
+    | Ref b -> MTSet.fold (fun t accum ->
         match t with
         | `Ref (_,t) ->
+          t::accum
+        | `Ref_Mut (_,t) when b ->
           t::accum
         | _ -> accum
       ) set []
@@ -96,26 +98,27 @@ let find_types : type a.MTSet.t -> a query_param -> a list =
         | _ -> accum
       ) set []
 
-class virtual ['a] match_state (synth_types : bool) = object
+class virtual ['a] match_state (fuzzy_ref : bool) (synth_types : bool) = object
   method virtual next_state : 'a match_state
   method virtual get_candidates : MTSet.t
   method synth_types = synth_types
+  method fuzzy_ref = fuzzy_ref
 end
 
-class set_match_state synth_type t_set = object(self)
+class set_match_state fuzzy_ref synth_type t_set = object(self)
   method next_state = (self :> set_match_state)
   method get_candidates = t_set
-  inherit [MTSet.t] match_state synth_type
+  inherit [MTSet.t] match_state fuzzy_ref synth_type
 end
 
-class list_match_state synth_type t_list = object(self)
+class list_match_state fuzzy_ref synth_type t_list = object(self)
   method next_state = match t_list with
     | [] -> (self :> list_match_state)
-    | _::t -> new list_match_state synth_type t
+    | _::t -> new list_match_state fuzzy_ref synth_type t
   method get_candidates = match t_list with
     | [] -> MTSet.empty
     | h::_ -> MTSet.singleton h
-  inherit [Types.mono_type list] match_state synth_type
+  inherit [Types.mono_type list] match_state fuzzy_ref synth_type
 end
 
 let rec uniq_list l = match l with
@@ -156,16 +159,16 @@ let print_tset t_set =
   prerr_endline @@ dump_tset t_set
 
 
-class type_matcher = object(self)
+class type_matcher fuzzy_ref = object(self)
   method get_inst t_set m = 
-    self#match_types (new set_match_state true t_set) [] m
+    self#match_types (new set_match_state fuzzy_ref true t_set) [] m
   method is_inst t_list m = 
-    self#match_types (new list_match_state false t_list) [] m
+    self#match_types (new list_match_state fuzzy_ref false t_list) [] m
   method match_types = fun match_state t_binding to_match ->
     self#p_match_types match_state t_binding [] to_match
   method resolve_abstract_type abstract_ty (mono_ty_args : Types.mono_type list) = 
     let candidates = Env.EnvMap.find Env.associated_types abstract_ty in
-    let match_state = new list_match_state false mono_ty_args in
+    let match_state = new list_match_state fuzzy_ref false mono_ty_args in
     let instantiations = List.fold_left (fun accum c ->
         match self#match_types match_state [] c.Types.ty_args with
         | `Mismatch -> accum
@@ -231,7 +234,7 @@ class type_matcher = object(self)
           | l -> `Inst l
         end
   method match_single_type state t_binding (t_list : Types.mono_type list) t_set t = 
-    let s_state = new set_match_state false (List.fold_right MTSet.add t_list MTSet.empty) in
+    let s_state = new set_match_state fuzzy_ref false (List.fold_right MTSet.add t_list MTSet.empty) in
     let bindings = match self#match_type s_state t_binding t with
       | `Mismatch -> []
       | `Match -> [[]]
@@ -239,7 +242,7 @@ class type_matcher = object(self)
     in
     let bindings = 
       if state#synth_types then
-        let set_match_state = new set_match_state false t_set in
+        let set_match_state = new set_match_state fuzzy_ref false t_set in
         match self#match_type set_match_state t_binding t with
         | `Mismatch -> bindings
         | `Match -> [] :: bindings
@@ -253,7 +256,7 @@ class type_matcher = object(self)
     | l -> `Bind l
   method match_many_type synth_types t_binding candidate_list t_set tl =
     let insts = List.fold_left (fun accum inst_candidate ->
-        let t_state = new list_match_state synth_types inst_candidate in
+        let t_state = new list_match_state fuzzy_ref synth_types inst_candidate in
         let match_result = self#match_types t_state t_binding tl in
         match match_result with
         | `Mismatch -> accum
@@ -261,7 +264,7 @@ class type_matcher = object(self)
       ) [] candidate_list in
     let all_insts = 
       if synth_types then
-        let s_match_state = new set_match_state true t_set in
+        let s_match_state = new set_match_state fuzzy_ref true t_set in
         match self#match_types s_match_state t_binding tl with
         | `Mismatch -> insts
         | `Inst synth_inst -> insts @ synth_inst
@@ -305,7 +308,7 @@ class type_matcher = object(self)
     | `Ptr t -> 
       self#match_single_type state t_binding (find_types t_set Ptr) t_set t
     | `Ref (_,t) ->
-      self#match_single_type state t_binding (find_types t_set Ref) t_set t
+      self#match_single_type state t_binding (find_types t_set @@ Ref state#fuzzy_ref) t_set t
     | `Ref_Mut (_,t) ->
       self#match_single_type state t_binding (find_types t_set Ref_Mut) t_set t
     | `Ptr_Mut t ->
@@ -346,7 +349,9 @@ let rec get_free_vars accum t =
 
 ;;
 
-let matcher = new type_matcher;;
+let matcher = new type_matcher false;;
+
+let resolution_matcher = new type_matcher true;;
 
 let rec has_abstract (t : Types.r_type) = 
   match t with
@@ -400,7 +405,7 @@ let get_inst type_univ free_vars (to_match : Types.r_type list) =
     matcher#get_inst type_univ to_match
 
 let to_monomorph = matcher#to_monomorph
-let is_inst = matcher#is_inst
+let is_inst = resolution_matcher#is_inst
 
 let rec is_move_type : Types.mono_type -> bool = function
   | `Ptr _ 
