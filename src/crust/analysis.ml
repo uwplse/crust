@@ -117,6 +117,8 @@ let rec is_primitive t =
 
 let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
+  let quoted_dollar = Str.quote "$" in
+  let is_default_regex = Str.regexp @@ "^.+" ^ quoted_dollar ^ quoted_dollar ^ "__default$" in
   fun abstract_name param_args ->
   let abstract_impls = Env.EnvMap.find Env.abstract_impl abstract_name in
   let possible_insts = 
@@ -138,13 +140,15 @@ let resolve_abstract_fn =
   | [] -> 
     raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
   | l -> 
-    (* ugly hack (that isn't necessary anymore???) *)
-    let all_prim = List.for_all is_primitive param_args in
-    if all_prim then List.hd l else
+    let l' = List.filter (fun (m,f) ->
+        not (Str.string_match is_default_regex f 0)
+      ) l in
+    let failure_exn = lazy (
       let inst_dump = String.concat "/" @@ List.map snd possible_insts in
       let fail_args = arg_str param_args in
-      raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
-
+      ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
+    ) in
+    match l' with [t] -> t | _ -> raise @@ Lazy.force failure_exn
 
 
 let rec walk_type : walk_state -> Types.mono_type -> walk_state = 
@@ -225,7 +229,7 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
   | `Call (fn_name,_,t_params,args) ->
     let m_args = List.map (TypeUtil.to_monomorph t_bindings) t_params in
     let w_state = List.fold_left (walk_expr t_bindings) w_state args in
-    let w_state = List.fold_left walk_type w_state m_args in
+    (*let w_state = List.fold_left walk_type w_state m_args in*)
     if Env.is_abstract_fn fn_name then
       let mono_args = List.map (fst >>= (TypeUtil.to_monomorph t_bindings)) args in
       let (resolved_margs, c_name) = resolve_abstract_fn fn_name mono_args in
