@@ -1182,6 +1182,9 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                     let code = format!("use_default {} {}",
                                                        impl_generics.trans_extra(trcx, TypeSpace),
                                                        i);
+                                    /*let did = method.def_id;
+                                    let name = mangled_def_name(trcx, did);
+                                    trcx.observed_abstract_fns.insert(name, did);*/
                                     result.push_str(code.as_slice());
                                     result.push_str("\n");
                                 }
