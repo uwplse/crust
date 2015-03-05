@@ -288,10 +288,10 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         self#put_i ".";
         self#put f
       | `Call (fn_name,_,inst,args) ->
-        let m_args = List.map (to_monomorph_c_type t_bindings) inst in
-        let mangled_fname = mangle_fn_name fn_name m_args in
+        let mono_args = List.map (TypeUtil.to_monomorph t_bindings) inst in
+        let mangled_fname = mangle_fn_name fn_name mono_args in
         if Intrinsics.is_intrinsic_fn fn_name then
-          self#handle_intrinsic fn_name mangled_fname m_args args
+          self#handle_intrinsic fn_name mangled_fname (List.map c_type_of_monomorph  mono_args) args
         else if Intrinsics.is_crust_intrinsic fn_name then
           let method_name = Intrinsics.intrinsic_name fn_name in
           self#put_all [ method_name; "(" ];
@@ -310,9 +310,9 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
           end
         end 
         else if fn_name = "drop_glue" then
-          self#handle_drop fn_name m_args args
+          self#handle_drop fn_name  mono_args args
         else begin
-          self#put_i mangled_fname;
+          self#put_i  mangled_fname;
           self#put "(";
           self#put_many ", " self#dump_args args;
           self#put ")"
