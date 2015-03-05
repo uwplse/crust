@@ -626,9 +626,10 @@ and do_gen_immut const_fn_set seq_len state index path f =
   else if index = (Array.length const_fn_set) then
     f path
   else begin
-    match valid_extend state const_fn_set.(index) with
-    | Some st -> do_gen_immut const_fn_set (succ seq_len) st (succ index) (const_fn_set.(index)::path) f
-    | None -> ()
+    (match valid_extend state const_fn_set.(index) with
+    | Some st -> do_gen_immut const_fn_set (succ seq_len) st 0 (const_fn_set.(index)::path) f
+    | None -> ());
+    do_gen_immut const_fn_set (succ seq_len) state (succ index) path f
   end
 
 let gen_call_seq pp fi_set = 
