@@ -130,7 +130,13 @@ let resolve_abstract_fn =
         | `Inst l -> (*prerr_endline @@ "found something for " ^ fn_name;*)
           (match l with
             | [t] ->
-              let targ_bindings = List.map ((rev_app List.assoc) t) impl_def.Ir.fn_tparams in
+              let to_mlist = (fun t_param ->
+                  if List.mem_assoc t_param t then
+                    List.assoc t_param t
+                  else
+                    `Bottom
+                ) in
+              let targ_bindings = List.map to_mlist impl_def.Ir.fn_tparams in
               (targ_bindings,impl_def.Ir.fn_name)::accum
             | _ -> assert false
           )
@@ -361,8 +367,11 @@ let walk_public_fn fn_def f_state m_args =
       let w_state' = walk_fn_def w_state fn_def m_args in
       { f_state with w_state = w_state' }
     with 
-    | ResolutionFailed e -> (*prerr_endline ("Method resolution failed: " ^ e); *) { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
-    | TypeUtil.TyResolutionFailed -> {
+    | ResolutionFailed e -> prerr_endline ("Method resolution failed: " ^ e); { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
+    | TypeUtil.TyResolutionFailed -> (prerr_endline "Type resolution failed"; {
+        f_state with fail_inst = FISet.add f_inst f_state.fail_inst
+      })
+    | Env.Missing_binding e -> prerr_endline ("Failed due to missing function " ^ e); {
         f_state with fail_inst = FISet.add f_inst f_state.fail_inst
       }
 
