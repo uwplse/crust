@@ -1,5 +1,5 @@
 diff --git a/src/liballoc/heap.rs b/src/liballoc/heap.rs
-index a2643f4..1673c2a 100644
+index a2643f4..eaf8595 100644
 --- a/src/liballoc/heap.rs
 +++ b/src/liballoc/heap.rs
 @@ -265,7 +265,7 @@ mod imp {
@@ -22,18 +22,22 @@ index a2643f4..1673c2a 100644
              libc::malloc(size as libc::size_t) as *mut u8
          } else {
              let mut out = ptr::null_mut();
-@@ -294,7 +296,10 @@ mod imp {
+@@ -294,9 +296,12 @@ mod imp {
  
      #[inline]
      pub unsafe fn reallocate(ptr: *mut u8, old_size: uint, size: uint, align: uint) -> *mut u8 {
 -        if align <= MIN_ALIGN {
+-            libc::realloc(ptr as *mut libc::c_void, size as libc::size_t) as *mut u8
+-        } else {
 +        if size == 0 {
 +            deallocate(ptr, old_size, align);
 +            null_mut()
-+        } else if align <= MIN_ALIGN {
-             libc::realloc(ptr as *mut libc::c_void, size as libc::size_t) as *mut u8
-         } else {
++        } /*else if align <= MIN_ALIGN {
++            libc::realloc(ptr as *mut libc::c_void, size as libc::size_t) as *mut u8*)
++        } */ else {
              let new_ptr = allocate(size, align);
+             ptr::copy_memory(new_ptr, ptr, cmp::min(size, old_size));
+             deallocate(ptr, old_size, align);
 @@ -312,7 +317,9 @@ mod imp {
  
      #[inline]
@@ -46,7 +50,7 @@ index a2643f4..1673c2a 100644
  
      #[inline]
 diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
-index 5259029..d72c866 100644
+index 0de9b57..0590c00 100644
 --- a/src/libcollections/vec.rs
 +++ b/src/libcollections/vec.rs
 @@ -136,7 +136,7 @@ use core::uint;
@@ -188,7 +192,30 @@ index 5259029..d72c866 100644
              };
              self.set_len(0);
              Drain {
-@@ -1162,15 +1148,12 @@ impl<T> Vec<T> {
+@@ -1052,6 +1038,22 @@ impl<T: Clone> Vec<T> {
+     }
+ }
+ 
++pub struct S;
++
++static mut item_ind : uint = 0;
++
++/// 
++pub fn crust_init(num: usize, cap: usize, index: uint) -> (Vec<S>,&'static uint) {
++    assert!(num <= cap);
++    assert!(cap < 5);
++    let mut to_ret = Vec::with_capacity(cap);
++    for i in 0..num {
++        to_ret.push(S);
++    }
++    unsafe { item_ind = index }
++    (to_ret,unsafe { &item_ind })
++}
++
+ impl<T: PartialEq> Vec<T> {
+     /// Removes consecutive repeated elements in the vector.
+     ///
+@@ -1162,15 +1164,12 @@ impl<T> Vec<T> {
      /// If the capacity for `self` is already equal to or greater than the
      /// requested capacity, then no action is taken.
      fn grow_capacity(&mut self, capacity: uint) {
@@ -206,7 +233,7 @@ index 5259029..d72c866 100644
              }
              self.cap = capacity;
          }
-@@ -1189,11 +1172,9 @@ unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T
+@@ -1189,11 +1188,9 @@ unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T
  
  #[inline]
  unsafe fn dealloc<T>(ptr: *mut T, len: uint) {
@@ -221,7 +248,24 @@ index 5259029..d72c866 100644
  }
  
  ////////////////////////////////////////////////////////////////////////////////
-@@ -1451,7 +1432,7 @@ impl<T> AsSlice<T> for Vec<T> {
+@@ -1381,6 +1378,7 @@ macro_rules! impl_eq {
+ impl_eq! { Vec<A>, &'b [B] }
+ impl_eq! { Vec<A>, &'b mut [B] }
+ 
++/*
+ impl<'a, A, B> PartialEq<Vec<B>> for CowVec<'a, A> where A: PartialEq<B> + Clone {
+     #[inline]
+     fn eq(&self, other: &Vec<B>) -> bool { PartialEq::eq(&**self, &**other) }
+@@ -1415,7 +1413,7 @@ macro_rules! impl_eq_for_cowvec {
+ 
+ impl_eq_for_cowvec! { &'b [B] }
+ impl_eq_for_cowvec! { &'b mut [B] }
+-
++*/
+ #[unstable = "waiting on PartialOrd stability"]
+ impl<T: PartialOrd> PartialOrd for Vec<T> {
+     #[inline]
+@@ -1451,7 +1449,7 @@ impl<T> AsSlice<T> for Vec<T> {
      fn as_slice<'a>(&'a self) -> &'a [T] {
          unsafe {
              mem::transmute(RawSlice {
@@ -230,7 +274,7 @@ index 5259029..d72c866 100644
                  len: self.len
              })
          }
-@@ -1480,7 +1461,7 @@ impl<T> Drop for Vec<T> {
+@@ -1480,7 +1478,7 @@ impl<T> Drop for Vec<T> {
                  for x in self.iter() {
                      ptr::read(x);
                  }
@@ -239,7 +283,27 @@ index 5259029..d72c866 100644
              }
          }
      }
-@@ -1560,7 +1541,7 @@ impl<T> IntoIter<T> {
+@@ -1514,8 +1512,8 @@ impl<'a> fmt::Writer for Vec<u8> {
+ 
+ #[unstable = "unclear how valuable this alias is"]
+ /// A clone-on-write vector
+-pub type CowVec<'a, T> = Cow<'a, Vec<T>, [T]>;
+-
++//pub type CowVec<'a, T> = Cow<'a, Vec<T>, [T]>;
++/*
+ #[unstable]
+ impl<'a, T> FromIterator<T> for CowVec<'a, T> where T: Clone {
+     fn from_iter<I: Iterator<Item=T>>(it: I) -> CowVec<'a, T> {
+@@ -1534,7 +1532,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
+         Cow::Borrowed(self)
+     }
+ }
+-
++*/
+ ////////////////////////////////////////////////////////////////////////////////
+ // Iterators
+ ////////////////////////////////////////////////////////////////////////////////
+@@ -1560,7 +1558,7 @@ impl<T> IntoIter<T> {
              for _x in self { }
              let IntoIter { allocation, cap, ptr: _ptr, end: _end } = self;
              mem::forget(self);
@@ -248,12 +312,36 @@ index 5259029..d72c866 100644
          }
      }
  }
+diff --git a/src/libcore/iter.rs b/src/libcore/iter.rs
+index 4910c03..75cb957 100644
+--- a/src/libcore/iter.rs
++++ b/src/libcore/iter.rs
+@@ -2773,7 +2773,7 @@ macro_rules! range_impl {
+                     return Some(result);
+                 }
+ 
+-                return None;
++                return None
+             }
+ 
+             #[inline]
 diff --git a/src/libcore/macros.rs b/src/libcore/macros.rs
-index 1c37126..1acfd52 100644
+index d44eaae..c061f6a 100644
 --- a/src/libcore/macros.rs
 +++ b/src/libcore/macros.rs
-@@ -19,12 +19,13 @@ macro_rules! panic {
-         ::core::panicking::panic(&_MSG_FILE_LINE)
+@@ -12,19 +12,21 @@
+ #[macro_export]
+ macro_rules! panic {
+     () => (
+-        panic!("explicit panic")
++        unsafe { $crate::intrinsics::abort() }
+     );
+     ($msg:expr) => ({
+-        static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
+-        ::core::panicking::panic(&_MSG_FILE_LINE)
++        /*static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
++        ::core::panicking::panic(&_MSG_FILE_LINE)*/
++        unsafe { $crate::intrinsics::abort() }
      });
      ($fmt:expr, $($arg:tt)*) => ({
 +        panic!("trans_panic");
@@ -268,7 +356,7 @@ index 1c37126..1acfd52 100644
      });
  }
  
-@@ -56,12 +57,12 @@ macro_rules! panic {
+@@ -56,12 +58,12 @@ macro_rules! panic {
  macro_rules! assert {
      ($cond:expr) => (
          if !$cond {
