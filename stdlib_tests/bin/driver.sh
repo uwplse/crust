@@ -66,7 +66,7 @@ trans_all_libs() {
 
 scrub_test_error() {
 	TO_SCRUB=$1
-	for i in $(seq 0 2); do
+	for i in $(seq 0 3); do
 		if run_rbmc $TO_SCRUB > $SCRATCH/tests.ir 2> $SCRATCH/failing_tests; then
 			return
 		fi
@@ -120,31 +120,49 @@ instrument_intrinsics() {
 	mv $SCRATCH/temp.rs $1
 }
 
+dump_items() {
+	../bin/crust.native -dump-items -api-filter $1 ir/stdlib.ir
+}
+
+trans_test() {
+	instrument_intrinsics $1
+	OUTPUT_NAME=$(basename $1);
+	OUTPUT_NAME=${OUTPUT_NAME/.rs/.c}
+	compile_test $1 $SCRATCH/simple_ir > $2/$OUTPUT_NAME
+}
+
 trans_stdlib_test() {
 	if [ \! -e $2 ]; then
 		mkdir -p $2
 	fi
-	../bin/crust.native -dump-items -api-filter $1 ir/stdlib.ir > $SCRATCH/item_filter
+	dump_items $1 > $SCRATCH/item_filter
 	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
 	mkdir -p $SCRATCH/test_cases
 	../bin/crust.native -driver-gen -api-filter $1 -immut-length 2 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
 	for i in $SCRATCH/test_cases/*.rs; do
-		instrument_intrinsics $i
-		OUTPUT_NAME=$(basename $i);
-		OUTPUT_NAME=${OUTPUT_NAME/.rs/.c}
-		compile_test $i $SCRATCH/simple_ir > $2/$OUTPUT_NAME
+		trans_test $i $2
 	done
 }
 
 with_scratch() {
 	if [ "$SCRATCH" = "." ] ; then
 		SCRATCH=$(mktemp -d /tmp/crust.XXXXXXX)
-#		mkdir $SCRATCH/ir
 		#trap scratch_cleanup EXIT;
 		"$@"
 	else
 		echo "Scratch already set!";
 		exit -1;
+	fi
+}
+
+set_scratch() {
+	if [ "$SCRATCH" = "." ]; then
+		SCRATCH=$1
+		shift
+		"$@"
+	else
+		echo "Scratch already set!";
+		exit -1
 	fi
 }
 
