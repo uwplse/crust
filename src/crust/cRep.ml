@@ -199,7 +199,7 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
     (* this could be generalized by checking the DECLARED return type of a 
       function and checking for bottom... but all in time...
     *)
-    if f_name = "crust_abort" then
+    if f_name = "crust_abort" || f_name = "core$intrinsics$abort" then
       let temp_var = fresh_temp () in
       (fst expr,`Block ([
            `Declare (temp_var,(fst expr));
