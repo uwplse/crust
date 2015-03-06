@@ -135,7 +135,8 @@ let prelude = [
   "#![no_std]";
   "#![feature(unsafe_destructor)]";
   "extern crate core;";
-  "extern crate alloc;"
+  "extern crate alloc;";
+  "extern crate collections;"
 ]
 
 class rust_pp buf output_file_prefix num_tests = object(self)
@@ -283,15 +284,21 @@ class rust_pp buf output_file_prefix num_tests = object(self)
   method private gen_null_assert var = 
     Null_Assert var
 
+  method private is_dst ty = 
+    match ty with
+    | `Str -> true
+    | `Vec _ -> true
+    | _ -> false
+
   method private gen_assertions state out_var returned_type = 
     match returned_type with
-    | (`Ref_Mut (_,t) as mut_ref) ->
+    | (`Ref_Mut (_,t) as mut_ref) when not (self#is_dst t) ->
       (self#gen_ty_assertions state (fun v2 ->
            Ptr_Assert (`Mut,out_var,v2)) mut_ref
       ) @ (self#gen_ty_assertions state (fun v2 ->
           Ptr_Assert (`Immut,out_var,v2)) (`Ref (TypeUtil.dummy_lifetime,t))) 
         @ [ self#gen_null_assert out_var ]
-    | `Ref (_,t) ->
+    | `Ref (_,t) when not (self#is_dst t) ->
       self#gen_ty_assertions state (fun v1 ->
           Ptr_Assert (`Immut,v1,out_var)) (`Ref_Mut (TypeUtil.dummy_lifetime,t))
       @ [ self#gen_null_assert out_var ]
