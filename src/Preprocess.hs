@@ -324,19 +324,19 @@ desugarArgPatterns = map go
 desugarFor = everywhere (mkT fixFor)
     where
       fixFor (Expr ty (EFor patt@(Pattern pty _) expr@(Expr ety _) body)) = 
+          let iType = iterType ety in
           let continueVar = Expr TBool$ EVar continueFlag in
-          let iterVar = Expr ety $ EVar iterTemp in
+          let iterVar = Expr ety $ EAddrOf (Expr iType (EVar iterTemp)) in
           let failCond = Pattern ety $ PEnum "core$option$Option" 0 [] in
           let successCond = Pattern ety (PEnum "core$option$Option" 1 [patt]) in
           let breakAssign = Expr TUnit $ EAssign continueVar $ Expr TBool $ ESimpleLiteral "0" in
           let body_e = Expr TUnit body in
           let retType = TAdt "core$option$Option" [] [pty] in
-          let iType = iterType ety in
           let iterCall = Expr retType $ ECall "core$iter$Iterator$next" [] [iType] [iterVar] in
           let match = Expr TUnit $ EMatch iterCall [(MatchArm successCond body_e), (MatchArm failCond breakAssign)] in
           Expr ty (EBlock [
                     SLet (Pattern TBool (PVar continueFlag)) (Just (Expr TBool (ESimpleLiteral "1"))),
-                    SLet (Pattern ety (PVar iterTemp)) (Just expr)
+                    SLet (Pattern iType (PVar iterTemp)) (Just (Expr iType (EDeref expr)))
                    ] (Expr TUnit (EWhile continueVar match))
                   )
       fixFor e = e
