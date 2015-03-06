@@ -74,7 +74,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$transmute";
     i_params = [ "t1"; "u1" ];
-    i_body = Inline "(({u1}){arg1})"
+    i_body = Template "{u1} {mname}({t1} to_trans) { return *(({u1}* )&to_trans); }"
   };
   {
     i_name = "core$intrinsics$size_of";
@@ -114,7 +114,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$forget";
     i_params = [""];
-    i_body = Nop
+    i_body = Inline "0" (* change this to be in line with the unit repr *)
   };
   {
     i_name = "core$intrinsics$copy_memory";

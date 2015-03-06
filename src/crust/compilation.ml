@@ -271,9 +271,11 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         self#put_i "&";
         self#dump_simple_expr e
       | `Assignment (lhs,(_,rhs)) ->
+        self#put_i "(";
         self#dump_simple_expr lhs;
         self#put_i " = ";
-        self#dump_simple_expr rhs
+        self#dump_simple_expr rhs;
+        self#put ",0)"
       | `Assign_Op (op,e1,(_,e2)) ->
         self#dump_simple_expr e1;
         self#put_all [ string_of_binop op; "=" ];
@@ -567,9 +569,8 @@ let emit_fn_def out_channel buf (fn_name,mono_args) =
 let emit_fsigs out_channel f_list = 
   let buf = Buffer.create 1000 in
   List.iter (fun (f_name,m_args) ->
-      let m_args = List.map c_type_of_monomorph m_args in
       if Intrinsics.is_intrinsic_fn f_name then
-        let m_strings = List.map type_to_string m_args in
+        let m_strings = List.map type_to_string (List.map c_type_of_monomorph m_args) in
         let mangled_name = mangle_fn_name f_name m_args in
         Intrinsics.emit_intrinsic_inst f_name mangled_name m_strings buf;
         Buffer.add_string buf "\n"
