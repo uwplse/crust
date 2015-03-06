@@ -547,7 +547,11 @@ impl Trans for Expr {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
                         let arg_strs = vec![a.trans(trcx)];
-                        trans_method_call(trcx, callee, arg_strs)
+                        let meth_call = trans_method_call(trcx, callee, arg_strs);
+                        match op {
+                            UnDeref => format!("deref ([ref r_dummy {}] {})", trcx.tcx.node_types.borrow()[self.id].trans(trcx), meth_call),
+                            _ => meth_call
+                        }
                     },
                     None => {
                         match op {
