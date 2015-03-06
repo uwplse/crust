@@ -446,9 +446,9 @@ generateDefaultMethods ix items = zipWith go [0..] items
         -- Find the function-space type and lifetime parameters.  These don't
         -- appear in the IR because trans doesn't actually look at the method
         -- type.
-        fnLps = drop (length lps) absLps
+        fnLps = drop (length las) absLps
         -- +1 for s_0, which is not included in the impl generics
-        fnTps = drop (length tps + 1) absTps
+        fnTps = drop (length tas) absTps
 
         fnLas = fnLps
         fnTas = map TVar fnTps
