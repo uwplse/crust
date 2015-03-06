@@ -21,3 +21,7 @@ impl Deref for S {
 fn get(s: S) -> uint {
     s.y
 }
+
+fn crust_init() -> (S,) {
+    (S { x : S2 { y : 32 }},)
+}

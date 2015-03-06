@@ -37,3 +37,11 @@ fn do_iter(x: i32) -> i32 {
     }
     to_ret
 }
+
+fn do_iter_temp(x: i32) -> i32 {
+    let mut to_ret = 0;
+    for i in (FixedIter { curr: 0, max: x }) {
+        to_ret += i;
+    }
+    to_ret
+}

@@ -17,3 +17,7 @@ impl Deref for S {
 fn get(s: S) -> uint {
     *s
 }
+
+fn crust_init() -> (S,) {
+    (S { x: 5 },)
+}
