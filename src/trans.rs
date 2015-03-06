@@ -1273,9 +1273,15 @@ fn clean_path_elem(s: &str, out: &mut String) {
     for c in s.chars() {
         if c == '<' {
             depth += 1;
+            out.push_str("$");
+            out.push_str(depth.to_string().as_slice());
+            out.push_str("$");
         } else if c == '>' {
+            out.push_str("$");
+            out.push_str(depth.to_string().as_slice());
+            out.push_str("$");
             depth -= 1;
-        } else if depth == 0 {
+        } else {
             if c == '.' {
                 out.push_str("$$");
             } else {

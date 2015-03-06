@@ -42,7 +42,22 @@ let fresh_name () =
 
 let unmangle_name = 
   let replace_regex = Str.regexp_string "$" in
-  Str.global_replace replace_regex "::"
+  let digit_only = Str.regexp "^[0-9]+$" in
+  fun s ->
+    let tokens = List.filter (fun s -> s <> "") @@ Str.split replace_regex s in
+    String.concat "::" @@ List.rev @@ snd @@ List.fold_left (fun (depth,t_list) tok ->
+        if Str.string_match digit_only tok 0 then
+          let depth_level = int_of_string tok in
+          (if depth_level == depth then
+             (pred depth_level,t_list)
+           else if depth_level = depth + 1 then
+             (succ depth,t_list)
+           else failwith ("Illegal token depth detected: " ^ s))
+        else if depth = 0 then
+          (depth,tok::t_list)
+        else 
+          (depth,t_list)
+      ) (0,[]) tokens
 
 let rust_name fn_name =
   let fn_def = Env.EnvMap.find Env.fn_env fn_name in
