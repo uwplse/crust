@@ -4,6 +4,25 @@
 #define __crust_sint(width) rs_i##width
 #define __crust_uint(width) rs_u##width
 
+#define __crust_ctlz_op(width) core$intrinsics$ctlz##width
+
+#define CTLZ(width)														\
+  __crust_uint(width) __crust_ctlz_op(width)(__crust_uint(width) x) {	\
+	__crust_uint(width) y;												\
+	__crust_uint(width) n = width;										\
+	__crust_uint(width) c = width / 2;									\
+	do {																\
+	  y = x >> c; if (y != 0) { n = n - c; x = y; }						\
+	  c = c >> 1;														\
+	} while(c != 0);													\
+	return n - x;														\
+  }
+
+																
+															  
+
+
+
 #define __crust_signed_fail(width) \
   {								   \
 	signed_result(width) to_ret;   \

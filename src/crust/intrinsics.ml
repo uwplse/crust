@@ -77,6 +77,22 @@ let i_list = arith_intrinsics @ [
     i_body = Template "{u1} {mname}({t1} to_trans) { return *(({u1}* )&to_trans); }"
   };
   {
+    i_name = "core$intrinsics$ctlz64";
+    i_params = [];
+    i_body = Macro "CTLZ(64)"
+  };
+  {
+    i_name = "core$intrinsics$ctpop64";
+    i_params = [];
+    i_body = Template "rs_u64 {mname}(rs_u64 w) {
+   uint64_t w1 = (w & 0x2222222222222222) + ((w+w) & 0x2222222222222222);
+   uint64_t w2 = (w >> 1 & 0x2222222222222222) + (w >> 2 & 0x2222222222222222);
+   w1 = w1 + (w1 >> 4) & 0x0f0f0f0f0f0f0f0f;
+   w2 = w2 + (w2 >> 4) & 0x0f0f0f0f0f0f0f0f;
+   return (w1 + w2) * 0x0101010101010101 >> 57;
+}"
+  };
+  {
     i_name = "core$intrinsics$size_of";
     i_params = [ "t1" ];
     i_body = Inline "(sizeof({t1}))"

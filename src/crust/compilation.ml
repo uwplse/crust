@@ -271,11 +271,11 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         self#put_i "&";
         self#dump_simple_expr e
       | `Assignment (lhs,(_,rhs)) ->
-        self#put_i "(";
+        self#put_i "((";
         self#dump_simple_expr lhs;
         self#put_i " = ";
         self#dump_simple_expr rhs;
-        self#put ",0)"
+        self#put "),0)"
       | `Assign_Op (op,e1,(_,e2)) ->
         self#dump_simple_expr e1;
         self#put_all [ string_of_binop op; "=" ];
@@ -303,7 +303,7 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
           let arg_types = List.map (fun (t,_) -> 
               (TypeUtil.to_monomorph t_bindings t)
             ) args in
-          let (mono_args,resolved_name) = Analysis.resolve_abstract_fn fn_name arg_types in
+          let (mono_args,resolved_name) = Analysis.resolve_abstract_fn fn_name mono_args arg_types in
           let mangled_name' = mangle_fn_name resolved_name @@ List.map (to_monomorph_c_type t_bindings) (mono_args :> Types.r_type list) in
           begin
             self#put_all [ mangled_name'; "(" ];

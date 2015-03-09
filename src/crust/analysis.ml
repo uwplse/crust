@@ -117,44 +117,47 @@ let rec is_primitive t =
 
 let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
-  let quoted_dollar = Str.quote "$" in
-  let is_default_regex = Str.regexp @@ "^.+" ^ quoted_dollar ^ quoted_dollar ^ "__default$" in
-  fun abstract_name param_args ->
-  let abstract_impls = Env.EnvMap.find Env.abstract_impl abstract_name in
-  let possible_insts = 
-    List.fold_left (fun accum fn_name ->
-        let impl_def = Env.EnvMap.find Env.fn_env fn_name in
-        let arg_types = List.map snd impl_def.Ir.fn_args in
-        match TypeUtil.is_inst param_args arg_types with
-        | `Mismatch -> accum
-        | `Inst l -> (*prerr_endline @@ "found something for " ^ fn_name;*)
-          (match l with
-            | [t] ->
-              let to_mlist = (fun t_param ->
-                  if List.mem_assoc t_param t then
-                    List.assoc t_param t
-                  else
-                    `Bottom
-                ) in
-              let targ_bindings = List.map to_mlist impl_def.Ir.fn_tparams in
-              (targ_bindings,impl_def.Ir.fn_name)::accum
-            | _ -> assert false
-          )
-      ) [] abstract_impls in
-  match possible_insts with 
-  | [t] -> t
-  | [] -> 
-    raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
-  | l -> 
-    let l' = List.filter (fun (m,f) ->
-        not (Str.string_match is_default_regex f 0)
-      ) l in
-    let failure_exn = lazy (
+  let match_types m_args p_args = 
+    match TypeUtil.is_inst m_args p_args with
+    | `Mismatch -> None
+    | `Inst [l] -> Some l
+    | _ -> assert false
+  in
+  let mk_targs tb1 tb2 t_param = 
+    if List.mem_assoc t_param tb1 then
+      let ty = List.assoc t_param tb1 in
+      if List.mem_assoc t_param tb2 then ((assert ((List.assoc t_param tb2) = ty)); ty) else ty
+    else if List.mem_assoc t_param tb2 then
+      List.assoc t_param tb2
+    else `Bottom (* awful *)
+  in
+  fun abstract_name type_args param_args ->
+    let abstract_impls = Env.EnvMap.find Env.abstract_impl abstract_name in
+    let possible_insts = 
+      List.fold_left (fun accum fn_name ->
+          let impl_def = Env.EnvMap.find Env.fn_env fn_name in
+          let impl_types = match impl_def.fn_impl with
+            | None -> assert false
+            | Some ({ Ir.i_types = tl; Ir.i_self = st }) -> tl @ [st]
+          in
+(*          prerr_endline @@ "checking " ^ fn_name ^ ", impl types: " ^ (String.concat ", " @@ List.map Types.pp_t (impl_types :> Types.r_type list));*)
+          let fn_typarams = impl_def.Ir.fn_tparams in
+          let arg_types = List.map snd impl_def.Ir.fn_args in
+          match (match_types param_args arg_types),(match_types type_args impl_types) with
+          | (Some tb1),(Some tb2) ->
+            let type_args = List.map (mk_targs tb1 tb2) fn_typarams in
+            (type_args,fn_name)::accum
+          | _,_ -> accum
+        ) [] abstract_impls 
+    in
+    match possible_insts with 
+    | [t] -> t
+    | [] -> 
+      raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
+    | l -> 
       let inst_dump = String.concat "/" @@ List.map snd possible_insts in
       let fail_args = arg_str param_args in
-      ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
-    ) in
-    match l' with [t] -> t | _ -> raise @@ Lazy.force failure_exn
+      raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
 
 
 let rec walk_type : walk_state -> Types.mono_type -> walk_state = 
@@ -238,7 +241,7 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
     (*let w_state = List.fold_left walk_type w_state m_args in*)
     if Env.is_abstract_fn fn_name then
       let mono_args = List.map (fst >>= (TypeUtil.to_monomorph t_bindings)) args in
-      let (resolved_margs, c_name) = resolve_abstract_fn fn_name mono_args in
+      let (resolved_margs, c_name) = resolve_abstract_fn fn_name m_args mono_args in
       walk_fn w_state c_name resolved_margs
     else 
       walk_fn w_state fn_name m_args
