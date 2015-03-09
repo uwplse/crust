@@ -80,7 +80,8 @@ scrub_test_error() {
 
 compile_test () {
 	scrub_test_error $1;
-	cat $2 $SCRATCH/tests.ir | ../bin/Preprocess > $SCRATCH/tests2.ir;
+	../bin/Preprocess > $SCRATCH/tests2.ir < $SCRATCH/tests.ir;
+	cat $2 >> $SCRATCH/tests2.ir;
 	../bin/crust.native -test-compile $SCRATCH/tests2.ir;
 }
 
@@ -124,6 +125,10 @@ dump_items() {
 	../bin/crust.native -dump-items -api-filter $1 ir/stdlib.ir
 }
 
+dump_api() {
+	 ../bin/crust.native -dump-api -api-filter $1 ir/stdlib.ir
+}
+
 trans_test() {
 	instrument_intrinsics $1
 	OUTPUT_NAME=$(basename $1);
@@ -138,9 +143,9 @@ trans_stdlib_test() {
 	dump_items $1 > $SCRATCH/item_filter
 	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
 	mkdir -p $SCRATCH/test_cases
-	../bin/crust.native -driver-gen -api-filter $1 -immut-length 2 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	../bin/crust.native -driver-gen -api-filter $1 -no-mut-analysis -immut-length 0 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
 	for i in $SCRATCH/test_cases/*.rs; do
-		trans_test $i $2
+		trans_test $i $2;
 	done
 }
 
