@@ -18,7 +18,7 @@ use_z3 = False
 def run_test_case(test_file, test_case_name):
     dev_null = open("/dev/null", "w")
     ret_code = subprocess.call([ cbmc_binary, "--pointer-check", "--bounds-check",
-                                 "-I", include_dir, "--unwind", unwind_bound ] +
+                                 "-I", include_dir, "--unwind", unwind_bound, "--slice-formula" ] +
                                (["--z3"] if use_z3 else []) +
                                ["--function", test_case_name, test_file],
                                stdout = dev_null, stderr = subprocess.STDOUT)
