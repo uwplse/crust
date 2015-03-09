@@ -36,3 +36,5 @@ val handle_dst :
   'b
 
 val dummy_lifetime : string
+
+val string_of_inst : (string * Types.mono_type list) -> string

@@ -449,3 +449,8 @@ let handle_dst vec_cb str_cb no_match_cb ty =
     (str_cb true)
 
   | r -> no_match_cb r
+
+let string_of_inst (n,a) = 
+  match a with
+  | [] -> n
+  | _ -> n ^ "<" ^ (String.concat ", " @@ List.map Types.pp_t (a : Types.mono_type list :> Types.r_type list)) ^ ">"

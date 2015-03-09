@@ -33,6 +33,11 @@ type api_actions =
   | Drop
   | Fn of string * (Types.mono_type list)
 
+let string_of_action = function 
+  | Copy -> "<COPY>"
+  | Drop -> "<DROP>"
+  | Fn (f_name, m_args) -> TypeUtil.string_of_inst (f_name, m_args)
+
 let counter = ref 0;;
 
 let fresh_name () = 
@@ -628,17 +633,20 @@ let valid_extend state api_action =
     | `Inst _ -> Some { t_list = ret_type::state.t_list; public_types = MTSet.add ret_type state.public_types }
 
 let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f = 
-(*  prerr_endline @@ "Exploring: " ^ (string_of_int index) ^ " with length -> " ^ (string_of_int seq_len) ^ " more debug -> " ^ (string_of_int @@ List.length path);*)
+  (*prerr_endline @@ "Exploring: " ^ (string_of_int index) ^ " (depth: " ^ (string_of_int seq_len) ^ ")";*)
   if seq_len = !mut_action_len then
-    do_gen_immut const_fn_set 0 state 0 path f
+    ()
+(* do_gen_immut const_fn_set 0 state 0 path f*)
   else if index = (Array.length mut_fn_set) then
     ()
   else begin
-    (* use this prefix *)
-    do_gen_immut const_fn_set 0 state 0 path f;
     (match valid_extend state mut_fn_set.(index) with
       | None -> ()
-      | Some st -> do_gen_mut mut_fn_set const_fn_set (succ seq_len) st 0 (mut_fn_set.(index)::path) f
+      | Some st -> begin
+          let new_path = mut_fn_set.(index)::path in
+          do_gen_immut const_fn_set 0 state 0 new_path f;
+          do_gen_mut mut_fn_set const_fn_set (succ seq_len) st 0 new_path f
+        end
     );
     do_gen_mut mut_fn_set const_fn_set seq_len state (succ index) path f
   end
@@ -664,6 +672,13 @@ let gen_call_seq pp fi_set =
   let fn_action_of_set s = List.map (fun (f,m) -> Fn (f,m)) @@ Analysis.FISet.elements s in
   let mut_fn_arr = Array.of_list @@ Drop::Copy::(fn_action_of_set mut_fn_set) in
   let const_fn_arr = Array.of_list @@ fn_action_of_set const_fn_set in
+  (*let dump_action_list = Array.iteri (fun i act ->
+      prerr_endline @@ (string_of_int i) ^ " -> " ^ (string_of_action act)
+    ) in
+  prerr_endline "== MUTABLE ACTIONS";
+  dump_action_list mut_fn_arr;
+  prerr_endline "== IMMUTABLE ACTIONS";
+  dump_action_list const_fn_arr;*)
   do_gen_mut mut_fn_arr const_fn_arr 0 {
     public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ init_types ();
     t_list = []
