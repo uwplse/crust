@@ -11,6 +11,7 @@ src/out*
 *.blg
 *.log
 *.pdf
+*.synctex.gz
 src/crust/_build
 src/crust/*.byte
 src/crust/*.native
