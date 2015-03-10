@@ -1243,6 +1243,12 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 let mut result = String::new();
                 for item in items.iter() {
                     let part = match *item {
+                        RequiredMethod(ref method) => {
+                            let did = local_def(method.id);
+                            let name = mangled_def_name(trcx, did);
+                            trcx.observed_abstract_fns.insert(name, did);
+                            format!("# unimplemented trait method")
+                        },
                         ProvidedMethod(ref method) => {
                             let name = mangled_def_name(trcx, local_def(method.id));
                             try_str(|| trans_method(trcx, self, &**method), &*name)
