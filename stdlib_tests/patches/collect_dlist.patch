@@ -1,0 +1,950 @@
+diff --cc src/proto/dlist.rs
+index 6ff5272,5a0416a..0000000
+--- a/src/proto/dlist.rs
++++ b/src/proto/dlist.rs
+@@@ -1,9 -1,66 +1,73 @@@
+- use std::cmp::Ordering;
+- use std::fmt::{self, Debug};
+- use std::hash::{Hash, Hasher, Writer};
+- use std::iter;
+- use std::marker::NoCopy;
+- use std::{ptr, mem};
++ #![crate_type = "lib"]
++ #![feature(unsafe_destructor)]
++ #![no_std]
++ 
++ extern crate core;
+++extern crate alloc;
++ 
+++mod std {
+++    pub use core::clone;
+++}
+++
+++use core::prelude::*;
++ use core::cmp::Ordering;
++ use core::fmt::{self, Debug};
++ use core::hash::{Hash, Hasher};
+ -use core::iter::{self, IntoIterator};
+++use core::iter;
++ use core::marker::{NoCopy};
++ use core::{ptr, mem};
+ -
+++use alloc::heap::{allocate, deallocate};
+++use core::ops::{Deref, DerefMut};
++ 
++ struct Box_<T> {
++     item: *mut T
++ }
++ 
++ impl<T> Box_<T> {
++     fn new(x: T) -> Box_<T> {
++         unsafe {
++             let size = mem::size_of::<T>();
++             let mut ptr = (allocate(size, mem::min_align_of::<T>()) as *mut T);
++             ptr::write(ptr, x);
++             Box_ {
++                 item: ptr
++             }
++         }
++     }
++     fn move_out(self) -> T {
++         unsafe {
++             let to_ret = ptr::read_and_zero(self.item);
++             to_ret
++         }
++     }
++ }
++ 
++ #[unsafe_destructor]
++ impl<T> Drop for Box_<T> {
++     fn drop(&mut self) {
++         if self.item as usize == 0 {
++             return;
++         }
++         unsafe {
++             deallocate(self.item as *mut u8, mem::size_of::<T>(), mem::min_align_of::<T>());
++             self.item = 0us as *mut T;
++         }
++     }
++ }
++ 
++ impl<T> Deref for Box_<T> {
++     type Target = T;
++     fn deref<'a>(&self) -> &'a T {
++         unsafe { &*self.item }
++     }
++ }
++ 
++ impl<T> DerefMut for Box_<T> {
++     fn deref_mut(&mut self) -> &mut T {
++         unsafe { &mut *self.item }
++     }
++ }
++ 
+  
+  // FIXME(Gankro): Although the internal interface we have here is *safer* than std's DList,
+  // it's still by no means safe. Any claims we make here about safety in the internal APIs
+@@@ -150,7 -215,7 +222,9 @@@ impl<T> DList<T> 
+      /// Removes the element at back of the list. Returns None if the list is empty.
+      pub fn pop_back(&mut self) -> Option<T> {
+          // null out the list's tail pointer unconditionally
+--        self.tail.take().as_mut().and_then(|tail| {
+++        match self.tail.take().as_mut() /*.and_then(|tail|*/ {
+++            None => None,
+++            Some(tail) => {
+              // tail pointer wasn't null, so decrease the len
+              self.len -= 1;
+              match tail.prev.take().as_mut() {
+@@@ -161,50 -230,54 +239,78 @@@
+                  // and take the node out of its next field
+                  Some(prev) => {
+                      self.tail = Raw::some(prev);
+-                     prev.next.take().map(|box node| node.elem)
++                     match prev.next.take() {
++                         None => None,
++                         Some(x) => Some(x.move_out().elem)
++                     }
++                         //.map(|box node| node.elem)
+                  }
+              }
+--        })
+++            }
+++        }
+      }
+  
+      /// Removes the element at front of the list. Returns None if the list is empty.
+      pub fn pop_front(&mut self) -> Option<T> {
+          // null out the list's head pointer unconditionally
+--        self.head.take().map(|mut head| {
+--            // head wasn't null, so decrease the len
+--            self.len -= 1;
+--            match head.take_next() {
+--                // head had no next value, so just null out the tail
+--                None => self.tail = Raw::none(),
+--                // head had a next value, which should be the new head
+--                Some(next) => self.head = Some(next),
+++        match self.head.take() {
+++            None => None,
+++            Some(mut head) => { 
+++                self.len -= 1;
+++                match head.take_next() {
+++                    // head had no next value, so just null out the tail
+++                    None => self.tail = Raw::none(),
+++                    // head had a next value, which should be the new head
+++                    Some(next) => self.head = Some(next),
+++                }
+++                Some(head.move_out().elem)
+              }
+--            head.elem
+--        })
+++        }
+++//        .map(|mut head| {
+++            // head wasn't null, so decrease the len
+++
+++        //})
+      }
+  
+      /// Gets the element at the front of the list, or None if empty.
+      #[inline]
+      pub fn front(&self) -> Option<&T> {
+--        self.head.as_ref().map(|node| &node.elem)
+++        match self.head.as_ref() {
+++            None => None,
+++            Some(node) => Some(&node.elem)
+++        }
+++
+++            //.map(|node| &node.elem)
+      }
+  
+      /// Gets the element at the back of the list, or None if empty.
+      #[inline]
+      pub fn back(&self) -> Option<&T> {
+--        self.tail.as_ref().map(|node| &node.elem)
+++        match self.tail.as_ref() {
+++            None => None,
+++            Some(node) => Some(&node.elem)
+++        }// .map(|node| &node.elem)
+      }
+  
+      /// Gets the element at the front of the list mutably, or None if empty.
+      #[inline]
+      pub fn front_mut(&mut self) -> Option<&mut T> {
+--        self.head.as_mut().map(|node| &mut node.elem)
+++        match self.head.as_mut() {
+++            None => None,
+++            Some(node) => Some(&mut node.elem)
+++        }
+++            //.map(|node| &mut node.elem)
+      }
+  
+      /// Gets the element at the back of the list mutably, or None if empty.
+      #[inline]
+      pub fn back_mut(&mut self) -> Option<&mut T> {
+--        self.tail.as_mut().map(|node| &mut node.elem)
+++        match self.tail.as_mut() {
+++            None => None,
+++            Some(node) => Some(&mut node.elem)
+++        }
+++
+++            //.map(|node| &mut node.elem)
+      }
+  
+      /// Inserts an element at the given index.
+@@@ -407,23 -483,23 +515,37 @@@ impl<'a, T> Cursor<'a, T> 
+  
+      /// Gets the next element in the list, without moving the cursor head.
+      pub fn peek_next(&mut self) -> Option<&mut T> {
+--        let Cursor{ref mut list, ref mut prev, ..} = *self;
+++        let list = &mut self.list;
+++        let prev = &mut self.prev;
+++        //let Cursor{ref mut list, ref mut prev, ..} = *self;
+          match prev.as_mut() {
+              None => list.front_mut(),
+--            Some(prev) => prev.next.as_mut().map(|next| &mut next.elem),
+++            Some(prev) => {
+++                match prev.next.as_mut() {
+++                    None => None,
+++                    Some(next) => Some(&mut next.elem)
+++                }
+++                    //.map(|next| &mut next.elem),
+++            }
+          }
+      }
+  
+      /// Gets the previous element in the list, without moving the cursor head.
+      pub fn peek_prev(&mut self) -> Option<&mut T> {
+--        self.prev.as_mut().map(|prev| &mut prev.elem)
+++        match self.prev.as_mut() {
+++            None => None,
+++            Some(prev) => Some(&mut prev.elem)
+++        }
+++            //.map(|prev| &mut prev.elem)
+      }
+  
+      /// Inserts an element at the cursor's location in the list, and moves the cursor head to
+      /// lie before it. Therefore, the new element will be yielded by the next call to `next`.
+      pub fn insert(&mut self, elem: T) {
+--        // destructure so that we can mutate list while working with prev
+--        let Cursor{ref mut list, ref mut prev, ..} = *self;
+++        // destructure so that we can mutate list while working with preve
+++        let list = &mut self.list;
+++        let prev = &mut self.prev;
+++        //let Cursor{ref mut list, ref mut prev, ..} = *self;
+          match prev.as_mut() {
+              // No prev, we're at the start of the list
+              // Also covers empty list
+@@@ -442,7 -518,7 +564,9 @@@
+      /// Removes the next element in the list, without moving the cursor. Returns None if the list
+      /// is empty, or if `next` is the ghost element
+      pub fn remove(&mut self) -> Option<T> {
+--        let Cursor{ref mut list, ref mut prev, ..} = *self;
+++        //let Cursor{ref mut list, ref mut prev, ..} = *self;
+++        let list = &mut self.list;
+++        let prev = &mut self.prev;
+          match prev.as_mut() {
+              // No prev, we're at the start of the list
+              // Also covers empty list
+@@@ -469,7 -546,7 +594,10 @@@
+      // consisting of everything after the cursor, with the original list retaining everything
+      // before. The cursor will then lie between the tail and the ghost.
+      pub fn split(&mut self) -> DList<T> {
+--        let Cursor{ref mut list, ref mut prev, index} = *self;
+++        //let Cursor{ref mut list, ref mut prev, index} = *self;
+++        let list = &mut self.list;
+++        let prev = &mut self.prev;
+++        let index = self.index;
+          let new_tail = prev.clone();
+          let len = list.len();
+          match prev.as_mut() {
+@@@ -499,7 -576,7 +627,9 @@@
+          other.len = 0;
+          let mut head = other.head.take();
+          let mut tail = other.tail.take();
+--        let Cursor{ref mut list, ref mut prev, ..} = *self;
+++        //let Cursor{ref mut list, ref mut prev, ..} = *self;
+++        let list = &mut self.list;
+++        let prev = &mut self.prev;
+  
+          list.len += len;
+          match prev.as_mut() {
+@@@ -572,11 -649,11 +702,16 @@@ impl<'a, A> Iterator for Iter<'a, A> 
+          if self.nelem == 0 {
+              return None;
+          }
+--        self.head.as_ref().map(|head| {
+--            self.nelem -= 1;
+--            self.head = &head.next;
+--            &head.elem
+--        })
+++        match self.head.as_ref() {
+++            None => None,
+++            Some(head) => {
+++                self.nelem -= 1;
+++                self.head = &head.next;
+++                Some(&head.elem)
+++            }
+++        }/*.map(|head| {
+++            
+++        })*/
+      }
+  
+      #[inline]
+@@@ -591,11 -668,11 +726,16 @@@ impl<'a, A> DoubleEndedIterator for Ite
+          if self.nelem == 0 {
+              return None;
+          }
+--        self.tail.as_ref().map(|tail| {
+--            self.nelem -= 1;
+--            self.tail = &tail.prev;
+--            &tail.elem
+--        })
+++        match self.tail.as_ref() {
+++            None => None,
+++            Some(tail) => {
+++                self.nelem -= 1;
+++                self.tail = &tail.prev;
+++                Some(&tail.elem)
+++            }
+++        }
+++                /*.map(|tail| {
+++        })*/
+      }
+  }
+  
+@@@ -608,17 -685,17 +748,24 @@@ impl<'a, A> Iterator for IterMut<'a, A
+          if self.nelem == 0 {
+              return None;
+          }
+--        self.head.take().as_mut().map(|next| {
+--            self.nelem -= 1;
+--            self.head = match next.next {
+--                Some(ref mut node) => Raw::some(&mut **node),
+--                None => Raw::none(),
+--            };
+--            unsafe {
+--                //upgrade ref to the necessary lifetime
+--                &mut *((&mut next.elem) as *mut _)
+++        match self.head.take().as_mut() {
+++            None => None,
+++            Some(next) => {
+++                self.nelem -= 1;
+++                self.head = match next.next {
+++                    Some(ref mut node) => Raw::some(&mut **node),
+++                    None => Raw::none(),
+++                };
+++                unsafe {
+++                    //upgrade ref to the necessary lifetime
+++                    Some(&mut *((&mut next.elem) as *mut _))
+++                }
+              }
+--        })
+++        }
+++        
+++        /*.map(|next| {
+++            
+++        })*/
+      }
+  
+      #[inline]
+@@@ -633,14 -710,14 +780,20 @@@ impl<'a, A> DoubleEndedIterator for Ite
+          if self.nelem == 0 {
+              return None;
+          }
+--        self.tail.take().as_mut().map(|prev| {
+++        match self.tail.take().as_mut() {
+++            None => None,
+++            Some(prev) => {
+              self.nelem -= 1;
+              self.tail = prev.prev.clone();
+              unsafe {
+                  //upgrade ref to the necessary lifetime
+--                &mut *((&mut prev.elem) as *mut _)
+++                Some(&mut *((&mut prev.elem) as *mut _))
+++            }
+              }
+--        })
+++        }
+++        /*
+++            .map(|prev| {
+++        })*/
+      }
+  }
+  
+@@@ -711,556 -788,36 +864,16 @@@ impl<A: Ord> Ord for DList<A> 
+      }
+  }
+  
+- impl<A: fmt::Debug> fmt::Debug for DList<A> {
+-     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+-         try!(write!(f, "["));
+- 
+-         for (i, e) in self.iter().enumerate() {
+-             if i != 0 { try!(write!(f, ", ")); }
+-             try!(write!(f, "{:?}", *e));
+-         }
+- 
+-         write!(f, "]")
+-     }
+- }
+- 
+- impl<S: Hasher+Writer, A: Hash<S>> Hash<S> for DList<A> {
+-     fn hash(&self, state: &mut S) {
+ -impl<A: Hash> Hash for DList<A> {
+ -    fn hash<H: Hasher>(&self, state: &mut H) {
+--        self.len().hash(state);
+--        for elt in self.iter() {
+--            elt.hash(state);
+--        }
+--    }
+--}
+--
+  impl<T: Clone> Clone for DList<T> {
+      fn clone(&self) -> DList<T> {
+          self.iter().cloned().collect()
+      }
+  }
+  
+ -impl<'a, T> IntoIterator for &'a DList<T> {
+ -    type Item = &'a T;
+ -    type IntoIter = Iter<'a, T>;
+ -    fn into_iter(self) -> Iter<'a, T> { self.iter() }
+ -}
+  
+ -impl<'a, T> IntoIterator for &'a mut DList<T> {
+ -    type Item = &'a mut T;
+ -    type IntoIter = IterMut<'a, T>;
+ -    fn into_iter(self) -> IterMut<'a, T> { self.iter_mut() }
+ -}
+  
+- 
+- 
+- 
+- #[cfg(test)]
+- mod test {
+-     use super::DList;
+-     use std::hash;
+- 
+-     fn generate_test() -> DList<i32> {
+-         list_from(&[0,1,2,3,4,5,6])
+-     }
+- 
+-     fn list_from<T: Clone>(v: &[T]) -> DList<T> {
+-         v.iter().map(|x| (*x).clone()).collect()
+-     }
+- 
+-     #[test]
+-     fn test_basic() {
+-         let mut m = DList::new();
+-         assert_eq!(m.pop_front(), None);
+-         assert_eq!(m.pop_back(), None);
+-         assert_eq!(m.pop_front(), None);
+-         m.push_front(box 1);
+-         assert_eq!(m.pop_front(), Some(box 1));
+-         m.push_back(box 2);
+-         m.push_back(box 3);
+-         assert_eq!(m.len(), 2);
+-         assert_eq!(m.pop_front(), Some(box 2));
+-         assert_eq!(m.pop_front(), Some(box 3));
+-         assert_eq!(m.len(), 0);
+-         assert_eq!(m.pop_front(), None);
+-         m.push_back(box 1);
+-         m.push_back(box 3);
+-         m.push_back(box 5);
+-         m.push_back(box 7);
+-         assert_eq!(m.pop_front(), Some(box 1));
+- 
+-         let mut n = DList::new();
+-         n.push_front(2);
+-         n.push_front(3);
+-         {
+-             assert_eq!(n.front().unwrap(), &3);
+-             let x = n.front_mut().unwrap();
+-             assert_eq!(*x, 3);
+-             *x = 0;
+-         }
+-         {
+-             assert_eq!(n.back().unwrap(), &2);
+-             let y = n.back_mut().unwrap();
+-             assert_eq!(*y, 2);
+-             *y = 1;
+-         }
+-         assert_eq!(n.pop_front(), Some(0));
+-         assert_eq!(n.pop_front(), Some(1));
+-     }
+- 
+- 
+-     #[test]
+-     fn test_iterator() {
+-         let m = generate_test();
+-         for (i, elt) in m.iter().enumerate() {
+-             assert_eq!(i as i32, *elt);
+-         }
+-         let mut n = DList::new();
+-         assert_eq!(n.iter().next(), None);
+-         n.push_front(4);
+-         let mut it = n.iter();
+-         assert_eq!(it.size_hint(), (1, Some(1)));
+-         assert_eq!(it.next().unwrap(), &4);
+-         assert_eq!(it.size_hint(), (0, Some(0)));
+-         assert_eq!(it.next(), None);
+-     }
+- 
+- 
+-     #[test]
+-     fn test_iterator_double_end() {
+-         let mut n = DList::new();
+-         assert_eq!(n.iter().next(), None);
+-         n.push_front(4);
+-         n.push_front(5);
+-         n.push_front(6);
+-         let mut it = n.iter();
+-         assert_eq!(it.size_hint(), (3, Some(3)));
+-         assert_eq!(it.next().unwrap(), &6);
+-         assert_eq!(it.size_hint(), (2, Some(2)));
+-         assert_eq!(it.next_back().unwrap(), &4);
+-         assert_eq!(it.size_hint(), (1, Some(1)));
+-         assert_eq!(it.next_back().unwrap(), &5);
+-         assert_eq!(it.next_back(), None);
+-         assert_eq!(it.next(), None);
+-     }
+- 
+-     #[test]
+-     fn test_rev_iter() {
+-         let m = generate_test();
+-         for (i, elt) in m.iter().rev().enumerate() {
+-             assert_eq!(6 - i as i32, *elt);
+-         }
+-         let mut n = DList::new();
+-         assert_eq!(n.iter().rev().next(), None);
+-         n.push_front(4);
+-         let mut it = n.iter().rev();
+-         assert_eq!(it.size_hint(), (1, Some(1)));
+-         assert_eq!(it.next().unwrap(), &4);
+-         assert_eq!(it.size_hint(), (0, Some(0)));
+-         assert_eq!(it.next(), None);
+-     }
+- 
+-     #[test]
+-     fn test_mut_iter() {
+-         let mut m = generate_test();
+-         let mut len = m.len();
+-         for (i, elt) in m.iter_mut().enumerate() {
+-             assert_eq!(i as i32, *elt);
+-             len -= 1;
+-         }
+-         assert_eq!(len, 0);
+-         let mut n = DList::new();
+-         assert!(n.iter_mut().next().is_none());
+-         n.push_front(4);
+-         n.push_back(5);
+-         let mut it = n.iter_mut();
+-         assert_eq!(it.size_hint(), (2, Some(2)));
+-         assert!(it.next().is_some());
+-         assert!(it.next().is_some());
+-         assert_eq!(it.size_hint(), (0, Some(0)));
+-         assert!(it.next().is_none());
+-     }
+- 
+-     #[test]
+-     fn test_iterator_mut_double_end() {
+-         let mut n = DList::new();
+-         assert!(n.iter_mut().next_back().is_none());
+-         n.push_front(4);
+-         n.push_front(5);
+-         n.push_front(6);
+-         let mut it = n.iter_mut();
+-         assert_eq!(it.size_hint(), (3, Some(3)));
+-         assert_eq!(*it.next().unwrap(), 6);
+-         assert_eq!(it.size_hint(), (2, Some(2)));
+-         assert_eq!(*it.next_back().unwrap(), 4);
+-         assert_eq!(it.size_hint(), (1, Some(1)));
+-         assert_eq!(*it.next_back().unwrap(), 5);
+-         assert!(it.next_back().is_none());
+-         assert!(it.next().is_none());
+-     }
+- 
+-     #[test]
+-     fn test_eq() {
+-         let mut n: DList<u8> = list_from(&[]);
+-         let mut m = list_from(&[]);
+-         assert!(n == m);
+-         n.push_front(1);
+-         assert!(n != m);
+-         m.push_back(1);
+-         assert!(n == m);
+- 
+-         let n = list_from(&[2,3,4]);
+-         let m = list_from(&[1,2,3]);
+-         assert!(n != m);
+-     }
+- 
+-     #[test]
+-     fn test_hash() {
+-       let mut x = DList::new();
+-       let mut y = DList::new();
+- 
+-       assert!(hash::hash::<_, hash::SipHasher>(&x) == hash::hash::<_, hash::SipHasher>(&y));
+- 
+-       x.push_back(1);
+-       x.push_back(2);
+-       x.push_back(3);
+- 
+-       y.push_front(3);
+-       y.push_front(2);
+-       y.push_front(1);
+- 
+-       assert!(hash::hash::<_, hash::SipHasher>(&x) == hash::hash::<_, hash::SipHasher>(&y));
+-     }
+- 
+-     #[test]
+-     fn test_ord() {
+-         let n = list_from(&[]);
+-         let m = list_from(&[1,2,3]);
+-         assert!(n < m);
+-         assert!(m > n);
+-         assert!(n <= n);
+-         assert!(n >= n);
+-     }
+- 
+-     #[test]
+-     fn test_ord_nan() {
+-         let nan = 0.0f64/0.0;
+-         let n = list_from(&[nan]);
+-         let m = list_from(&[nan]);
+-         assert!(!(n < m));
+-         assert!(!(n > m));
+-         assert!(!(n <= m));
+-         assert!(!(n >= m));
+- 
+-         let n = list_from(&[nan]);
+-         let one = list_from(&[1.0f64]);
+-         assert!(!(n < one));
+-         assert!(!(n > one));
+-         assert!(!(n <= one));
+-         assert!(!(n >= one));
+- 
+-         let u = list_from(&[1.0f64,2.0,nan]);
+-         let v = list_from(&[1.0f64,2.0,3.0]);
+-         assert!(!(u < v));
+-         assert!(!(u > v));
+-         assert!(!(u <= v));
+-         assert!(!(u >= v));
+- 
+-         let s = list_from(&[1.0f64,2.0,4.0,2.0]);
+-         let t = list_from(&[1.0f64,2.0,3.0,2.0]);
+-         assert!(!(s < t));
+-         assert!(s > one);
+-         assert!(!(s <= one));
+-         assert!(s >= one);
+-     }
+- 
+-     #[test]
+-     fn test_debug() {
+-         let list: DList<i32> = range(0, 10).collect();
+-         assert_eq!(format!("{:?}", list), "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+- 
+-         let list: DList<&str> = vec!["just", "one", "test", "more"].iter()
+-                                                                    .map(|&s| s)
+-                                                                    .collect();
+-         assert_eq!(format!("{:?}", list), r#"["just", "one", "test", "more"]"#);
+-     }
+- 
+-     #[test]
+-     fn test_cursor_seek() {
+-         let mut list = list_from(&[0,1,2,3,4]);
+-         let mut curs = list.cursor();
+-         // forward iteration
+-         assert_eq!(*curs.peek_next().unwrap(), 0);
+-         assert_eq!(*curs.next().unwrap(), 0);
+-         assert_eq!(*curs.peek_next().unwrap(), 1);
+-         assert_eq!(*curs.next().unwrap(), 1);
+-         assert_eq!(*curs.next().unwrap(), 2);
+-         assert_eq!(*curs.next().unwrap(), 3);
+-         assert_eq!(*curs.next().unwrap(), 4);
+-         assert_eq!(curs.peek_next(), None);
+-         assert_eq!(curs.next(), None);
+-         assert_eq!(*curs.next().unwrap(), 0);
+- 
+-         // reverse iteration
+-         assert_eq!(*curs.peek_prev().unwrap(), 0);
+-         assert_eq!(*curs.prev().unwrap(), 0);
+-         assert_eq!(curs.peek_prev(), None);
+-         assert_eq!(curs.prev(), None);
+-         assert_eq!(*curs.peek_prev().unwrap(), 4);
+-         assert_eq!(*curs.prev().unwrap(), 4);
+-         assert_eq!(*curs.prev().unwrap(), 3);
+-         assert_eq!(*curs.prev().unwrap(), 2);
+-         assert_eq!(*curs.prev().unwrap(), 1);
+-         assert_eq!(*curs.prev().unwrap(), 0);
+-         assert_eq!(curs.prev(), None);
+-     }
+- 
+-     #[test]
+-     fn test_cursor_insert() {
+-         let mut list = list_from(&[0,1,2,3,4]);
+-         {
+-             let mut curs = list.cursor();
+- 
+-             // insertion to back
+-             curs.prev();
+-             curs.insert(6);
+-             curs.insert(5);
+- 
+-             assert_eq!(*curs.next().unwrap(), 5);
+-             assert_eq!(*curs.next().unwrap(), 6);
+-             assert_eq!(curs.next(), None);
+- 
+-             // insertion to front
+-             curs.insert(-1);
+-             curs.insert(-2);
+- 
+-             assert_eq!(*curs.next().unwrap(), -2);
+-             assert_eq!(*curs.next().unwrap(), -1);
+-             assert_eq!(*curs.next().unwrap(), 0);
+- 
+-             assert_eq!(*curs.prev().unwrap(), 0);
+-             assert_eq!(*curs.prev().unwrap(), -1);
+-             assert_eq!(*curs.prev().unwrap(), -2);
+-             assert_eq!(curs.prev(), None);
+-             assert_eq!(*curs.prev().unwrap(), 6);
+-             assert_eq!(*curs.prev().unwrap(), 5);
+-             assert_eq!(*curs.prev().unwrap(), 4);
+-             assert_eq!(*curs.prev().unwrap(), 3);
+- 
+-             // insertion in the middle
+-             curs.insert(275); // fake decimal 2.75
+-             curs.insert(250);
+-             curs.insert(225);
+- 
+-             assert_eq!(*curs.next().unwrap(), 225);
+-             assert_eq!(*curs.next().unwrap(), 250);
+-             assert_eq!(*curs.next().unwrap(), 275);
+-             assert_eq!(*curs.next().unwrap(), 3);
+-             assert_eq!(*curs.next().unwrap(), 4);
+- 
+-             assert_eq!(*curs.prev().unwrap(), 4);
+-             assert_eq!(*curs.prev().unwrap(), 3);
+-             assert_eq!(*curs.prev().unwrap(), 275);
+-             assert_eq!(*curs.prev().unwrap(), 250);
+-             assert_eq!(*curs.prev().unwrap(), 225);
+-             assert_eq!(*curs.prev().unwrap(), 2);
+-             assert_eq!(*curs.prev().unwrap(), 1);
+-         }
+-         assert_eq!(list.len(), 12);
+-     }
+- 
+-     #[test]
+-     fn test_cursor_remove() {
+-         let mut list = list_from(&[0,1,2,3,4,5,6,7]);
+-         {
+-             let mut curs = list.cursor();
+-             // remove from front
+-             assert_eq!(curs.remove().unwrap(), 0);
+-             assert_eq!(curs.remove().unwrap(), 1);
+- 
+-             assert_eq!(*curs.next().unwrap(), 2);
+-             assert_eq!(*curs.next().unwrap(), 3);
+- 
+-             assert_eq!(*curs.prev().unwrap(), 3);
+-             assert_eq!(*curs.prev().unwrap(), 2);
+-             assert_eq!(curs.prev(), None);
+-             assert_eq!(*curs.prev().unwrap(), 7);
+- 
+-             // remove from back
+-             assert_eq!(curs.remove().unwrap(), 7);
+-             assert_eq!(curs.remove(), None); // g-g-g-ghost!
+-             assert_eq!(*curs.prev().unwrap(), 6);
+-             assert_eq!(curs.remove().unwrap(), 6);
+-             assert_eq!(*curs.prev().unwrap(), 5);
+-             assert_eq!(*curs.prev().unwrap(), 4);
+- 
+-             assert_eq!(*curs.next().unwrap(), 4);
+-             assert_eq!(*curs.next().unwrap(), 5);
+-             assert_eq!(curs.next(), None);
+-             assert_eq!(*curs.next().unwrap(), 2);
+- 
+-             // remove from middle
+-             assert_eq!(curs.remove().unwrap(), 3);
+-             assert_eq!(curs.remove().unwrap(), 4);
+-             assert_eq!(*curs.next().unwrap(), 5);
+-             assert_eq!(curs.next(), None);
+-             assert_eq!(*curs.next().unwrap(), 2);
+-             assert_eq!(*curs.next().unwrap(), 5);
+-             assert_eq!(*curs.prev().unwrap(), 5);
+-             assert_eq!(*curs.prev().unwrap(), 2);
+-             assert_eq!(curs.prev(), None);
+-             assert_eq!(*curs.prev().unwrap(), 5);
+-         }
+-         assert_eq!(list.len(), 2);
+-     }
+- 
+-     #[test]
+-     fn test_append() {
+-         let mut list1 = list_from(&[0,1,2,3]);
+-         let mut list2 = list_from(&[4,5,6,7]);
+- 
+-         // Normal append
+-         list1.append(&mut list2);
+-         assert_eq!(&list1, &list_from(&[0,1,2,3,4,5,6,7]));
+-         assert_eq!(&list2, &DList::new());
+-         assert_eq!(list1.len(), 8);
+-         assert_eq!(list2.len(), 0);
+- 
+-         // Append to an empty list
+-         list2.append(&mut list1);
+-         assert_eq!(&list2, &list_from(&[0,1,2,3,4,5,6,7]));
+-         assert_eq!(&list1, &DList::new());
+-         assert_eq!(list2.len(), 8);
+-         assert_eq!(list1.len(), 0);
+- 
+-         // Append an empty list
+-         list2.append(&mut list1);
+-         assert_eq!(&list2, &list_from(&[0,1,2,3,4,5,6,7]));
+-         assert_eq!(&list1, &DList::new());
+-         assert_eq!(list2.len(), 8);
+-         assert_eq!(list1.len(), 0);
+-     }
+- 
+-     #[test]
+-     fn test_split_at() {
+-         let mut list2 = list_from(&[4,5,6,7]);
+- 
+-         // split at front; basically just move the list
+-         let mut list3 = list2.split_at(0);
+-         assert_eq!(&list3, &list_from(&[4,5,6,7]));
+-         assert_eq!(&list2, &DList::new());
+-         assert_eq!(list3.len(), 4);
+-         assert_eq!(list2.len(), 0);
+- 
+-         // split at end; convoluted DList::new()
+-         let list4 = list3.split_at(4);
+-         assert_eq!(&list3, &list_from(&[4,5,6,7]));
+-         assert_eq!(&list4, &DList::new());
+-         assert_eq!(list3.len(), 4);
+-         assert_eq!(list4.len(), 0);
+- 
+-         // split in middle
+-         let list5 = list3.split_at(2);
+-         assert_eq!(&list3, &list_from(&[4,5]));
+-         assert_eq!(&list5, &list_from(&[6,7]));
+-         assert_eq!(list3.len(), 2);
+-         assert_eq!(list5.len(), 2);
+-     }
+- 
+-     #[test]
+-     fn test_splice() {
+-         let mut list1 = list_from(&[3,4,5]);
+-         let mut list2 = list_from(&[1,2,6,7]);
+-         let mut list3 = DList::new();
+- 
+-         // splice empty list
+-         list1.splice(2, &mut list3);
+-         assert_eq!(&list1, &list_from(&[3,4,5]));
+-         assert_eq!(&list3, &DList::new());
+-         assert_eq!(list1.len(), 3);
+-         assert_eq!(list3.len(), 0);
+- 
+-         // splice normal
+-         list2.splice(2, &mut list1);
+-         assert_eq!(&list2, &list_from(&[1,2,3,4,5,6,7]));
+-         assert_eq!(&list1, &DList::new());
+-         assert_eq!(list2.len(), 7);
+-         assert_eq!(list1.len(), 0);
+-     }
+- }
+- 
+- 
+- 
+- 
+- 
+- 
+- #[cfg(test)]
+- mod bench{
+-     use super::DList;
+-     use test;
+- 
+-     #[bench]
+-     fn bench_collect_into(b: &mut test::Bencher) {
+-         let v = &[0i32; 64];
+-         b.iter(|| {
+-             let _: DList<i32> = v.iter().map(|x| *x).collect();
+-         })
+-     }
+- 
+-     #[bench]
+-     fn bench_push_front(b: &mut test::Bencher) {
+-         let mut m: DList<i32> = DList::new();
+-         b.iter(|| {
+-             m.push_front(0);
+-         })
+-     }
+- 
+-     #[bench]
+-     fn bench_push_back(b: &mut test::Bencher) {
+-         let mut m: DList<i32> = DList::new();
+-         b.iter(|| {
+-             m.push_back(0);
+-         })
+-     }
+- 
+-     #[bench]
+-     fn bench_push_back_pop_back(b: &mut test::Bencher) {
+-         let mut m: DList<i32> = DList::new();
+-         b.iter(|| {
+-             m.push_back(0);
+-             m.pop_back();
+-         })
+-     }
+- 
+-     #[bench]
+-     fn bench_push_front_pop_front(b: &mut test::Bencher) {
+-         let mut m: DList<i32> = DList::new();
+-         b.iter(|| {
+-             m.push_front(0);
+-             m.pop_front();
+-         })
+-     }
+- 
+-     #[bench]
+-     fn bench_iter(b: &mut test::Bencher) {
+-         let v = &[0; 128];
+-         let m: DList<i32> = v.iter().map(|&x|x).collect();
+-         b.iter(|| {
+-             assert!(m.iter().count() == 128);
+-         })
+-     }
+-     #[bench]
+-     fn bench_iter_mut(b: &mut test::Bencher) {
+-         let v = &[0; 128];
+-         let mut m: DList<i32> = v.iter().map(|&x|x).collect();
+-         b.iter(|| {
+-             assert!(m.iter_mut().count() == 128);
+-         })
+-     }
+-     #[bench]
+-     fn bench_iter_rev(b: &mut test::Bencher) {
+-         let v = &[0; 128];
+-         let m: DList<i32> = v.iter().map(|&x|x).collect();
+-         b.iter(|| {
+-             assert!(m.iter().rev().count() == 128);
+-         })
+-     }
+-     #[bench]
+-     fn bench_iter_mut_rev(b: &mut test::Bencher) {
+-         let v = &[0; 128];
+-         let mut m: DList<i32> = v.iter().map(|&x|x).collect();
+-         b.iter(|| {
+-             assert!(m.iter_mut().rev().count() == 128);
+-         })
+-     }
+- 
+ -impl<T> IntoIterator for DList<T> {
+ -    type Item = T;
+ -    type IntoIter = IntoIter<T>;
+ -    fn into_iter(self) -> IntoIter<T> { self.into_iter() }
+++pub fn crust_init() -> (DList<u8>,) {
+++    let mut ret = DList::new();
+++    ret.push_back(8);
+++    (ret,)
+  }
+ -
