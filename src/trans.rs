@@ -350,7 +350,8 @@ impl Trans for ty::Region {
                 let region::CodeExtent::Misc(id) = extent;
                 format!("r_scope_{}", id)
             },
-            _ => panic!("unsupported Region variant"),
+            ty::ReEmpty => format!("empty"),
+            _ => panic!("unsupported Region variant {:?}", *self),
         }
     }
 }
