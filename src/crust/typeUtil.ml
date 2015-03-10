@@ -23,7 +23,7 @@ type _ query_param =
   | Ptr_Mut : Types.mono_type query_param
   | Ptr : Types.mono_type query_param
   | Ref : bool -> Types.mono_type query_param
-  | Ref_Mut : Types.mono_type query_param
+  | Ref_Mut : bool -> Types.mono_type query_param
   | Adt : string -> (Types.mono_type list) query_param
   | Fixed_Vec : int -> Types.mono_type query_param
   | Vec : Types.mono_type query_param
@@ -75,9 +75,11 @@ let find_types : type a.MTSet.t -> a query_param -> a list =
           t::accum
         | _ -> accum
       ) set []
-    | Ref_Mut -> MTSet.fold (fun t accum ->
+    | Ref_Mut b -> MTSet.fold (fun t accum ->
         match t with
         | `Ref_Mut (_,t) -> t::accum
+        | `Ref (_,t) when b ->
+          t::accum
         | _ -> accum
       ) set []
     | Adt name -> MTSet.fold (fun t accum ->
@@ -310,7 +312,7 @@ class type_matcher fuzzy_ref = object(self)
     | `Ref (_,t) ->
       self#match_single_type state t_binding (find_types t_set @@ Ref state#fuzzy_ref) t_set t
     | `Ref_Mut (_,t) ->
-      self#match_single_type state t_binding (find_types t_set Ref_Mut) t_set t
+      self#match_single_type state t_binding (find_types t_set @@ Ref_Mut state#fuzzy_ref) t_set t
     | `Ptr_Mut t ->
       self#match_single_type state t_binding (find_types t_set Ptr_Mut) t_set t
     | `Str -> 

@@ -61,27 +61,57 @@ let add_static_var w_state var =
     w_state with static_var = SSet.add var w_state.static_var
   }
 
+module TySet = Set.Make(struct
+    type t = Types.r_type
+    let rec compare : t -> t -> int  =
+      let rec cmp_lp = function
+        | ([],[]) -> 0
+        | (h1::t1),(h2::t2) ->
+          let cmp = compare h1 h2 in
+          if cmp = 0 then cmp_lp (t1,t2) else cmp
+        | [],_ -> -1
+        | _,[] -> 1
+      in fun a b ->
+        match a,b with
+        | `Vec t1,`Vec t2
+        | `Ptr t1,`Ptr t2
+        | `Ptr_Mut t1,`Ptr_Mut t2
+        | `Ref_Mut (_,t1),`Ref (_,t2)
+        | `Ref (_,t1),`Ref (_,t2) ->
+          compare t1 t2
+        | `Abstract { Types.a_name = tn1; Types.a_params = tp1; _ },
+          `Abstract { Types.a_name = tn2; Types.a_params = tp2; _ }
+        | `Adt_type { Types.type_name = tn1; Types.type_param = tp1; _ },
+          `Adt_type { Types.type_name = tn2; Types.type_param = tp2; _ } ->
+          if tn1 = tn2 then
+            cmp_lp (tp1,tp2)
+          else
+            Pervasives.compare tn1 tn2
+        | `Tuple tl1,`Tuple tl2 -> cmp_lp (tl1,tl2)
+        | _,_ -> Pervasives.compare a b
+end)
+
 
 (* TODO(jtoman): this is totally a broken heuristic *)
 let rec type_contains_loop src_types = function
   | ((`T_Var _) as s)
-  | (#simple_type as s) -> List.mem s src_types
-  | `Bottom -> List.mem `Bottom src_types
+  | (#simple_type as s) -> TySet.mem s src_types
+  | `Bottom -> TySet.mem `Bottom src_types
   | ((`Fixed_Vec (_,p)) as t) 
   | ((`Vec p) as t)
   | ((`Ref_Mut (_,p)) as t)
   | ((`Ptr_Mut p) as t)
   | ((`Ref (_,p)) as t)
-  | ((`Ptr p) as t) -> (List.mem t src_types) ||
+  | ((`Ptr p) as t) -> (TySet.mem t src_types) ||
                        type_contains_loop src_types p
   | ((`Tuple tl) as t)
   | ((`Adt_type { Types.type_param = tl; _ }) as t) ->
-    List.mem t src_types ||
+    TySet.mem t src_types ||
     (let contains = List.map (type_contains_loop src_types) tl in
      List.exists (fun x -> x) contains
     )
   | `Abstract _ -> false (* not really true *)
-  | `Str as t -> List.mem t src_types
+  | `Str as t -> TySet.mem t src_types
 
 let rec type_contains src_types target  = 
   match target with
@@ -91,10 +121,29 @@ let rec type_contains src_types target  =
     List.exists (fun x -> x) contains
   | _ -> false
 
+let rec extract_ref_types accum ty = 
+  match ty with
+  | #Types.simple_type -> accum
+  | `Ptr t
+  | `Ptr_Mut t
+  | `Ref_Mut (_,t)
+  | `Ref (_,t) -> extract_ref_types (TySet.add t accum) t
+  | `Tuple tl -> List.fold_left extract_ref_types accum tl
+  | `Bottom
+  | `T_Var _
+  | `Fixed_Vec _
+  | `Vec _
+  | `Abstract _
+  | `Str
+  | `Adt_type _ -> accum
+    
+
 let find_constructors () = 
   let accum = SSet.empty in
   Env.EnvMap.fold (fun f_name fn_def accum ->
-      let arg_types = List.map snd fn_def.Ir.fn_args in
+      let arg_types = List.fold_left (fun accum (_,a_t) ->
+          TySet.add a_t @@ extract_ref_types accum a_t
+        ) TySet.empty fn_def.Ir.fn_args in
       let ret_type = fn_def.Ir.ret_type in
       if type_contains arg_types ret_type  then
         SSet.add f_name accum
