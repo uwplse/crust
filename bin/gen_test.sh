@@ -14,7 +14,7 @@ done
 
 SCRATCH=$(mktemp -d /tmp/crust.XXXXXXX)
 function cleanup() {
-	rm -rf $SCRATCH;
+	: rm -rf $SCRATCH;
 }
 trap cleanup EXIT;
 
@@ -33,11 +33,11 @@ fi
 function do_scrub() {
 	TO_SCRUB=$1
 	for i in $(seq 0 2); do
-		if $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $TO_SCRUB > $SCRATCH/tests.ir 2> $SCRATCH/failing_tests; then
+		if $THIS_DIR/rbmc -A warnings -L $THIS_DIR/../lib $TO_SCRUB > $SCRATCH/tests.ir 2> $SCRATCH/failing_tests_$i; then
 			return
 		fi
 		cp $TO_SCRUB $SCRATCH/pre_scrubbed_${i}.rs
-		egrep -o '.+error:' $SCRATCH/failing_tests | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python $THIS_DIR/filter_errors.py $TO_SCRUB > $SCRATCH/scrubbed_${i}.rs;		
+		egrep -o '.+error:' $SCRATCH/failing_tests_$i | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python $THIS_DIR/filter_errors.py $TO_SCRUB > $SCRATCH/scrubbed_${i}.rs;		
 		cp $SCRATCH/scrubbed_${i}.rs $TO_SCRUB
 	done
 	echo "Failed to scrub tests"
