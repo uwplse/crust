@@ -1542,54 +1542,56 @@ fn print_abstract_fn_decls(trcx: &mut TransCtxt) {
 
 
     for (name, method_did) in names.into_iter() {
-        let (method_generics, inputs, output) = {
-            let trait_defs = trcx.tcx.trait_defs.borrow();
-            let impl_or_trait_items = trcx.tcx.impl_or_trait_items.borrow();
-            let opt_method = impl_or_trait_items.get(&method_did);
+        println!("{}", try_str(|| {
+            let (method_generics, inputs, output) = {
+                let trait_defs = trcx.tcx.trait_defs.borrow();
+                let impl_or_trait_items = trcx.tcx.impl_or_trait_items.borrow();
+                let opt_method = impl_or_trait_items.get(&method_did);
 
-            let method = match opt_method {
-                None => panic!("can't find method for {}", name),
-                Some(x) => match x {
-                    &ty::MethodTraitItem(ref m) => &**m,
-                    _ => panic!("expected MethodTraitItem"),
-                }
+                let method = match opt_method {
+                    None => panic!("can't find method for {}", name),
+                    Some(x) => match x {
+                        &ty::MethodTraitItem(ref m) => &**m,
+                        _ => panic!("expected MethodTraitItem"),
+                    }
+                };
+
+                (method.generics.clone(),
+                 method.fty.sig.0.inputs.clone(),
+                 method.fty.sig.0.output.clone())
             };
 
-            (method.generics.clone(),
-             method.fty.sig.0.inputs.clone(),
-             method.fty.sig.0.output.clone())
-        };
+            let mut args = Vec::new();
+            for (i, arg_ty) in inputs.iter().enumerate() {
+                args.push(format!("({} var arg{})", arg_ty.trans(trcx), i));
+            }
 
-        let mut args = Vec::new();
-        for (i, arg_ty) in inputs.iter().enumerate() {
-            args.push(format!("({} var arg{})", arg_ty.trans(trcx), i));
-        }
+            let mut regions = Vec::new();
+            for region in method_generics.regions.iter() {
+                regions.push(format!("{}{}",
+                                     region.space.trans(trcx),
+                                     region.index));
+            }
 
-        let mut regions = Vec::new();
-        for region in method_generics.regions.iter() {
-            regions.push(format!("{}{}",
-                                 region.space.trans(trcx),
-                                 region.index));
-        }
+            let mut types = Vec::new();
+            for ty_param in method_generics.types.iter() {
+                types.push(format!("{}{}",
+                                   ty_param.space.trans(trcx),
+                                   ty_param.index));
+            }
 
-        let mut types = Vec::new();
-        for ty_param in method_generics.types.iter() {
-            types.push(format!("{}{}",
-                               ty_param.space.trans(trcx),
-                               ty_param.index));
-        }
+            let return_ty = match output {
+                ty::FnConverging(ty) => ty.trans(trcx),
+                ty::FnDiverging => format!("bottom"),
+            };
 
-        let return_ty = match output {
-            ty::FnConverging(ty) => ty.trans(trcx),
-            ty::FnDiverging => format!("bottom"),
-        };
-
-        println!("abstract_fn {} {} {} args {} return {}",
-                 name,
-                 regions.trans(trcx),
-                 types.trans(trcx),
-                 args.trans(trcx),
-                 return_ty);
+            format!("abstract_fn {} {} {} args {} return {}",
+                    name,
+                    regions.trans(trcx),
+                    types.trans(trcx),
+                    args.trans(trcx),
+                    return_ty)
+        }, &*name));
     }
 }
 
@@ -1601,35 +1603,37 @@ fn print_abstract_type_decls(trcx: &mut TransCtxt) {
     let names = names;
 
     for (name, trait_did) in names.into_iter() {
-        let trait_generics = {
-            let trait_defs = trcx.tcx.trait_defs.borrow();
-            let opt_trait = trait_defs.get(&trait_did);
-            let trait_ = match opt_trait {
-                None => panic!("can't find trait for {}", name),
-                Some(ref t) => &**t,
+        println!("{}", try_str(|| {
+            let trait_generics = {
+                let trait_defs = trcx.tcx.trait_defs.borrow();
+                let opt_trait = trait_defs.get(&trait_did);
+                let trait_ = match opt_trait {
+                    None => panic!("can't find trait for {}", name),
+                    Some(ref t) => &**t,
+                };
+
+                trait_.generics.clone()
             };
 
-            trait_.generics.clone()
-        };
+            let mut regions = Vec::new();
+            for region in trait_generics.regions.iter() {
+                regions.push(format!("{}{}",
+                                     region.space.trans(trcx),
+                                     region.index));
+            }
 
-        let mut regions = Vec::new();
-        for region in trait_generics.regions.iter() {
-            regions.push(format!("{}{}",
-                                 region.space.trans(trcx),
-                                 region.index));
-        }
+            let mut types = Vec::new();
+            for ty_param in trait_generics.types.iter() {
+                types.push(format!("{}{}",
+                                   ty_param.space.trans(trcx),
+                                   ty_param.index));
+            }
 
-        let mut types = Vec::new();
-        for ty_param in trait_generics.types.iter() {
-            types.push(format!("{}{}",
-                               ty_param.space.trans(trcx),
-                               ty_param.index));
-        }
-
-        println!("abstract_type {} {} {}",
-                 name,
-                 regions.trans(trcx),
-                 types.trans(trcx));
+            format!("abstract_type {} {} {}",
+                    name,
+                    regions.trans(trcx),
+                    types.trans(trcx))
+        }, &*name));
     }
 }
 
