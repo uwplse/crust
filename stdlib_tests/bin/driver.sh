@@ -133,7 +133,7 @@ trans_test() {
 	instrument_intrinsics $1
 	OUTPUT_NAME=$(basename $1);
 	OUTPUT_NAME=${OUTPUT_NAME/.rs/.c}
-	compile_test $1 $SCRATCH/simple_ir > $2/$OUTPUT_NAME
+	edo compile_test $1 $SCRATCH/simple_ir > $2/$OUTPUT_NAME
 }
 
 trans_stdlib_test() {
@@ -143,7 +143,7 @@ trans_stdlib_test() {
 	dump_items $1 > $SCRATCH/item_filter
 	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
 	mkdir -p $SCRATCH/test_cases
-	../bin/crust.native -driver-gen -api-filter $1 -no-mut-analysis -immut-length 0 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	edo ../bin/crust.native -driver-gen -api-filter $1 -immut-length 0 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
 	for i in $SCRATCH/test_cases/*.rs; do
 		trans_test $i $2;
 	done
