@@ -48,6 +48,9 @@ listNe f as = f (commaSep as)
 ppMutbl MMut = tell "mut"
 ppMutbl MImm = return ()
 
+ppVis Private = tell "priv"
+ppVis Public = tell "pub"
+
 ppTy ty = case ty of
     TVar name -> tell name
     TAdt name las tas -> tell name >> listNe angles (map ppLifetime las ++ map ppTy tas)
@@ -102,9 +105,9 @@ ppEnumDef (EnumDef name lps tps variants mDtor) = do
     line $ tell "}"
 
 ppFnDef :: (MonadReader Int m, MonadWriter String m) => FnDef -> m ()
-ppFnDef (FnDef name lps tps args retTy implClause body) = do
+ppFnDef (FnDef vis name lps tps args retTy implClause body) = do
     line $ do
-        tell "fn " >> tell name
+        tell "fn " >> ppVis vis >> tell name
         listNe angles (map ppLifetime lps ++ map tell tps)
         parens $ commaSep $ map ppArgDecl args
         tell " -> " >> ppTy retTy

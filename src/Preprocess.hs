@@ -140,7 +140,7 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
   where
     aborts :: S.Set String
     aborts = everything S.union (S.empty `mkQ` collectAborts) items
-    collectAborts (FnDef f_name _ _ _ _ _ _)
+    collectAborts (FnDef _ f_name _ _ _ _ _ _)
       | isSuffixOf "$crust_abort" f_name = S.singleton f_name
     collectAborts _ = S.empty
    
@@ -151,14 +151,14 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
           ECall "crust_abort" l t e
     renameAbortCall e = e
     
-    renameAbort (FnDef f_name lp tp arg rt impl e)
+    renameAbort (FnDef v f_name lp tp arg rt impl e)
       | f_name == canonAbort =
-          (FnDef "crust_abort" lp tp arg rt impl e)
+          (FnDef v "crust_abort" lp tp arg rt impl e)
     renameAbort e = e
 
     renameAbortDef = if S.null aborts then (\x -> x) else renameAbort
 
-    isAbort (IFn (FnDef f_name _ _ _ _ _ _)) = isSuffixOf "$crust_abort" f_name
+    isAbort (IFn (FnDef _ f_name _ _ _ _ _ _)) = isSuffixOf "$crust_abort" f_name
     isAbort _ = False
 
 isExternFn (IExternFn _) = True
@@ -295,9 +295,9 @@ desugarRange = everywhere (mkT go)
 
 desugarArgPatterns = map go
   where
-    go (IFn (FnDef name lps tps args retTy impl body)) =
+    go (IFn (FnDef vis name lps tps args retTy impl body)) =
         let (args', body') = fixArgs args body
-        in IFn (FnDef name lps tps args' retTy impl body')
+        in IFn (FnDef vis name lps tps args' retTy impl body')
     go (IAbstractFn (AbstractFnDef name lps tps args retTy)) =
         let args' = numberArgs args
         in IAbstractFn (AbstractFnDef name lps tps args' retTy)
@@ -460,7 +460,7 @@ generateDefaultMethods ix items = zipWith go [0..] items
         clause = ImplClause name (las ++ fnLas) (tas ++ fnTas)
         body = Expr retTy' $ ECall (name ++ "$$__default") (las ++ fnLas) (tas ++ fnTas) $
             map (\(ArgDecl (Pattern ty (PVar name))) -> Expr ty $ EVar name) args'
-        def = FnDef name' (lps ++ fnLps) (tps ++ fnTps) args' retTy' (Just clause) $
+        def = FnDef Public name' (lps ++ fnLps) (tps ++ fnTps) args' retTy' (Just clause) $
                 Expr retTy' $ EBlock [] body
 
     go _ i = i
@@ -474,7 +474,7 @@ filterItems items itemFilter = filter isAllowed items
       isAllowed (IAbstractType _) = True
 
       isAllowed (IStatic (StaticDef n _ _)) = S.member n itemFilter
-      isAllowed (IFn (FnDef n _ _ _ _ _ _)) = S.member n itemFilter
+      isAllowed (IFn (FnDef _ n _ _ _ _ _ _)) = S.member n itemFilter
       isAllowed (IAbstractFn (AbstractFnDef n _ _ _ _)) = S.member n itemFilter
       isAllowed (IStruct (StructDef n _ _ _ _)) = S.member n itemFilter
       isAllowed (IEnum (EnumDef n _ _ _ _)) = S.member n itemFilter

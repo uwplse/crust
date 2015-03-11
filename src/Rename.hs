@@ -104,10 +104,10 @@ renameLocals ix x = evalState (go x) (initState ix)
         (SLet pat' expr' :) <$> go ss
     goStmtList ss = gmapM go ss
 
-    goFnDef (FnDef name lps tps args retTy implClause body) = withEmptyScope $ do
+    goFnDef (FnDef vis name lps tps args retTy implClause body) = withEmptyScope $ do
         args' <- mapM renameArg args
         body' <- go body
-        return $ FnDef name lps tps args' retTy implClause body'
+        return $ FnDef vis name lps tps args' retTy implClause body'
 
     renameArg (ArgDecl pat) = do
         pat' <- walkPat pat

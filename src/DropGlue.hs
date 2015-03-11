@@ -31,7 +31,7 @@ generateDropGlues items =
 
 dropGlueName name = name ++ "$__drop_glue"
 
-mkDropGlue ix ty = FnDef (dropGlueName $ ty_name ty) lifetimes tyParams [argDecl] TUnit Nothing body
+mkDropGlue ix ty = FnDef Private (dropGlueName $ ty_name ty) lifetimes tyParams [argDecl] TUnit Nothing body
   where
     lifetimes = ty_lifetimeParams ty
     tyParams = ty_tyParams ty

@@ -68,6 +68,11 @@ type Name = String
 data IntSize = BitSize Int | PtrSize
   deriving (Eq, Show, Data, Typeable)
 
+data Visibility =
+  Public
+  | Private
+  deriving (Eq, Show, Data, Typeable)
+
 type Abi = Name
 type LifetimeParam = Name
 type TyParam = Name
@@ -90,7 +95,7 @@ data EnumDef = EnumDef Name [LifetimeParam] [TyParam] [VariantDef] (Maybe Name)
 data VariantDef = VariantDef Name [Ty]
   deriving (Eq, Show, Data, Typeable)
 
-data FnDef = FnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) Expr
+data FnDef = FnDef Visibility Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) Expr
   deriving (Eq, Show, Data, Typeable)
 
 data AbstractFnDef = AbstractFnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty
@@ -240,9 +245,14 @@ enumDef = exactWord "enum" >>
     EnumDef <$> name <*> counted lifetimeParam <*> counted tyParam <*> counted variantDef <*> optional name
 variantDef = VariantDef <$> name <*> counted ty
 
+visibility = tagged
+   [ ("priv", return Private)
+   , ("pub", return Public)
+   ]
+
 fnDef = do
     exactWord "fn"
-    f <- FnDef <$> name <*> counted lifetimeParam <*> counted tyParam
+    f <- FnDef <$> visibility <*> name <*> counted lifetimeParam <*> counted tyParam
     exactWord "args"
     f <- f <$> counted argDecl
     exactWord "return"
@@ -394,6 +404,10 @@ instance Pp IntSize where
     pp' (BitSize b) = [show b]
     pp' (PtrSize) = ["size"]
 
+instance Pp Visibility where
+  pp' Private = ["priv"]
+  pp' Public = ["pub"]
+
 instance Pp AbstractTypeDef where
     pp' (AbstractTypeDef a b c) = ppGo "abstract_type" [pp a, pp b, pp c]
 
@@ -413,8 +427,8 @@ instance Pp VariantDef where
     pp' (VariantDef a b) = map pp [pp a, pp b]
 
 instance Pp FnDef where
-    pp' (FnDef name lifetimeParams tyParams args retTy implClause body) =
-        ["fn", pp name, pp lifetimeParams, pp tyParams,
+    pp' (FnDef vis name lifetimeParams tyParams args retTy implClause body) =
+        ["fn", pp vis, pp name, pp lifetimeParams, pp tyParams,
          "args", pp args,
          "return", pp retTy,
          pp implClause,
