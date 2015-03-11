@@ -107,16 +107,10 @@ let char_data_type = `UInt (`Bit_Size 8);;
 let rec c_type_of_monomorph mono_type = 
   TypeUtil.handle_dst 
     (fun mut t -> 
-       if mut then
-         `Tuple [`Ptr_Mut (c_type_of_monomorph t); slice_len_type]
-       else
-         `Tuple [`Ptr (c_type_of_monomorph t); slice_len_type]
+       `Tuple [`Ptr_Mut (c_type_of_monomorph t); slice_len_type]
     )
     (fun mut ->
-       if mut then
-         `Tuple [`Ptr_Mut char_data_type; slice_len_type]
-       else
-         `Tuple [`Ptr char_data_type; slice_len_type]
+       `Tuple [`Ptr_Mut char_data_type; slice_len_type]
     )
     (function
       | #Types.simple_type as s -> s
@@ -622,10 +616,7 @@ let rec uniq_list = function
 
 let find_dup_ty_inst =
   let make_dst_inst mut wrapped = 
-  if mut then
     `Tuple,[`Ptr_Mut (c_type_of_monomorph wrapped); slice_len_type]
-  else
-    `Tuple,[`Ptr (c_type_of_monomorph wrapped); slice_len_type]
   in
   fun insts ->
     let simple_inst = 
