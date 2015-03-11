@@ -456,3 +456,14 @@ let string_of_inst (n,a) =
   match a with
   | [] -> n
   | _ -> n ^ "<" ^ (String.concat ", " @@ List.map Types.pp_t (a : Types.mono_type list :> Types.r_type list)) ^ ">"
+
+let pp_inst : type_inst -> string = function
+  | `Tuple,m_args -> "TUPLE[" ^ (String.concat "," @@ List.map Types.pp_t (m_args : Types.mono_type list :> Types.r_type list)) ^ "]"
+  | `Adt n,m_args -> 
+    string_of_inst (n,m_args)
+  | `Fixed_Vec n,[m_arg] ->
+    (Types.pp_t (m_arg : Types.mono_type :> Types.r_type)) ^ "[" ^ (string_of_int n) ^ "]"
+  | `String mut,_ -> (if mut then "mut" else "const") ^ " STRING"
+  | `Vec mut,[m_arg] -> 
+    (if mut then "mut" else "const") ^ " VEC[" ^ (Types.pp_t (m_arg : Types.mono_type :> Types.r_type)) ^ "]"
+  | _ -> assert false
