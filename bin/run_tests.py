@@ -79,7 +79,7 @@ def run_master():
     parser.add_argument("-I", dest="include_dir", action="store", default=os.path.join(os.path.join(this_dir, ".."), "src"))
     parser.add_argument("--unwind", action="store", type = int)
     parser.add_argument("--z3", action="store_true")
-    parser.add_argument("--timeout", action="store", type = int)
+    parser.add_argument("--timeout", action="store", type = int, default = 120)
     parser.add_argument("test_names", action="store", nargs = "?")
 
     opts = parser.parse_args()
