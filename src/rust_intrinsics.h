@@ -26,25 +26,25 @@
 #define __crust_signed_fail(width) \
   {								   \
 	signed_result(width) to_ret;   \
-	to_ret.field1 = 0;			   \
+	to_ret.field1 = 1;			   \
 	return to_ret;				   \
   }
 
 #define __crust_signed_success(width, val) {	\
   signed_result(width) to_ret;					\
   to_ret.field0 = val;							\
-  to_ret.field1 = 1;							\
+  to_ret.field1 = 0;							\
   return to_ret;								\
   }
 
 #define __crust_unsigned_fail(width)			\
-  { unsigned_result(width) to_ret; to_ret.field1 = 0; return to_ret; }
+  { unsigned_result(width) to_ret; to_ret.field1 = 1; return to_ret; }
 
 #define __crust_unsigned_success(width, val)							\
   {																		\
 	unsigned_result(width) to_ret;										\
 	to_ret.field0 = val;												\
-	to_ret.field1 = 1;													\
+	to_ret.field1 = 0;													\
 	return to_ret;														\
   }
 

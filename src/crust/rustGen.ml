@@ -78,8 +78,8 @@ let rust_name fn_name =
 type method_arg = 
   | Primitive of string
   | Var of string
-  | Var_ref of string
-  | Var_mut_ref of string
+  | Ref of method_arg
+  | Mut_Ref of method_arg
   | Tuple of method_arg list
 
 
@@ -143,6 +143,15 @@ let prelude = [
   "extern crate alloc;";
   "extern crate collections;"
 ]
+
+
+let rec is_trivial_type ty = 
+  match ty with
+  | `Tuple tl -> List.for_all is_trivial_type tl
+  | #Types.simple_type -> true
+  | `Ref_Mut (_,t)
+  | `Ref (_,t) -> is_trivial_type t
+  | _ -> false
 
 class rust_pp buf output_file_prefix num_tests = object(self)
   inherit Emit.emitter buf
@@ -320,11 +329,16 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         ) t_accum (self#resolve_argument state h)
 
   method private resolve_argument = 
-    let build_var_choice state t = 
-      let vars = MTMap.find t state.var_of_ty in
-      SSet.fold (fun v accum ->
-          (Var v)::accum
-        ) vars [] in
+    let mk_mref ty = Mut_Ref ty in
+    let mk_ref ty = Ref ty in
+    let mk_tuple tl = Tuple tl in
+    let build_var state ty = 
+      if MTMap.mem ty state.var_of_ty then
+        SSet.fold (fun v accum ->
+            (Var v)::accum
+          ) (MTMap.find ty state.var_of_ty) []
+      else
+        [] in
     fun state arg_type ->
       match arg_type with
       | #Types.simple_type as s -> [Primitive (self#nondet_fn s)]
@@ -334,32 +348,20 @@ class rust_pp buf output_file_prefix num_tests = object(self)
       | `Str
       | `Vec _ -> failwith "stray dst type"
       | (`Ref (_,t') as t) ->
-        if MTMap.mem t state.var_of_ty then
-          build_var_choice state t
-        else
-          let vars = MTMap.find t' state.var_of_ty in
-          SSet.fold (fun v accum ->
-              (Var_ref v)::accum
-            ) vars []
+        (if is_trivial_type t then [] else
+           (build_var state t)) 
+        @ (List.map mk_ref @@ self#resolve_argument state t')
       | (`Ref_Mut (_,t') as t) ->
-        if MTMap.mem t state.var_of_ty then
-          build_var_choice state t
-        else
-          let vars = MTMap.find t' state.var_of_ty in
-          SSet.fold (fun v accum ->
-              (Var_mut_ref v)::accum
-            ) vars []
+        (if is_trivial_type t then [] else
+           (build_var state t))
+        @ (List.map mk_mref @@ self#resolve_argument state t')
       | (`Tuple tl as t) ->
-        if MTMap.mem t state.var_of_ty then
-          build_var_choice state t
-        else
-          let arg_insts = self#get_args state tl in
-          List.map (fun l ->
-              Tuple l
-            ) arg_insts
+        (if is_trivial_type t then [] else
+           (build_var state t)) @
+        List.map mk_tuple @@ self#get_args state tl
       | `Adt_type _
       | `Fixed_Vec _ ->
-        build_var_choice state arg_type
+        build_var state arg_type
 
   method private next_var = 
     let to_ret = "v" ^ (string_of_int var_counter) in
@@ -428,8 +430,12 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     match arg with
     | Primitive s -> self#put s
     | Var v -> self#put v
-    | Var_ref v -> self#put_all [ "&"; v ];
-    | Var_mut_ref v -> self#put_all [ "&mut "; v ]
+    | Ref v -> 
+      self#put_i "&";
+      self#emit_arg v
+    | Mut_Ref v -> 
+      self#put_i "&mut "; 
+      self#emit_arg v
     | Tuple tl -> begin
         self#put "(";
         self#put_many ", " self#emit_arg tl;
@@ -492,16 +498,16 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     List.fold_left (fun accum l ->
         match l with
         | Primitive _ -> accum
-        | Var v
-        | Var_ref v 
-        | Var_mut_ref v -> f v accum
+        | Var v -> f v accum
+        | Ref v -> self#walk_args f accum [v]
+        | Mut_Ref v -> self#walk_args f accum [v]
         | Tuple tl -> self#walk_args f accum tl
       ) accum m_list
 
   method private is_symmetric vc1 vc2 =
     let rec is_symmetric_loop sym_map s1 s2 =
       match s1,s2 with
-      | (h1::t1),(h2::t2) -> 
+      | ((p1,h1)::t1),((p2,h2)::t2) when p1 = p2 -> 
         if SMap.mem h1 sym_map then
           if (SMap.find h1 sym_map) = h2 then
             is_symmetric_loop sym_map t1 t2
@@ -510,13 +516,37 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         else
           is_symmetric_loop (SMap.add h1 h2 sym_map) t1 t2
       | [],[] -> true
-      | _,_ -> assert false
+      | _,_ -> false
     in
     is_symmetric_loop SMap.empty vc1 vc2
 
+  method private collect_args accum method_list = 
+    List.fold_left (self#collect_var []) accum method_list
+
+  method private collect_var path accum arg = 
+    match arg with
+    | Primitive _ -> accum
+    | Var s -> (path,s)::accum
+    | Ref m ->
+      self#collect_var (`Ref::path) accum m
+    | Mut_Ref m ->
+      self#collect_var (`Mut_Ref::path) accum m
+    | Tuple tl ->
+      List.fold_left (self#collect_var (`Tuple::path)) accum tl
+
+  method private build_var_choice accum cc = 
+    match cc with
+    | [] -> accum
+    | Open_Block (_,_,_,args)::t -> self#build_var_choice (self#collect_args accum args) t
+    | Null_Assert _::t
+    | Close_Block::t
+    | Copy_Action (_,_)::t
+    | Ptr_Assert (_,_,_)::t -> self#build_var_choice accum t
+            
+
   method private break_symmetry cc_seqs =
     let cc_vc = List.map (fun cc ->
-        cc,List.rev @@ self#walk_call_seq (fun v l -> v::l) [] cc
+        cc,self#build_var_choice [] cc
       ) cc_seqs in
     let rec break_loop l = match l with
       | [] -> []
@@ -561,9 +591,7 @@ let rec complex_drop ty = match ty with
   | `Ref_Mut _ 
   | `Ptr _
   | `Ptr_Mut _ -> true
-  | `Adt_type a -> true
-                  
-  
+  | `Adt_type a -> true  
 
 let filter_drop call_seq = 
   let (dropped_types,_) =
@@ -593,20 +621,135 @@ let gen_call =
     pp#emit_sequence call_seq
   end
 
-  
+let mut_analysis fn_set = 
+  let gen_funcs = Analysis.FISet.fold (fun fn_inst accum ->
+      let (_,ret_type) = memo_get_fn_types fn_inst in
+      if is_trivial_type ret_type then accum 
+      else if MTMap.mem ret_type accum then
+        MTMap.add ret_type (Analysis.FISet.add fn_inst @@ MTMap.find ret_type accum) accum
+      else
+        MTMap.add ret_type (Analysis.FISet.singleton fn_inst) accum
+    ) fn_set MTMap.empty in
+  let rec has_mut_ref = function
+    | `Ref_Mut _ -> true
+    | `Ref (_,t) -> has_mut_ref t
+    | #Types.simple_type -> false
+    | `Tuple tl -> List.exists has_mut_ref tl
+    | _ -> false
+  in
+  let mut_fn = Analysis.FISet.fold (fun fn_inst accum ->
+      let (arg_types,_) = memo_get_fn_types fn_inst in
+      if List.exists has_mut_ref arg_types then
+        Analysis.FISet.add fn_inst accum
+      else
+        accum
+    ) fn_set Analysis.FISet.empty in
+  let rec build_dep accum to_analyze = 
+    Analysis.FISet.fold (fun fn_inst mut_fn ->
+        if Analysis.FISet.mem fn_inst mut_fn then
+          mut_fn
+        else begin
+          let (arg_types,_) = memo_get_fn_types fn_inst in
+          (* builds the functions that generate the types used in this functions args *)
+          let gen_funcs = List.fold_left collect_gen Analysis.FISet.empty arg_types in
+          prerr_endline @@  "Found the following deps for " ^ TypeUtil.string_of_inst fn_inst;
+          Analysis.FISet.iter (fun f ->
+              prerr_endline @@ TypeUtil.string_of_inst f
+            ) gen_funcs;
+          (* their deps are also mutation fn *)
+          build_dep (Analysis.FISet.add fn_inst mut_fn) gen_funcs
+        end
+      ) to_analyze accum
+  and maybe_add ty accum = 
+    if MTMap.mem ty gen_funcs then
+      Analysis.FISet.union accum @@ MTMap.find ty gen_funcs
+    else
+      accum
+  and collect_gen accum ty = 
+    match ty with
+    | `Str
+    | `Vec _
+    | `Bottom
+    | #Types.simple_type -> accum
+    | `Fixed_Vec _ -> maybe_add ty accum
+    | `Ref_Mut (_,ty')
+    | `Ref (_,ty') -> maybe_add ty @@ collect_gen accum ty'
+    | `Ptr _
+    | `Ptr_Mut _ -> maybe_add ty accum
+    | `Adt_type _ -> maybe_add ty accum
+    | `Tuple tl ->
+      maybe_add ty @@ List.fold_left collect_gen accum tl
+  in
+  let mut_fn = build_dep Analysis.FISet.empty mut_fn in
+  (mut_fn,Analysis.FISet.diff fn_set mut_fn)
 
-(* this is a pretty rough heuristic.
- * TODO(jtoman): BMC based mutation checking
- *)
-let mut_analysis (fn_name,m_args) = 
-  let fn_def = Env.EnvMap.find Env.fn_env fn_name in
-  let t_binding = Types.type_binding fn_def.Ir.fn_tparams m_args in
-  List.exists (fun (_,t) ->
-      match TypeUtil.to_monomorph t_binding t with
-      | `Ref_Mut _ -> true
-      | `Ptr_Mut _ -> true
-      | _ -> false
-    ) fn_def.Ir.fn_args
+(*
+(* this does NOT handle recursion!!! *)
+
+let interesting_cache = Hashtbl.create 10;;
+
+let rec is_interesting (fn_name,m_args) = 
+  if Hashtbl.mem interesting_cache (fn_name,m_args) then
+    Hashtbl.find interesting_cache (fn_name,m_args)
+  else if Intrinsics.is_intrinsic_fn fn_name then
+    true
+  else if Intrinsics.is_crust_intrinsic fn_name then
+    false
+  else if fn_name = "drop_glue" then false
+  else begin
+    let fn_def = Env.EnvMap.find Env.fn_env fn_name in
+    let t_bindings = Types.type_binding fn_def.Ir.fn_tparams m_args in
+    let ret = find_interesting_expr t_bindings fn_def.Ir.fn_body in
+    Hashtbl.add interesting_cache (fn_name,m_args) ret;
+    ret
+  end
+and find_interesting_expr t_bindings (_,expr) = 
+  match expr with
+  (* terminal nodes *)
+  | `Literal _
+  | `Var _ -> false
+  | `Unsafe (_,_) -> true
+  (* single nodes *)
+  | `Struct_Field (e,_)
+  | `Deref e
+  | `Address_of e
+  | `Return e
+  | `Cast e
+  | `UnOp (_,e) -> find_interesting_expr t_bindings e
+  (* list nodes *)
+  | `Enum_Literal (_,_,el)
+  | `Vec el
+  | `Tuple el -> List.exists (find_interesting_expr t_bindings) el
+  (* struct lit *)
+  | `Struct_Literal sl ->
+    List.exists (fun (_,e) -> find_interesting_expr t_bindings e) sl
+  (* binary ops *)
+  | `BinOp (_,e1,e2)
+  | `While (e1,e2)
+  | `Assignment (e1,e2)
+  | `Assign_Op (_,e1,e2) -> List.exists (find_interesting_expr t_bindings) [e1;e2]
+  (* complex ops *)
+  | `Block (s,e1) -> 
+    List.exists (function 
+        | `Let (_,_,Some e1) -> find_interesting_expr t_bindings e1
+        | `Let (_,_,None) -> false
+        | `Expr e -> find_interesting_expr t_bindings e
+      ) s ||
+    find_interesting_expr t_bindings e1
+  | `Match (e,m_e) ->
+    find_interesting_expr t_bindings e ||
+    List.exists (fun (_,e) -> find_interesting_expr t_bindings e) m_e
+  | `Call (fn_name,_,t_list,el) ->
+    List.exists (find_interesting_expr t_bindings) el ||
+    let arg_types = List.map (fun (ty,_) -> TypeUtil.to_monomorph t_bindings ty) el in
+    let m_args = List.map (TypeUtil.to_monomorph t_bindings) t_list in
+    check_fn_interesting fn_name m_args arg_types
+and check_fn_interesting fn_name (m_args : Types.mono_type list) arg_types = 
+  if Env.is_abstract_fn fn_name then
+    let (m_args,fn_name) = Analysis.resolve_abstract_fn fn_name m_args arg_types in
+    is_interesting (fn_name,m_args)
+  else
+    is_interesting (fn_name,m_args)*)
 
 let valid_extend state api_action = 
   match api_action with
@@ -633,10 +776,8 @@ let valid_extend state api_action =
     | `Inst _ -> Some { t_list = ret_type::state.t_list; public_types = MTSet.add ret_type state.public_types }
 
 let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f = 
-  (*prerr_endline @@ "Exploring: " ^ (string_of_int index) ^ " (depth: " ^ (string_of_int seq_len) ^ ")";*)
   if seq_len = !mut_action_len then
     ()
-(* do_gen_immut const_fn_set 0 state 0 path f*)
   else if index = (Array.length mut_fn_set) then
     ()
   else begin
@@ -667,7 +808,7 @@ let gen_call_seq pp fi_set =
     if !no_mut_analysis then
       (fi_set,Analysis.FISet.empty)
     else
-      Analysis.FISet.partition mut_analysis fi_set
+      mut_analysis fi_set
   in
   let fn_action_of_set s = List.map (fun (f,m) -> Fn (f,m)) @@ Analysis.FISet.elements s in
   let mut_fn_arr = Array.of_list @@ Drop::Copy::(fn_action_of_set mut_fn_set) in

@@ -244,7 +244,7 @@ class type_matcher fuzzy_ref = object(self)
     in
     let bindings = 
       if state#synth_types then
-        let set_match_state = new set_match_state fuzzy_ref false t_set in
+        let set_match_state = new set_match_state fuzzy_ref state#synth_types t_set in
         match self#match_type set_match_state t_binding t with
         | `Mismatch -> bindings
         | `Match -> [] :: bindings
@@ -456,3 +456,14 @@ let string_of_inst (n,a) =
   match a with
   | [] -> n
   | _ -> n ^ "<" ^ (String.concat ", " @@ List.map Types.pp_t (a : Types.mono_type list :> Types.r_type list)) ^ ">"
+
+let pp_inst : type_inst -> string = function
+  | `Tuple,m_args -> "TUPLE[" ^ (String.concat "," @@ List.map Types.pp_t (m_args : Types.mono_type list :> Types.r_type list)) ^ "]"
+  | `Adt n,m_args -> 
+    string_of_inst (n,m_args)
+  | `Fixed_Vec n,[m_arg] ->
+    (Types.pp_t (m_arg : Types.mono_type :> Types.r_type)) ^ "[" ^ (string_of_int n) ^ "]"
+  | `String mut,_ -> (if mut then "mut" else "const") ^ " STRING"
+  | `Vec mut,[m_arg] -> 
+    (if mut then "mut" else "const") ^ " VEC[" ^ (Types.pp_t (m_arg : Types.mono_type :> Types.r_type)) ^ "]"
+  | _ -> assert false

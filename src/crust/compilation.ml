@@ -110,7 +110,7 @@ let rec c_type_of_monomorph mono_type =
        if mut then
          `Tuple [`Ptr_Mut (c_type_of_monomorph t); slice_len_type]
        else
-         `Tuple [`Ptr_Mut (c_type_of_monomorph t); slice_len_type]
+         `Tuple [`Ptr (c_type_of_monomorph t); slice_len_type]
     )
     (fun mut ->
        if mut then
@@ -732,7 +732,7 @@ let build_static_deps =
         SMap.add s_name (dep_of_static s_name) accum
       ) static_set SMap.empty
 
-module TopoSort(M : Map.S)(S: Set.S with type elt = M.key) = struct
+module TopoSort(M : Map.S)(S: Set.S with type elt = M.key)(P: sig val pp : S.elt -> string end) = struct
   let rec topo_sort dep_map accum = 
     let (dep_met,has_dep) = M.partition (fun _ deps ->
         S.is_empty deps
@@ -742,7 +742,11 @@ module TopoSort(M : Map.S)(S: Set.S with type elt = M.key) = struct
        M.cardinal has_dep = 0 then
       List.rev accum
     else if M.cardinal dep_met = 0 then
-      failwith "dependency cycle!"
+      let cycle_deps = M.fold (fun k deps accum ->
+          let p = Printf.sprintf "%s -> (%s)" (P.pp k) @@ String.concat ", " @@ List.map P.pp @@ S.elements deps in
+          p::accum
+        ) has_dep [] in
+      failwith @@ "dependency cycle! -> { " ^ (String.concat ", " cycle_deps) ^ " }"
     else begin
       let (accum,dep_met_s) = M.fold (fun key _ (accum,dms) ->
         key::accum,S.add key dms
@@ -752,10 +756,14 @@ module TopoSort(M : Map.S)(S: Set.S with type elt = M.key) = struct
     end
 end
 
-module STopo = TopoSort(SMap)(SSet)
+module STopo = TopoSort(SMap)(SSet)(struct let pp x = x end)
 let stopo_sort = STopo.topo_sort
 
-module TTopo = TopoSort(CIMap)(CISet)
+module CIpp = struct
+  let pp tx = TypeUtil.pp_inst (tx : c_inst_flag * (c_types list) :> TypeUtil.type_inst)
+end
+
+module TTopo = TopoSort(CIMap)(CISet)(CIpp)
 let topo_sort = TTopo.topo_sort
 
 let order_types t_list =

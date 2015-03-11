@@ -114,12 +114,13 @@ let rec type_contains_loop src_types = function
   | `Str as t -> TySet.mem t src_types
 
 let rec type_contains src_types target  = 
+  type_contains_loop src_types target (*
   match target with
   | `Adt_type { Types.type_param = tl; _ }
   | `Tuple tl -> 
     let contains = List.map (type_contains_loop src_types) tl in
     List.exists (fun x -> x) contains
-  | _ -> false
+  | _ -> false*)
 
 let rec extract_ref_types accum ty = 
   match ty with
@@ -174,8 +175,7 @@ let resolve_abstract_fn =
   in
   let mk_targs tb1 tb2 t_param = 
     if List.mem_assoc t_param tb1 then
-      let ty = List.assoc t_param tb1 in
-      if List.mem_assoc t_param tb2 then ((assert ((List.assoc t_param tb2) = ty)); ty) else ty
+      List.assoc t_param tb1
     else if List.mem_assoc t_param tb2 then
       List.assoc t_param tb2
     else `Bottom (* awful *)
@@ -471,7 +471,7 @@ let build_nopub_fn () =
       match snd fn_def.Ir.fn_body with
       | `Unsafe _ -> SSet.add fn_name accum
       | _ -> begin
-          match fn_def.Ir.fn_args with
+          let accum = match fn_def.Ir.fn_args with
           | ("self",t)::_ -> begin
               match t with
               | `Ref (_,`Adt_type a)
@@ -481,6 +481,16 @@ let build_nopub_fn () =
               | _ -> accum
             end
           | _ -> accum
+          in
+          if List.exists (fun (_,ty) ->
+              match ty with
+              | `Ptr_Mut _
+              | `Ptr _ -> true
+              | _ -> false
+            ) fn_def.Ir.fn_args then
+            SSet.add fn_def.Ir.fn_name accum
+          else
+            accum
         end
     ) Env.fn_env @@ SSet.singleton "crust_abort"
 

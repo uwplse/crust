@@ -14,15 +14,28 @@ cbmc_binary = None
 unwind_bound = None
 include_dir = None
 use_z3 = False
+timeout = 120
+
+SUCC = 0
+FAIL = 1
+TIMEOUT = 2
 
 def run_test_case(test_file, test_case_name):
     dev_null = open("/dev/null", "w")
-    ret_code = subprocess.call([ cbmc_binary, "--pointer-check", "--bounds-check",
-                                 "-I", include_dir, "--unwind", unwind_bound, "--slice-formula" ] +
-                               (["--z3"] if use_z3 else []) +
-                               ["--function", test_case_name, test_file],
-                               stdout = dev_null, stderr = subprocess.STDOUT)
-    return ret_code
+    command = [ cbmc_binary, "--pointer-check", "--bounds-check",
+                '--unwind', unwind_bound] + \
+                [ "-I", include_dir, "--slice-formula" ] + \
+        (["--z3"] if use_z3 else []) + \
+        ["--function", test_case_name, test_file]
+    child_proc = subprocess.Popen(command, stdout = dev_null, stderr = subprocess.STDOUT)
+    start = time.time()
+    now = time.time()
+    while (now - start) < timeout:
+        if child_proc.poll() is not None:
+            return SUCC if child_proc.returncode == 0 else FAIL
+        now = time.time()
+    child_proc.kill() # KILL DASH 9
+    return TIMEOUT
 
 
 def worker_thread(control_pipe, notify_queue, work_queue):
@@ -52,9 +65,11 @@ def _worker_thread(control_pipe, notify_queue, work_queue):
             notify_queue.put(("error", multiprocessing.current_process().pid,e,multiprocessing.current_process().name))
             return False
 
-        if result != 0:
+        if result == FAIL:
             notify_queue.put(('fail', multiprocessing.current_process().pid,work,multiprocessing.current_process().name))
             return False
+        elif result == TIMEOUT:
+            notify_queue.put(('timeout', multiprocessing.current_process().pid,work,multiprocessing.current_process().name))
 
 def run_master():
     this_dir = os.path.dirname(sys.argv[0])
@@ -64,6 +79,7 @@ def run_master():
     parser.add_argument("-I", dest="include_dir", action="store", default=os.path.join(os.path.join(this_dir, ".."), "src"))
     parser.add_argument("--unwind", action="store", type = int)
     parser.add_argument("--z3", action="store_true")
+    parser.add_argument("--timeout", action="store", type = int)
     parser.add_argument("test_names", action="store", nargs = "?")
 
     opts = parser.parse_args()
@@ -71,11 +87,13 @@ def run_master():
     global unwind_bound
     global include_dir
     global use_z3
+    global timeout
 
     cbmc_binary = opts.cbmc
     unwind_bound = str(opts.unwind)
     include_dir = opts.include_dir
     use_z3 = opts.z3
+    timeout = opts.timeout
     
     test_names = []
     def slurp_tests(f):
@@ -135,16 +153,20 @@ def run_master():
             continue
         if msg[1] not in p_map:
             continue
+        if msg[0] == "timeout":
+            print "Test case " + str(msg[2]) + " timeout"
+            continue
         (proc,_) = p_map[msg[1]]
         proc.join()
         del p_map[msg[1]]
         if msg[0] == 'quit' or msg[0] == 'done':
-            continue
+            pass
         elif msg[0] == 'error':
             print "Error while executing tests " + str(msg[2])
+            cleanup_procs()
         elif msg[0] == 'fail':
             print "Test case " + str(msg[2]) + " failed!"
-        cleanup_procs()
+            cleanup_procs()
 
 
 if __name__ == '__main__':
