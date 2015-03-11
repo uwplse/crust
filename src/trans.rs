@@ -1041,6 +1041,15 @@ impl Trans for ty::DtorKind {
     }
 }
 
+impl Trans for Visibility {
+    fn trans(&self, trcx: &mut TransCtxt) -> String {
+        match *self {
+            Public => format!("pub"),
+            Inherited => format!("priv"),
+        }
+    }
+}
+
 impl Trans for VariantArg {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         self.ty.trans(trcx)
@@ -1116,7 +1125,8 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 if filter_fn.contains(&mangled_name) {
                     format!("")
                 } else {
-                    format!("fn {} {} {} 0 body {} {} {{\n{}\t{}\n}}\n\n",
+                    format!("fn {} {} {} {} 0 body {} {} {{\n{}\t{}\n}}\n\n",
+                            self.vis.trans(trcx),
                             mangled_name,
                             generics.trans_extra(trcx, FnSpace),
                             decl.trans(trcx),
@@ -1470,7 +1480,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
     let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics, is_default);
 
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
-    format!("fn {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+    format!("fn pub {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
             mangled_name,
             if is_default { "$$__default" } else { "" },
             lifetimes.trans(trcx),
