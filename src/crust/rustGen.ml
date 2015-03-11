@@ -684,63 +684,6 @@ let mut_analysis fn_set =
   (mut_fn,Analysis.FISet.diff fn_set mut_fn)
 
 (*
-type mut_state = {
-  immut_set : Analysis.FISet.t;
-  mut_set : Analysis.FISet.t;
-  move_set : Analysis.FISet.t;
-  mut_self_types: TypeUtil.MTSet.t;
-  move_yield : Analysis.FISet.t MTMap.t
-}
-
-let mut_analysis fn_set = 
-  let state = Analysis.FISet.fold (fun ((fn_name,m_args) as f_inst) state ->
-      let fn_def = Env.EnvMap.find Env.fn_env fn_name in
-      match fn_def.Ir.fn_args with
-      | ("self",_)::_ -> begin
-          let (arg_types,ret_type) = memo_get_fn_types (fn_name,m_args) in
-          match arg_types with
-          | `Ref t::_ -> 
-            { state with immut_set = Analysis.FISet.add f_inst state.immut_set }
-          | `Ref_Mut (_,t)::_ ->
-            { state with
-              mut_set = Analysis.FISet.add f_inst state.mut_set;
-              mut_self_types = TypeUtil.MTSet.add t state.mut_self_types
-            }
-          (* move (probably?) *)
-          | t::_ ->
-            let yielding_set = if MTMap.mem ret_type state.move_yield then
-                MTMap.find ret_type state.move_yield
-              else
-                Analysis.FISet.empty
-            in
-            let yielding_set = Analysis.FISet.add f_inst yielding_set in
-            { state with
-              move_set = Analysis.FISet.add f_inst state.move_set;
-              move_yield = MTMap.add ret_type yielding_set state.move_yield
-            }
-          | [] -> assert false
-        end
-      | _ -> 
-        (* conservatively assume mutation *)
-        { state with mut_set = Analysis.FISet.add f_inst state.mut_set }
-    ) fn_set {
-      immut_set = Analysis.FISet.empty;
-      mut_set = Analysis.FISet.empty;
-      move_set = Analysis.FISet.empty;
-      mut_self_types = TypeUtil.MTSet.empty;
-      move_yield = MTMap.empty
-    }
-  in
-  let yield_mutation = TypeUtil.MTSet.fold (fun ty accum ->
-      if MTMap.mem ty state.move_yield then
-        Analysis.FISet.union accum @@ MTMap.find ty state.move_yield
-      else
-        accum
-    ) state.mut_self_types Analysis.FISet.empty in
-  let move_immut = Analysis.FISet.diff state.move_set yield_mutation in
-  (Analysis.FISet.union state.mut_set yield_mutation,
-   Analysis.FISet.union state.immut_set move_immut)
-
 (* this does NOT handle recursion!!! *)
 
 let interesting_cache = Hashtbl.create 10;;
@@ -806,47 +749,7 @@ and check_fn_interesting fn_name (m_args : Types.mono_type list) arg_types =
     let (m_args,fn_name) = Analysis.resolve_abstract_fn fn_name m_args arg_types in
     is_interesting (fn_name,m_args)
   else
-    is_interesting (fn_name,m_args)
-
-(* this computes the set of types that cannot be synthesized *)
-let rec complex_types accum t = match t with
-  | `Bottom -> accum
-  | #Types.simple_type -> accum
-  | `Ref (_,`Vec _)
-  | `Ref_Mut (_,`Vec _)
-  | `Ref (_,`Str)
-  | `Ref_Mut (_,`Str) ->
-    TypeUtil.MTSet.add t accum
-  | `Ref_Mut (_,t)
-  | `Ref (_,t) -> complex_types accum t
-  (* what are we going to do with pointers??? *)
-  | `Ptr_Mut t
-  | `Ptr t -> TypeUtil.MTSet.add t accum
-  | `Fixed_Vec _ -> TypeUtil.MTSet.add t accum
-  | `Tuple tl ->
-    List.fold_left complex_types accum tl
-  | `Str
-  | `Vec _ -> raise TypeUtil.StrayDST
-  | `Adt_type _ -> TypeUtil.MTSet.add t accum
-                   *)
-(* this is a pretty rough heuristic.
- * TODO(jtoman): BMC based mutation checking
- *)
-
-(*let mut_analysis (fn_name,m_args) = 
-  let fn_def = Env.EnvMap.find Env.fn_env fn_name in
-  let t_binding = Types.type_binding fn_def.Ir.fn_tparams m_args in
-  List.exists (fun (_,t) ->
-      match TypeUtil.to_monomorph t_binding t with
-      | `Ref _ -> false
-      | _ -> true
-    ) fn_def.Ir.fn_args ||
-  (let ret_type = TypeUtil.to_monomorph (Types.type_binding fn_def.Ir.fn_tparams m_args) fn_def.Ir.ret_type in
-   match ret_type with
-   | `Adt_type _ -> true
-   | _ -> false
-  )
-*)
+    is_interesting (fn_name,m_args)*)
 
 let valid_extend state api_action = 
   match api_action with
