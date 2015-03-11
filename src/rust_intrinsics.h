@@ -135,6 +135,6 @@
 	if(ui_a > UINT##width##_MAX / ui_b) {								\
 	  __crust_unsigned_fail(width);										\
 	} else {															\
-	  __crust_unsigned_success(width, (ui_a + ui_b));					\
+	  __crust_unsigned_success(width, (ui_a * ui_b));					\
 	}																	\
   }
