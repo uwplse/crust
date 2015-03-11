@@ -244,7 +244,7 @@ class type_matcher fuzzy_ref = object(self)
     in
     let bindings = 
       if state#synth_types then
-        let set_match_state = new set_match_state fuzzy_ref false t_set in
+        let set_match_state = new set_match_state fuzzy_ref state#synth_types t_set in
         match self#match_type set_match_state t_binding t with
         | `Mismatch -> bindings
         | `Match -> [] :: bindings
