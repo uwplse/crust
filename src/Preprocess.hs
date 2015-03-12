@@ -92,7 +92,9 @@ main = do
                 "add-cleanup",
                 "rename-locals",
                 "filter-extern-fns",
-                "generate-drop-glues"
+                "generate-drop-glues",
+                "cleanup-drops",
+                "cleanup-temps"
                 ]
         let items' = foldl (flip runPass) items passes
         putStrLn $ concatMap pp items'
@@ -116,10 +118,56 @@ runPass "filter-extern-fns" = filter (not . isExternFn)
 runPass "generate-drop-glues" = generateDropGlues
 runPass "lift-strings" = liftStrings
 runPass "generate-default-methods" = \is -> generateDefaultMethods (mkIndex is) is
+runPass "cleanup-drops" = cleanupDrops
+runPass "cleanup-temps" = cleanupTemps
 runPass "scrub" = scrub
 runPass "dump" = dumpIr "dump"
 runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runPass "id" = id
+
+cleanupDrops = everywhere (mkT cleanupDropT)
+  where
+    cleanupDropT (IFn (FnDef v n l t arg ret impl e)) =
+      IFn (FnDef v n l t arg ret impl (walkDef e))
+    cleanupDropT e = e
+
+    walkDef = everywhere (mkT scrubDropStmt)
+    scrubDropStmt (EBlock s e) =
+      EBlock (filter (not . isUselessDrop) s) e
+    scrubDropStmt e = e
+
+    isUselessDrop (SExpr (Expr _ (ECall "drop_glue" _ [drop_ty] _))) = isDroplessType drop_ty
+    isUselessDrop _ = False
+
+    isDroplessType (TInt _) = True
+    isDroplessType (TUint _) = True
+    isDroplessType TUnit = True
+    isDroplessType TBool = True
+    isDroplessType (TPtr _ _) = True
+    isDroplessType (TRef _ _ _) = True
+    isDroplessType (TFloat _) = True
+    isDroplessType TChar = True
+    isDroplessType _ = False
+
+cleanupTemps = everywhere (mkT cleanupTempT)
+  where
+    getUsedVars = everything S.union (S.empty `mkQ` collectUsedVars)
+    collectUsedVars (EVar s) = S.singleton s
+    collectUsedVars _ = S.empty
+    
+    cleanupTempT (IFn (FnDef v n l t arg ret impl e)) =
+      let usedVars = getUsedVars e in
+      let new_e = everywhere (mkT (scrubUselessAssign usedVars)) e in
+      (IFn (FnDef v n l t arg ret impl new_e))
+    cleanupTempT i = i
+
+    scrubUselessAssign usedVar (EBlock s e) =
+      EBlock (map (transAssign usedVar) s) e
+    scrubUselessAssign usedVar e = e
+    transAssign usedVars (SLet (Pattern _ (PVar v)) (Just e))
+      | "lifttemp" `isPrefixOf` v && not (v `S.member` usedVars) =
+          SExpr e
+    transAssign _ s = s
 
 fixBool = everywhere (mkT fixBoolLitExpr `extT` fixBoolLitPat)
   where
