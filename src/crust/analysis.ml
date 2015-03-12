@@ -466,33 +466,44 @@ let rec find_fn find_state =
   else
     find_fn find_state
 
-let build_nopub_fn () = 
-  Env.EnvMap.fold (fun fn_name fn_def accum ->
-      match snd fn_def.Ir.fn_body with
-      | `Unsafe _ -> SSet.add fn_name accum
-      | _ -> begin
-          let accum = match fn_def.Ir.fn_args with
-          | ("self",t)::_ -> begin
-              match t with
-              | `Ref (_,`Adt_type a)
-              | `Ref_Mut (_,`Adt_type a)
-              | `Adt_type a when SSet.mem a.Types.type_name !type_filters ->
-                SSet.add fn_def.Ir.fn_name accum
-              | _ -> accum
-            end
-          | _ -> accum
-          in
-          if List.exists (fun (_,ty) ->
-              match ty with
-              | `Ptr_Mut _
-              | `Ptr _ -> true
-              | _ -> false
-            ) fn_def.Ir.fn_args then
-            SSet.add fn_def.Ir.fn_name accum
-          else
-            accum
-        end
-    ) Env.fn_env @@ SSet.singleton "crust_abort"
+let build_nopub_fn =
+  let is_restrict_fn fn_def = 
+    match fn_def.Ir.fn_args with
+    | ("self",t)::_ -> begin
+        match t with
+        | `Ref (_,`Adt_type a)
+        | `Ref_Mut (_,`Adt_type a)
+        | `Adt_type a when SSet.mem a.Types.type_name !type_filters ->
+          true
+        | _ -> false
+      end
+    | _ -> false
+  in
+  let is_private_fn fn_def = 
+    match fn_def.fn_vis with
+    | `Private -> true
+    | `Public -> false
+  in
+  let is_drop_fn fn_def =
+    match fn_def.Ir.fn_impl with
+    | Some { Ir.abstract_name = "core$ops$Drop$drop"; _ } -> true
+    | _ -> false
+  in
+  let is_unsafe_fn fn_def = 
+    match snd fn_def.Ir.fn_body with
+    | `Unsafe _ -> true
+    | _ -> false
+  in
+  fun () ->
+    Env.EnvMap.fold (fun fn_name fn_def accum ->
+        if is_restrict_fn fn_def ||
+           is_private_fn fn_def ||
+           is_drop_fn fn_def ||
+           is_unsafe_fn fn_def then
+          SSet.add fn_name accum
+        else
+          accum
+      ) Env.fn_env @@ SSet.singleton "crust_abort"
 
 let run_analysis () = 
   let constructor_fn = find_constructors () |> (match Env.crust_init_name () with
