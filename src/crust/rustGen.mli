@@ -5,3 +5,4 @@ val no_mut_analysis : bool ref
 val mut_action_len : int ref
 val immut_action_len : int ref
 val assume_ident_init : bool ref
+val infer_api_only : bool ref

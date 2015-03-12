@@ -621,46 +621,18 @@ let gen_call =
     pp#emit_sequence call_seq
   end
 
-let mut_analysis fn_set = 
-  let gen_funcs = Analysis.FISet.fold (fun fn_inst accum ->
+let compute_gen fn_set = 
+  Analysis.FISet.fold (fun fn_inst accum ->
       let (_,ret_type) = memo_get_fn_types fn_inst in
       if is_trivial_type ret_type then accum 
       else if MTMap.mem ret_type accum then
         MTMap.add ret_type (Analysis.FISet.add fn_inst @@ MTMap.find ret_type accum) accum
       else
         MTMap.add ret_type (Analysis.FISet.singleton fn_inst) accum
-    ) fn_set MTMap.empty in
-  let rec has_mut_ref = function
-    | `Ref_Mut _ -> true
-    | `Ref (_,t) -> has_mut_ref t
-    | #Types.simple_type -> false
-    | `Tuple tl -> List.exists has_mut_ref tl
-    | _ -> false
-  in
-  let mut_fn = Analysis.FISet.fold (fun fn_inst accum ->
-      let (arg_types,_) = memo_get_fn_types fn_inst in
-      if List.exists has_mut_ref arg_types then
-        Analysis.FISet.add fn_inst accum
-      else
-        accum
-    ) fn_set Analysis.FISet.empty in
-  let rec build_dep accum to_analyze = 
-    Analysis.FISet.fold (fun fn_inst mut_fn ->
-        if Analysis.FISet.mem fn_inst mut_fn then
-          mut_fn
-        else begin
-          let (arg_types,_) = memo_get_fn_types fn_inst in
-          (* builds the functions that generate the types used in this functions args *)
-          let gen_funcs = List.fold_left collect_gen Analysis.FISet.empty arg_types in
-          prerr_endline @@  "Found the following deps for " ^ TypeUtil.string_of_inst fn_inst;
-          Analysis.FISet.iter (fun f ->
-              prerr_endline @@ TypeUtil.string_of_inst f
-            ) gen_funcs;
-          (* their deps are also mutation fn *)
-          build_dep (Analysis.FISet.add fn_inst mut_fn) gen_funcs
-        end
-      ) to_analyze accum
-  and maybe_add ty accum = 
+    ) fn_set MTMap.empty
+
+let rec find_deps gen_funcs fn_inst = 
+  let rec maybe_add ty accum = 
     if MTMap.mem ty gen_funcs then
       Analysis.FISet.union accum @@ MTMap.find ty gen_funcs
     else
@@ -680,76 +652,122 @@ let mut_analysis fn_set =
     | `Tuple tl ->
       maybe_add ty @@ List.fold_left collect_gen accum tl
   in
-  let mut_fn = build_dep Analysis.FISet.empty mut_fn in
+  let (arg_types,_) = memo_get_fn_types fn_inst in
+  List.fold_left collect_gen Analysis.FISet.empty arg_types
+
+let rec build_deps gen_funcs to_analyze = 
+  let rec build_deps_aux accum to_analyze = 
+    Analysis.FISet.fold (fun fn_inst accum ->
+        if Analysis.FISet.mem fn_inst accum then
+          accum
+        else begin
+          (* builds the functions that generate the types used in this functions args *)
+          let dep_fun = find_deps gen_funcs fn_inst in
+          (* pull in their deps too *)
+          build_deps_aux (Analysis.FISet.add fn_inst accum) dep_fun
+        end
+      ) accum to_analyze
+  in 
+  build_deps_aux Analysis.FISet.empty to_analyze
+
+let rec filter_interesting = 
+  let mem_interesting = Hashtbl.create 100 in
+  let rec is_interesting pub_set fn_inst = 
+    if Hashtbl.mem mem_interesting fn_inst then
+      Hashtbl.find mem_interesting fn_inst
+    else begin
+      let (fn_name,m_args) = fn_inst in
+      let fn_def = Env.EnvMap.find Env.fn_env fn_name in
+      let t_bindings = Types.type_binding fn_def.Ir.fn_tparams m_args in
+      let has_unsafe = find_interesting_expr pub_set t_bindings fn_def.Ir.fn_body in
+      Hashtbl.add mem_interesting fn_inst has_unsafe;
+      has_unsafe
+    end
+  (* you must be thinking: there is no way this works... but it DOES *)
+  and is_abort_block = function
+    | ([`Let (s,`Unit,Some (`Unit,(`Call ("core$intrinsics$abort",[],[],[]))))],
+       (`Unit,`Var s')) when s = s' -> true
+    | _ -> false
+  and find_interesting_expr pub_set t_bindings (_,expr) = 
+    match expr with
+    (* terminal nodes *)
+    | `Literal _
+    | `Var _ -> false
+    | `Unsafe (s,e) -> not @@ is_abort_block (s,e)
+    (* single nodes *)
+    | `Struct_Field (e,_)
+    | `Deref e
+    | `Address_of e
+    | `Return e
+    | `Cast e
+    | `UnOp (_,e) -> find_interesting_expr pub_set t_bindings e
+    (* list nodes *)
+    | `Enum_Literal (_,_,el)
+    | `Vec el
+    | `Tuple el -> List.exists (find_interesting_expr pub_set t_bindings) el
+    (* struct lit *)
+    | `Struct_Literal sl ->
+      List.exists (fun (_,e) -> find_interesting_expr pub_set t_bindings e) sl
+    (* binary ops *)
+    | `BinOp (_,e1,e2)
+    | `While (e1,e2)
+    | `Assignment (e1,e2)
+    | `Assign_Op (_,e1,e2) -> List.exists (find_interesting_expr pub_set t_bindings) [e1;e2]
+    (* complex ops *)
+    | `Block (s,e1) -> 
+      List.exists (function 
+          | `Let (_,_,Some e1) -> find_interesting_expr pub_set t_bindings e1
+          | `Let (_,_,None) -> false
+          | `Expr e -> find_interesting_expr pub_set t_bindings e
+        ) s ||
+      find_interesting_expr pub_set t_bindings e1
+    | `Match (e,m_e) ->
+      find_interesting_expr pub_set t_bindings e ||
+      List.exists (fun (_,e) -> find_interesting_expr pub_set t_bindings e) m_e
+    | `Call (fn_name,_,t_list,el) ->
+      List.exists (find_interesting_expr pub_set t_bindings) el ||
+      if Intrinsics.is_crust_intrinsic fn_name ||
+         Intrinsics.is_intrinsic_fn fn_name ||
+         fn_name = "drop_glue" then
+        false
+      else
+        let arg_types = List.map (fun (ty,_) -> TypeUtil.to_monomorph t_bindings ty) el in
+        let m_args = List.map (TypeUtil.to_monomorph t_bindings) t_list in
+        let call_inst = 
+          if Env.is_abstract_fn fn_name then
+            let (res_args,res_name) = Analysis.resolve_abstract_fn fn_name m_args arg_types in
+            (res_name,res_args)
+          else
+            (fn_name,m_args)
+        in
+        (* it doesn't matter if the function we call is interesting if it's in the public API *)
+        if Analysis.FISet.mem call_inst pub_set then false else
+          is_interesting pub_set call_inst 
+  in
+  fun gen_func fn_set ->
+    let interesting_fn = Analysis.FISet.filter (fun fi ->
+        is_interesting fn_set fi
+      ) fn_set in
+    (* now collect the dependency functions for our interesting functions *)
+    build_deps gen_func interesting_fn
+
+let mut_analysis gen_funcs fn_set = 
+  let rec has_mut_ref = function
+    | `Ref_Mut _ -> true
+    | `Ref (_,t) -> has_mut_ref t
+    | #Types.simple_type -> false
+    | `Tuple tl -> List.exists has_mut_ref tl
+    | _ -> false
+  in
+  let mut_fn = Analysis.FISet.fold (fun fn_inst accum ->
+      let (arg_types,_) = memo_get_fn_types fn_inst in
+      if List.exists has_mut_ref arg_types then
+        Analysis.FISet.add fn_inst accum
+      else
+        accum
+    ) fn_set Analysis.FISet.empty in
+  let mut_fn = build_deps gen_funcs mut_fn in
   (mut_fn,Analysis.FISet.diff fn_set mut_fn)
-
-(*
-(* this does NOT handle recursion!!! *)
-
-let interesting_cache = Hashtbl.create 10;;
-
-let rec is_interesting (fn_name,m_args) = 
-  if Hashtbl.mem interesting_cache (fn_name,m_args) then
-    Hashtbl.find interesting_cache (fn_name,m_args)
-  else if Intrinsics.is_intrinsic_fn fn_name then
-    true
-  else if Intrinsics.is_crust_intrinsic fn_name then
-    false
-  else if fn_name = "drop_glue" then false
-  else begin
-    let fn_def = Env.EnvMap.find Env.fn_env fn_name in
-    let t_bindings = Types.type_binding fn_def.Ir.fn_tparams m_args in
-    let ret = find_interesting_expr t_bindings fn_def.Ir.fn_body in
-    Hashtbl.add interesting_cache (fn_name,m_args) ret;
-    ret
-  end
-and find_interesting_expr t_bindings (_,expr) = 
-  match expr with
-  (* terminal nodes *)
-  | `Literal _
-  | `Var _ -> false
-  | `Unsafe (_,_) -> true
-  (* single nodes *)
-  | `Struct_Field (e,_)
-  | `Deref e
-  | `Address_of e
-  | `Return e
-  | `Cast e
-  | `UnOp (_,e) -> find_interesting_expr t_bindings e
-  (* list nodes *)
-  | `Enum_Literal (_,_,el)
-  | `Vec el
-  | `Tuple el -> List.exists (find_interesting_expr t_bindings) el
-  (* struct lit *)
-  | `Struct_Literal sl ->
-    List.exists (fun (_,e) -> find_interesting_expr t_bindings e) sl
-  (* binary ops *)
-  | `BinOp (_,e1,e2)
-  | `While (e1,e2)
-  | `Assignment (e1,e2)
-  | `Assign_Op (_,e1,e2) -> List.exists (find_interesting_expr t_bindings) [e1;e2]
-  (* complex ops *)
-  | `Block (s,e1) -> 
-    List.exists (function 
-        | `Let (_,_,Some e1) -> find_interesting_expr t_bindings e1
-        | `Let (_,_,None) -> false
-        | `Expr e -> find_interesting_expr t_bindings e
-      ) s ||
-    find_interesting_expr t_bindings e1
-  | `Match (e,m_e) ->
-    find_interesting_expr t_bindings e ||
-    List.exists (fun (_,e) -> find_interesting_expr t_bindings e) m_e
-  | `Call (fn_name,_,t_list,el) ->
-    List.exists (find_interesting_expr t_bindings) el ||
-    let arg_types = List.map (fun (ty,_) -> TypeUtil.to_monomorph t_bindings ty) el in
-    let m_args = List.map (TypeUtil.to_monomorph t_bindings) t_list in
-    check_fn_interesting fn_name m_args arg_types
-and check_fn_interesting fn_name (m_args : Types.mono_type list) arg_types = 
-  if Env.is_abstract_fn fn_name then
-    let (m_args,fn_name) = Analysis.resolve_abstract_fn fn_name m_args arg_types in
-    is_interesting (fn_name,m_args)
-  else
-    is_interesting (fn_name,m_args)*)
 
 let valid_extend state api_action = 
   match api_action with
@@ -803,27 +821,39 @@ and do_gen_immut const_fn_set seq_len state index path f =
     do_gen_immut const_fn_set (succ seq_len) state (succ index) path f
   end
 
+let is_fn_pub fn_name = 
+  let x = Env.EnvMap.find Env.fn_env fn_name in
+  match x.Ir.fn_vis with
+  | `Private -> false
+  | `Public -> true
+
+let infer_api_only = ref false
+
 let gen_call_seq pp fi_set = 
+  let gen_functions = compute_gen fi_set in
+  let fi_set = filter_interesting gen_functions fi_set in
   let (mut_fn_set,const_fn_set) = 
     if !no_mut_analysis then
       (fi_set,Analysis.FISet.empty)
     else
-      mut_analysis fi_set
+      mut_analysis (compute_gen fi_set) fi_set
   in
   let fn_action_of_set s = List.map (fun (f,m) -> Fn (f,m)) @@ Analysis.FISet.elements s in
   let mut_fn_arr = Array.of_list @@ Drop::Copy::(fn_action_of_set mut_fn_set) in
   let const_fn_arr = Array.of_list @@ fn_action_of_set const_fn_set in
-  (*let dump_action_list = Array.iteri (fun i act ->
-      prerr_endline @@ (string_of_int i) ^ " -> " ^ (string_of_action act)
-    ) in
-  prerr_endline "== MUTABLE ACTIONS";
-  dump_action_list mut_fn_arr;
-  prerr_endline "== IMMUTABLE ACTIONS";
-  dump_action_list const_fn_arr;*)
-  do_gen_mut mut_fn_arr const_fn_arr 0 {
-    public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ init_types ();
-    t_list = []
-  } 0 [] (gen_call pp)
+  if !infer_api_only then begin
+    let dump_action_list = Array.iteri (fun i act ->
+        prerr_endline @@ (string_of_int i) ^ " -> " ^ (string_of_action act)
+      ) in
+    prerr_endline "== MUTABLE ACTIONS";
+    dump_action_list mut_fn_arr;
+    prerr_endline "== IMMUTABLE ACTIONS";
+    dump_action_list const_fn_arr;
+  end else
+    do_gen_mut mut_fn_arr const_fn_arr 0 {
+      public_types = List.fold_left (fun accum t -> MTSet.add t accum) MTSet.empty @@ init_types ();
+      t_list = []
+    } 0 [] (gen_call pp)
 
 let gen_driver output_prefix test_slice pt_set pf_set = 
   let out_buffer = Buffer.create 1000 in

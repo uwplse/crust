@@ -94,7 +94,12 @@ let do_it f =
     ("-test-size", Arg.Set_int test_chunk_size, "Number of test cases per file");
     ("-test-case-prefix", Arg.Set_string test_output_file, "Prefix for test case files generated in -driver-gen");
     ("-dump-api", mk_set `Dump_Api, "Show the inferred public api and quit");
-    ("-dump-items", mk_set `Dump_Used_Items, "Dump the discovered referenced types and functions")
+    ("-dump-items", mk_set `Dump_Used_Items, "Dump the discovered referenced types and functions");
+    ("-dump-heuristic", Arg.Unit (fun () -> 
+         set_command `Driver_Gen;
+         RustGen.infer_api_only := true;
+         ()
+       ), "Show the inferred mutable/immutable API after relevance analysis")
   ] in
   Arg.parse arg_spec (fun s -> 
       try 
