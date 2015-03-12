@@ -6,6 +6,7 @@ import os.path
 import sys
 import logging
 import time
+import re
 
 #logger = multiprocessing.log_to_stderr()
 #logger.setLevel(logging.DEBUG)
@@ -20,13 +21,40 @@ SUCC = 0
 FAIL = 1
 TIMEOUT = 2
 
+loop_re = re.compile(r'^Loop (.+):$')
+
+builtin_loops = re.compile(r'^(core\$ptr\$|core\$intrinsics|memmove|memcpy)')
+
+def find_loops(test_file, test_case_name):
+    command = [ cbmc_binary, "-I", include_dir, "--show-loops", "--function", test_case_name, test_file ]
+    child_proc = subprocess.Popen(command, stdout = subprocess.PIPE)
+    child_proc.wait()
+    if child_proc.returncode != 6:
+        raise Exception("bad exit from loop query " + str(child_proc.returncode))
+    loops = []
+    for l in child_proc.stdout:
+        l = l.strip()
+        m = loop_re.match(l)
+        if m is None:
+            continue
+        loop_name = m.group(1)
+        #print "found loop: " + loop_name
+        if builtin_loops.match(loop_name):
+            continue
+        loops.append(loop_name)
+    if len(loops) == 0:
+        return []
+    return ["--unwindset", ",".join([ l + ":" + str(unwind_bound) for l in loops ]) ]
+
 def run_test_case(test_file, test_case_name):
     dev_null = open("/dev/null", "w")
-    command = [ cbmc_binary, "--pointer-check", "--bounds-check",
-                '--unwind', unwind_bound] + \
-                [ "-I", include_dir, "--slice-formula" ] + \
-        (["--z3"] if use_z3 else []) + \
-        ["--function", test_case_name, test_file]
+    unwinding = find_loops(test_file, test_case_name)
+    command = [ cbmc_binary, "--pointer-check", "--bounds-check" ] + \
+              unwinding + \
+              [ "-I", include_dir, "--ILP32" ] + \
+              (["--z3"] if use_z3 else []) + \
+              ["--function", test_case_name, test_file]
+    #print " ".join(command)
     child_proc = subprocess.Popen(command, stdout = dev_null, stderr = subprocess.STDOUT)
     start = time.time()
     now = time.time()
