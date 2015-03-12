@@ -348,10 +348,16 @@ let parse_fn =
         )
     | _ -> raise (Parse_failure ("parse_impl", tokens))
   in
+  let vis_of_string tok tokens = 
+    match tok with
+    | "pub" -> `Public
+    | "priv" -> `Private
+    | _ -> raise @@ Parse_failure ("vis_of_string", tokens)
+  in
   fun tokens cb ->
     arg_counter := 0;
     match tokens with
-    | "fn"::fn_name::t ->
+    | "fn"::vis::fn_name::t ->
 	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return >> (maybe_parse parse_impl) >> parse_body in
 	 parse_function t (fun (((((lifetime,t_params),args),ret_type),impl_info),body) ->
 	  cb (`Fn {
@@ -361,7 +367,8 @@ let parse_fn =
 						 Ir.ret_type = ret_type;
 						 Ir.fn_args = args;
 						 Ir.fn_body = body;
-						 Ir.fn_impl = impl_info
+						 Ir.fn_impl = impl_info;
+						 Ir.fn_vis = vis_of_string vis tokens (* second arg is for errors *)
 					   })
 	)
     | "abstract_fn"::fn_name::t ->

@@ -66,6 +66,11 @@ and pattern_variant = [
   | `Ref of string
   ]
 
+type visibility = [
+  | `Public 
+  | `Private
+]
+
 type impl_info = {
   abstract_name : string;
   i_lifetimes: Types.type_param list;
@@ -81,7 +86,8 @@ type fn_def = {
   ret_type : Types.r_type;
   fn_body : expr;
   fn_args : (string * Types.r_type) list;
-  fn_impl : impl_info option
+  fn_impl : impl_info option;
+  fn_vis : visibility
 }
 
 type struct_def = {
