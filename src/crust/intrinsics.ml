@@ -135,7 +135,14 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$copy_memory";
     i_params = [ "t1" ];
-    i_body = Inline "memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))";
+    i_body = Template ("rs_uint {mname}(rs_u8* dst, const rs_u8* src, size_t n_elem) {" ^
+                       "\t size_t n = 0;\n" ^
+                       "\t size_t bounds = n_elem * sizeof({t1});\n" ^
+                       "\t for( ; n < bounds; n++) {\n" ^
+                       "\t\t *(dst + n) = *(src + n);\n" ^
+                       "\t }\n" ^
+                       "\t return 0;\n" ^
+                       "}")
   };
   {
     i_name = "core$intrinsics$copy_nonoverlapping_memory";
@@ -167,6 +174,7 @@ let i_list = arith_intrinsics @ [
     i_body = Template (
         "int {mname}(libc$types$common$c95$c_void **out_ptr, size_t _align, size_t size) {\n" ^
         "\t assert(size != 0);\n" ^
+        "\t __CPROVER_assume(size < CRUST_MAX_MEM);\n" ^
         "\t libc$types$common$c95$c_void* ret = (libc$types$common$c95$c_void*)malloc(size);\n" ^
         "\t if(ret == NULL) { return 1; }\n" ^
         "\t *out_ptr = ret;\n" ^
