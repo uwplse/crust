@@ -120,7 +120,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$move_val_init";
     i_params = ["t1"];
-    i_body = Inline "memcpy({arg1}, &{arg2}, sizeof({t1}))"
+    i_body = Inline "(((*{arg1}) = ({arg2})),0)"
   };
   {
     i_name = "core$intrinsics$init";
@@ -145,6 +145,18 @@ let i_list = arith_intrinsics @ [
                        "\t }\n" ^
                        "\t return 0;\n" ^
                        "}")
+  };
+  {
+    i_name = "core$ptr$swap";
+    i_params = [ "t1" ];
+    i_body = Template ("rs_unit {mname}({t1}* x, {t1}* y) {\n" ^
+                       "\t {t1} temp; temp = *x; *x = *y; *y = temp; return 0;\n" ^
+                       "}")
+  };
+  {
+    i_name = "core$ptr$read";
+    i_params = [ "t1" ];
+    i_body = Inline ("(*({arg1}))")
   };
   {
     i_name = "core$intrinsics$copy_nonoverlapping_memory";

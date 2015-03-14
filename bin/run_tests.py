@@ -28,7 +28,7 @@ BAD_TRANS = 3
 loop_re = re.compile(r'^Loop (.+):$')
 failed_re = re.compile(r'VERIFICATION FAILED\n$')
 
-builtin_loops = re.compile(r'^(core\$ptr\$|core\$intrinsics|memmove|memcpy)')
+builtin_loops = re.compile(r'^(core\$ptr\$|core\$intrinsics\$(?!copy_memory)|memmove|memcpy)')
 
 def find_loops(test_file, test_case_name):
     command = [ cbmc_binary, "-I", include_dir, "--show-loops", "--function", test_case_name, test_file ]
