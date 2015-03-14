@@ -235,7 +235,7 @@ class type_matcher fuzzy_ref = object(self)
           | [] -> `Mismatch
           | l -> `Inst l
         end
-  method match_single_type state t_binding (t_list : Types.mono_type list) t_set t = 
+  method match_single_type state t_binding (t_list : Types.mono_type list) t = 
     let s_state = new set_match_state fuzzy_ref false (List.fold_right MTSet.add t_list MTSet.empty) in
     let bindings = match self#match_type s_state t_binding t with
       | `Mismatch -> []
@@ -244,8 +244,7 @@ class type_matcher fuzzy_ref = object(self)
     in
     let bindings = 
       if state#synth_types then
-        let set_match_state = new set_match_state fuzzy_ref state#synth_types t_set in
-        match self#match_type set_match_state t_binding t with
+        match self#match_type state t_binding t with
         | `Mismatch -> bindings
         | `Match -> [] :: bindings
         | `Bind l -> l @ bindings
@@ -308,22 +307,24 @@ class type_matcher fuzzy_ref = object(self)
         ) t_set [] in
       `Bind binding_choices
     | `Ptr t -> 
-      self#match_single_type state t_binding (find_types t_set Ptr) t_set t
+      self#match_single_type state t_binding (find_types t_set Ptr) t
     | `Ref (_,t) ->
-      self#match_single_type state t_binding (find_types t_set @@ Ref state#fuzzy_ref) t_set t
+      self#match_single_type state t_binding (find_types t_set @@ Ref state#fuzzy_ref) t
     | `Ref_Mut (_,t) ->
-      self#match_single_type state t_binding (find_types t_set @@ Ref_Mut state#fuzzy_ref) t_set t
+      self#match_single_type state t_binding (find_types t_set @@ Ref_Mut state#fuzzy_ref) t
     | `Ptr_Mut t ->
-      self#match_single_type state t_binding (find_types t_set Ptr_Mut) t_set t
+      self#match_single_type state t_binding (find_types t_set Ptr_Mut) t
     | `Str -> 
       if MTSet.mem `Str t_set then
         `Match
       else
         `Mismatch
     | `Fixed_Vec (n,t) -> 
-      self#match_single_type state t_binding (find_types t_set (Fixed_Vec n)) t_set t
+      let state = new set_match_state state#fuzzy_ref false t_set in
+      self#match_single_type state t_binding (find_types t_set (Fixed_Vec n)) t
     | `Vec t -> 
-      self#match_single_type state t_binding (find_types t_set Vec) t_set t
+      let state = new set_match_state state#fuzzy_ref false t_set in
+      self#match_single_type state t_binding (find_types t_set Vec) t
     | `Abstract _ ->
       try
         let t = self#to_monomorph t_binding to_match in
@@ -348,7 +349,6 @@ let rec get_free_vars accum t =
     | `Ref (_,t)
     | `Ref_Mut (_,t) ->
       get_free_vars accum t
-
 ;;
 
 let matcher = new type_matcher false;;
@@ -408,20 +408,6 @@ let get_inst type_univ free_vars (to_match : Types.r_type list) =
 
 let to_monomorph = matcher#to_monomorph
 let is_inst = resolution_matcher#is_inst
-
-let rec is_move_type : Types.mono_type -> bool = function
-  | `Ptr _ 
-  | `Ptr_Mut _ -> false
-  | `Tuple tl -> List.for_all is_move_type tl
-  | `Adt_type _ -> true
-  | `Ref (_,t) -> false
-  | `Ref_Mut (_,t) -> true
-  | #Types.simple_type -> false
-  | `Bottom -> false
-  (* these cases should be impossible! *)
-  | `Fixed_Vec _ -> false
-  | `Vec _ -> false
-  | `Str -> false
 
 type inst_flag = [
   | `Adt of string
