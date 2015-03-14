@@ -135,8 +135,10 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$copy_memory";
     i_params = [ "t1" ];
-    i_body = Template ("rs_uint {mname}(rs_u8* dst, const rs_u8* src, size_t n_elem) {" ^
+    i_body = Template ("rs_unit {mname}({t1}* dst_r, const {t1}* src_r, size_t n_elem) {\n" ^
                        "\t size_t n = 0;\n" ^
+                       "\t rs_u8 *dst = (rs_u8*)dst_r;\n" ^
+                       "\t rs_u8 *src = (rs_u8*)src_r;\n" ^
                        "\t size_t bounds = n_elem * sizeof({t1});\n" ^
                        "\t for( ; n < bounds; n++) {\n" ^
                        "\t\t *(dst + n) = *(src + n);\n" ^
