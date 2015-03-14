@@ -7,6 +7,9 @@ import sys
 import logging
 import time
 import re
+import tempfile
+import os
+import signal
 
 #logger = multiprocessing.log_to_stderr()
 #logger.setLevel(logging.DEBUG)
@@ -20,8 +23,10 @@ timeout = 120
 SUCC = 0
 FAIL = 1
 TIMEOUT = 2
+BAD_TRANS = 3
 
 loop_re = re.compile(r'^Loop (.+):$')
+failed_re = re.compile(r'VERIFICATION FAILED\n$')
 
 builtin_loops = re.compile(r'^(core\$ptr\$|core\$intrinsics|memmove|memcpy)')
 
@@ -46,25 +51,71 @@ def find_loops(test_file, test_case_name):
         return []
     return ["--unwindset", ",".join([ l + ":" + str(unwind_bound) for l in loops ]) ]
 
-def run_test_case(test_file, test_case_name):
-    dev_null = open("/dev/null", "w")
-    unwinding = find_loops(test_file, test_case_name)
+dev_null = open("/dev/null", "w")
+
+def kill_z3(proc):
+    try:
+        os.kill(proc.pid, signal.SIGSTOP)
+    except OSError:
+        proc.terminate()
+        return
+    try:
+        sh_pid = subprocess.check_output(["pgrep", "-P", str(proc.pid)]).strip()
+        z3_pid = subprocess.check_output(["pgrep", "-P", sh_pid])
+        os.kill(int(z3_pid), signal.SIGKILL)
+    except subprocess.CalledProcessError:
+        pass
+    except OSError:
+        pass
+    proc.kill()
+
+def do_run(test_file, test_case_name, unwinding, prefer_z3):
     command = [ cbmc_binary, "--pointer-check", "--bounds-check" ] + \
               unwinding + \
-              [ "-I", include_dir, "--ILP32" ] + \
-              (["--z3"] if use_z3 else []) + \
+              [ "-I", include_dir, "--ILP32", "--slice-formula" ] + \
+              (["--z3"] if prefer_z3 else []) + \
               ["--function", test_case_name, test_file]
-    #print " ".join(command)
-    child_proc = subprocess.Popen(command, stdout = dev_null, stderr = subprocess.STDOUT)
+    if prefer_z3:
+        out = tempfile.NamedTemporaryFile(mode="rw", delete = True)
+    else:
+        out = dev_null
+    child_proc = subprocess.Popen(command, stdout = out)
+    print " ".join(command)
     start = time.time()
     now = time.time()
+    done = False
     while (now - start) < timeout:
         if child_proc.poll() is not None:
-            return SUCC if child_proc.returncode == 0 else FAIL
+            done = True
+            break
+        time.sleep(1)
         now = time.time()
-    child_proc.kill() # KILL DASH 9
-    return TIMEOUT
+    if not done:
+        if prefer_z3:
+            kill_z3(child_proc)
+        else:
+            child_proc.kill()
+        child_proc.wait()
+        return TIMEOUT
+    if prefer_z3 and child_proc.returncode != 0:
+        out.seek(0)
+        stdout = out.read()
+        if failed_re.search(stdout) is not None:
+            return FAIL
+        else:
+            return BAD_TRANS
+    elif child_proc.returncode != 0:
+        return FAIL
+    else:
+        return SUCC
 
+def run_test_case(test_file, test_case_name):
+    unwinding = find_loops(test_file, test_case_name)
+    if use_z3:
+        status = do_run(test_file, test_case_name, unwinding, use_z3)
+        if status != BAD_TRANS and status != TIMEOUT:
+            return status
+    return do_run(test_file, test_case_name, unwinding, False)
 
 def worker_thread(control_pipe, notify_queue, work_queue):
     _worker_thread(control_pipe, notify_queue, work_queue)
@@ -95,7 +146,6 @@ def _worker_thread(control_pipe, notify_queue, work_queue):
 
         if result == FAIL:
             notify_queue.put(('fail', multiprocessing.current_process().pid,work,multiprocessing.current_process().name))
-            return False
         elif result == TIMEOUT:
             notify_queue.put(('timeout', multiprocessing.current_process().pid,work,multiprocessing.current_process().name))
 
@@ -108,6 +158,7 @@ def run_master():
     parser.add_argument("--unwind", action="store", type = int)
     parser.add_argument("--z3", action="store_true")
     parser.add_argument("--timeout", action="store", type = int, default = 120)
+    parser.add_argument("--nworkers", action="store", type = int, default = multiprocessing.cpu_count())
     parser.add_argument("test_names", action="store", nargs = "?")
 
     opts = parser.parse_args()
@@ -122,6 +173,7 @@ def run_master():
     include_dir = opts.include_dir
     use_z3 = opts.z3
     timeout = opts.timeout
+    n_workers = opts.nworkers
     
     test_names = []
     def slurp_tests(f):
@@ -137,7 +189,6 @@ def run_master():
         with open(opts.test_names, "r") as f:
             slurp_tests(f)
 
-    n_workers = multiprocessing.cpu_count()
     work_queue = multiprocessing.Queue(len(test_names))
     notify_queue = multiprocessing.Queue(n_workers * 2)
     p_map = {}
@@ -184,6 +235,9 @@ def run_master():
         if msg[0] == "timeout":
             print "Test case " + str(msg[2]) + " timeout"
             continue
+        elif msg[0] == "fail":
+            print "Test case " + str(msg[2]) + " failed!"
+            continue
         (proc,_) = p_map[msg[1]]
         proc.join()
         del p_map[msg[1]]
@@ -191,9 +245,6 @@ def run_master():
             pass
         elif msg[0] == 'error':
             print "Error while executing tests " + str(msg[2])
-            cleanup_procs()
-        elif msg[0] == 'fail':
-            print "Test case " + str(msg[2]) + " failed!"
             cleanup_procs()
 
 
