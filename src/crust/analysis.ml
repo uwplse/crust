@@ -91,80 +91,6 @@ module TySet = Set.Make(struct
         | _,_ -> Pervasives.compare a b
 end)
 
-
-(* TODO(jtoman): this is totally a broken heuristic *)
-let rec type_contains_loop src_types = function
-  | ((`T_Var _) as s)
-  | (#simple_type as s) -> TySet.mem s src_types
-  | `Bottom -> TySet.mem `Bottom src_types
-  | ((`Fixed_Vec (_,p)) as t) 
-  | ((`Vec p) as t)
-  | ((`Ref_Mut (_,p)) as t)
-  | ((`Ptr_Mut p) as t)
-  | ((`Ref (_,p)) as t)
-  | ((`Ptr p) as t) -> (TySet.mem t src_types) ||
-                       type_contains_loop src_types p
-  | ((`Tuple tl) as t)
-  | ((`Adt_type { Types.type_param = tl; _ }) as t) ->
-    TySet.mem t src_types ||
-    (let contains = List.map (type_contains_loop src_types) tl in
-     List.exists (fun x -> x) contains
-    )
-  | `Abstract _ -> false (* not really true *)
-  | `Str as t -> TySet.mem t src_types
-
-let rec type_contains src_types target  = 
-  type_contains_loop src_types target (*
-  match target with
-  | `Adt_type { Types.type_param = tl; _ }
-  | `Tuple tl -> 
-    let contains = List.map (type_contains_loop src_types) tl in
-    List.exists (fun x -> x) contains
-  | _ -> false*)
-
-let rec extract_ref_types accum ty = 
-  match ty with
-  | #Types.simple_type -> accum
-  | `Ptr t
-  | `Ptr_Mut t
-  | `Ref_Mut (_,t)
-  | `Ref (_,t) -> extract_ref_types (TySet.add t accum) t
-  | `Tuple tl -> List.fold_left extract_ref_types accum tl
-  | `Bottom
-  | `T_Var _
-  | `Fixed_Vec _
-  | `Vec _
-  | `Abstract _
-  | `Str
-  | `Adt_type _ -> accum
-    
-
-let find_constructors () = 
-  let accum = SSet.empty in
-  Env.EnvMap.fold (fun f_name fn_def accum ->
-      let arg_types = List.fold_left (fun accum (_,a_t) ->
-          TySet.add a_t @@ extract_ref_types accum a_t
-        ) TySet.empty fn_def.Ir.fn_args in
-      let ret_type = fn_def.Ir.ret_type in
-      if type_contains arg_types ret_type  then
-        SSet.add f_name accum
-      else accum
-    ) Env.fn_env accum
-
-let rec is_primitive t = 
-  match t with
-  | #Types.simple_type -> true
-  | `Tuple _ -> false
-  | `Bottom -> false
-  | `Str
-  | `Fixed_Vec _
-  | `Adt_type _
-  | `Vec _ -> false
-  | `Ptr t
-  | `Ptr_Mut t
-  | `Ref_Mut (_,t)
-  | `Ref (_,t) -> is_primitive t
-
 let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
   let match_types m_args p_args = 
@@ -189,7 +115,6 @@ let resolve_abstract_fn =
             | None -> assert false
             | Some ({ Ir.i_types = tl; Ir.i_self = st }) -> tl @ [st]
           in
-(*          prerr_endline @@ "checking " ^ fn_name ^ ", impl types: " ^ (String.concat ", " @@ List.map Types.pp_t (impl_types :> Types.r_type list));*)
           let fn_typarams = impl_def.Ir.fn_tparams in
           let arg_types = List.map snd impl_def.Ir.fn_args in
           match (match_types param_args arg_types),(match_types type_args impl_types) with
@@ -394,7 +319,6 @@ let state_size w_state =
 
 type inference_state = {
   restrict_fn : SSet.t;
-  constructor_fn : SSet.t;
   fail_inst : FISet.t;
   w_state : walk_state
 }
@@ -450,8 +374,6 @@ let rec find_fn find_state =
           Str.string_match patt fn_name 0
         ) !pattern_list) then
         f_state
-      else if (SSet.mem fn_name f_state.constructor_fn) && has_inst f_state.w_state fn_name then
-        f_state
       else if SSet.mem fn_name f_state.restrict_fn then
         f_state
       else begin
@@ -495,6 +417,10 @@ let build_nopub_fn =
     | _ -> false
   in
   fun () ->
+    let accum = (match Env.crust_init_name() with
+        | Some s -> SSet.singleton s
+        | None -> SSet.empty
+      ) |> SSet.add "crust_abort" in
     Env.EnvMap.fold (fun fn_name fn_def accum ->
         if is_restrict_fn fn_def ||
            is_private_fn fn_def ||
@@ -503,13 +429,9 @@ let build_nopub_fn =
           SSet.add fn_name accum
         else
           accum
-      ) Env.fn_env @@ SSet.singleton "crust_abort"
+      ) Env.fn_env accum
 
 let run_analysis () = 
-  let constructor_fn = find_constructors () |> (match Env.crust_init_name () with
-      | None -> fun x -> x
-      | Some cin -> SSet.add cin)
-  in
   let restrict_fn = Env.EnvMap.fold (fun type_name type_def accum ->
       match type_def with
       | `Enum_def ({ drop_fn = Some df; _ } : Ir.enum_def) ->
@@ -547,7 +469,6 @@ let run_analysis () =
   in
   (find_fn {
     restrict_fn = restrict_fn;
-    constructor_fn = constructor_fn;
     w_state = w_state;
     fail_inst = FISet.empty
   }).w_state
