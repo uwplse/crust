@@ -671,6 +671,7 @@ let rec build_deps gen_funcs to_analyze =
   build_deps_aux Analysis.FISet.empty to_analyze
 
 let rec filter_interesting = 
+  let fn_exceptions = Str.regexp "^\\(core\\$num\\$\\(Unsigned\\)?Int\\|core\\$mem\\$size_of\\)" in
   let mem_interesting = Hashtbl.create 100 in
   let rec is_interesting pub_set fn_inst = 
     if Hashtbl.mem mem_interesting fn_inst then
@@ -729,6 +730,8 @@ let rec filter_interesting =
       if Intrinsics.is_crust_intrinsic fn_name ||
          Intrinsics.is_intrinsic_fn fn_name ||
          fn_name = "drop_glue" then
+        false
+      else if Str.string_match fn_exceptions fn_name 0 then
         false
       else
         let arg_types = List.map (fun (ty,_) -> TypeUtil.to_monomorph t_bindings ty) el in
