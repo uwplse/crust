@@ -86,6 +86,7 @@ main = do
                 "fix-bottom",
                 "fix-bool",
                 "fix-if",
+                "fix-block-ret",
                 "const-expand",
                 "lift-temps",
                 "rename-locals",
@@ -110,6 +111,7 @@ runPass "fix-special-fn" = fixSpecialFn
 runPass "fix-bottom" = fixBottom
 runPass "fix-bool" = fixBool
 runPass "fix-if" = ifFix
+runPass "fix-block-ret" = fixBlockReturn
 runPass "const-expand" = constExpand
 runPass "lift-temps" = \is -> liftTemps (mkIndex is) is
 runPass "rename-locals" = \is -> renameLocals (mkIndex is) is
@@ -219,6 +221,17 @@ fixAddress = everywhere (mkT stripAddr)
     stripAddr (Expr _ (EUnOp "UnDeref" (Expr _ (EAddrOf e)))) = e
     stripAddr (Expr _ (EDeref (Expr _ (EAddrOf e)))) = e
     stripAddr e = e
+
+fixBlockReturn = everywhere (mkT fixupBlockRet)
+  where
+    fixupBlockRet (Expr ty (EBlock s ret_e@(Expr ret_ty _)))
+      | ty /= ret_ty = 
+         let dummy_let = SLet (Pattern ty $ PVar "_dummy_ret") Nothing in
+         let dummy_ret = Expr ty (EVar "_dummy_ret") in
+         let new_s = s ++ [ (SExpr ret_e), dummy_let ] in
+         (Expr ty (EBlock new_s dummy_ret))
+    fixupBlockRet e = e
+
 
 constExpand items = go items
   where
