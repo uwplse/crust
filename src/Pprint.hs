@@ -107,7 +107,7 @@ ppEnumDef (EnumDef name lps tps variants mDtor) = do
 ppFnDef :: (MonadReader Int m, MonadWriter String m) => FnDef -> m ()
 ppFnDef (FnDef vis name lps tps args retTy implClause body) = do
     line $ do
-        tell "fn " >> ppVis vis >> tell name
+        tell "fn " >> ppVis vis >> tell " " >> tell name
         listNe angles (map ppLifetime lps ++ map tell tps)
         parens $ commaSep $ map ppArgDecl args
         tell " -> " >> ppTy retTy
