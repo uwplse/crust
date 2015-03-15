@@ -3,3 +3,4 @@
 /lib
 /src
 /patches/last.patch
+*_tests
