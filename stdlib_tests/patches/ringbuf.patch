@@ -1,0 +1,118 @@
+diff --git a/src/liballoc/heap.rs b/src/liballoc/heap.rs
+index a2643f4..e693504 100644
+--- a/src/liballoc/heap.rs
++++ b/src/liballoc/heap.rs
+@@ -294,9 +294,9 @@ mod imp {
+ 
+     #[inline]
+     pub unsafe fn reallocate(ptr: *mut u8, old_size: uint, size: uint, align: uint) -> *mut u8 {
+-        if align <= MIN_ALIGN {
++/*        if align <= MIN_ALIGN {
+             libc::realloc(ptr as *mut libc::c_void, size as libc::size_t) as *mut u8
+-        } else {
++        } else */{
+             let new_ptr = allocate(size, align);
+             ptr::copy_memory(new_ptr, ptr, cmp::min(size, old_size));
+             deallocate(ptr, old_size, align);
+diff --git a/src/libcollections/ring_buf.rs b/src/libcollections/ring_buf.rs
+index 338166c..920c297 100644
+--- a/src/libcollections/ring_buf.rs
++++ b/src/libcollections/ring_buf.rs
+@@ -1316,6 +1316,19 @@ impl<T: Clone> RingBuf<T> {
+     }
+ }
+ 
++///
++pub fn crust_init(elem: u8, cap: usize, n_elem: usize) -> (RingBuf<u8>,RingBuf<u8>) {
++    assert!(n_elem <= cap);
++    assert!(cap < 4);
++    let mut to_ret = RingBuf::with_capacity(cap);
++    let mut to_ret2 = RingBuf::with_capacity(cap);
++    for i in 0..n_elem {
++        to_ret.push_back(elem);
++        to_ret2.push_back(elem);
++    }
++    (to_ret,to_ret2)
++}
++
+ /// Returns the index in the underlying buffer for a given logical element index.
+ #[inline]
+ fn wrap_index(index: uint, size: uint) -> uint {
+@@ -1502,7 +1515,14 @@ pub struct Drain<'a, T: 'a> {
+ #[stable]
+ impl<'a, T: 'a> Drop for Drain<'a, T> {
+     fn drop(&mut self) {
+-        for _ in *self {}
++        let mut keep_going = true;
++        while keep_going {
++            match self.next() {
++                Some(x) => (),
++                None => keep_going = false
++            }
++        }
++        //for _ in *self {}
+         self.inner.head = 0;
+         self.inner.tail = 0;
+     }
+diff --git a/src/libcore/cell.rs b/src/libcore/cell.rs
+index 9430716..84a2fb1 100644
+--- a/src/libcore/cell.rs
++++ b/src/libcore/cell.rs
+@@ -559,3 +559,7 @@ impl<T> UnsafeCell<T> {
+     #[stable]
+     pub unsafe fn into_inner(self) -> T { self.value }
+ }
++//
++/*pub fn crust_init() -> (RefCell<u8>,) {
++    (RefCell::new(4),)
++}*/
+diff --git a/src/libcore/macros.rs b/src/libcore/macros.rs
+index d44eaae..b2bb415 100644
+--- a/src/libcore/macros.rs
++++ b/src/libcore/macros.rs
+@@ -8,23 +8,24 @@
+ // option. This file may not be copied, modified, or distributed
+ // except according to those terms.
+ 
+-/// Entry point of task panic, for details, see std::macros
+ #[macro_export]
+ macro_rules! panic {
+     () => (
+-        panic!("explicit panic")
++        unsafe { $crate::intrinsics::abort() }
+     );
+     ($msg:expr) => ({
+-        static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
+-        ::core::panicking::panic(&_MSG_FILE_LINE)
++        /*static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
++        ::core::panicking::panic(&_MSG_FILE_LINE)*/
++        unsafe { $crate::intrinsics::abort() }
+     });
+     ($fmt:expr, $($arg:tt)*) => ({
++        panic!("trans_panic");
+         // The leading _'s are to avoid dead code warnings if this is
+         // used inside a dead function. Just `#[allow(dead_code)]` is
+         // insufficient, since the user may have
+         // `#[forbid(dead_code)]` and which cannot be overridden.
+-        static _FILE_LINE: (&'static str, usize) = (file!(), line!());
+-        ::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
++        //static _FILE_LINE: (&'static str, usize) = (file!(), line!());
++        //::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
+     });
+ }
+ 
+@@ -56,12 +57,12 @@ macro_rules! panic {
+ macro_rules! assert {
+     ($cond:expr) => (
+         if !$cond {
+-            panic!(concat!("assertion failed: ", stringify!($cond)))
++            panic!(/*concat!("assertion failed: ", stringify!($cond))*/)
+         }
+     );
+     ($cond:expr, $($arg:tt)+) => (
+         if !$cond {
+-            panic!($($arg)+)
++            panic!(/*$($arg)+*/)
+         }
+     );
+ }
