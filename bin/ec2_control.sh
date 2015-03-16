@@ -1,0 +1,69 @@
+#!/bin/bash
+
+set -e
+
+THIS_DIR=$(cd $(dirname $0) && pwd)
+
+. $THIS_DIR/util.sh
+
+function mkworker() {
+	ROOT_DIR=$(cd $THIS_DIR/../ && pwd)
+	TEST_DIR=$(cd $1 && pwd)
+	TEST_DIR=${TEST_DIR#$ROOT_DIR/}
+	tar cvf /tmp/crust_worker.tar.bz2 -j -C $THIS_DIR/../  src/rust_intrinsics.h src/crust_intrinsics.h bin/run_tests.py $TEST_DIR
+	
+	mv /tmp/crust_worker.tar.bz2 .
+}
+
+function worker_scp() {
+	scp -i $THIS_DIR/crust_test.pem $2 ec2-user@$1:$3
+}
+
+function build_worker() {
+	z3_loc=$(which z3);
+	host=$1
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$host rm -rf ~/cbmc-5.0 ~/crust ~/z3;
+	worker_scp $host $z3_loc "~/z3"
+	worker_scp $host $THIS_DIR/setup_worker.sh "~/setup_worker.sh"
+	worker_scp $host $2 "~/crust_worker.tar.bz2"
+	ssh -t -i $THIS_DIR/crust_test.pem ec2-user@$host "bash /home/ec2-user/setup_worker.sh; exit"
+}
+
+function build_all_workers() {
+	z3_loc=$(which z3);
+	for host in ${WORKER_IPS[@]}; do
+		build_worker $host $1
+	done
+}
+
+function launch_worker() {
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 'cd /home/ec2-user/crust/stdlib_tests/ringbuf_tests; TMPDIR=/media/ephemeral0/smt_temp/ nohup python2.7 ../../bin/run_tests.py --cbmc=/home/ec2-user/cbmc-5.0/src/cbmc/cbmc --timeout=3600 --unwind=5 --job-host="http://52.10.62.245:5000" --z3 --worker > ~/crust.out 2> ~/crust.err < /dev/null &'
+}
+
+function launch_all_workers() {
+	for host in ${WORKER_IPS[@]}; do
+		launch_worker $host
+	done
+}
+
+function kill_worker() {
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "kill $(pgrep -f cbmc)"
+}
+
+function kill_all_workers() {
+	for host in ${WORKER_IPS[@]}; do
+		kill_worker $host
+	done
+}
+
+function deploy_jh() {
+	scp -r -i $THIS_DIR/crust_test.pem $THIS_DIR/../workqueue ubuntu@${JOBHOST}:~/
+}
+
+function dashboard() {
+	for host in ${WORKER_IPS[@]}; do
+		xfce4-terminal --geometry 80x15 --command "ssh -t -i $THIS_DIR/crust_test.pem ec2-user@$host htop"
+	done
+}
+
+"$@"
