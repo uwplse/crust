@@ -818,14 +818,17 @@ let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f =
   end
 and do_gen_immut const_fn_set seq_len state index path f =
   if seq_len = !immut_action_len then
-    f path
+    ()
   else if index = (Array.length const_fn_set) then
-    f path
+    ()
   else begin
     (match valid_extend state const_fn_set.(index) with
-    | Some st -> do_gen_immut const_fn_set (succ seq_len) st 0 (const_fn_set.(index)::path) f
+    | Some st -> 
+      let new_path = (const_fn_set.(index)::path) in
+      f new_path;
+      do_gen_immut const_fn_set (succ seq_len) st 0 new_path f
     | None -> ());
-    do_gen_immut const_fn_set (succ seq_len) state (succ index) path f
+    do_gen_immut const_fn_set seq_len state (succ index) path f
   end
 
 let is_fn_pub fn_name = 
