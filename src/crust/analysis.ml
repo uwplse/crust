@@ -364,7 +364,14 @@ let has_inst w_state f_name =
   FISet.exists (fun (f_name',_) -> 
       f_name = f_name') w_state.fn_inst
 
-let pattern_list = ref [Str.regexp ""];;
+
+let core_ops = [
+  Str.regexp_string "^core$option$Option$1$T$1$$unwrap$";
+  Str.regexp_string "core$slice$$x5bT$x5d$$ops$x3a$x3aIndexMut$1$uint$1$$index_mut";
+  Str.regexp_string "core$slice$$x5bT$x5d$$ops$x3a$x3aIndex$1$uint$1$$index"
+]
+
+let pattern_list = ref core_ops;;
 let type_filters = ref SSet.empty;;
 
 let rec find_fn find_state = 
@@ -511,12 +518,12 @@ let init_fn_filter f_name =
     in
     slurp_file []
   in
-  pattern_list := List.map (fun patt ->
+  pattern_list := (List.map (fun patt ->
       compile_glob patt
-    ) patterns
+    ) patterns) @ !pattern_list
 
 let set_fn_filter filter =
-  pattern_list := [ compile_glob filter ]
+  pattern_list := [ compile_glob filter ] @ !pattern_list
 
 let init_type_filter file_name = 
   let f_in = open_in file_name in

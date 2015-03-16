@@ -17,3 +17,5 @@ val resolve_abstract_fn : string -> Types.mono_type list -> Types.mono_type list
 val init_fn_filter : string -> unit
 val set_fn_filter : string -> unit
 val init_type_filter : string -> unit
+
+val core_ops : Str.regexp list

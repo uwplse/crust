@@ -676,6 +676,10 @@ let rec filter_interesting =
   let rec is_interesting pub_set fn_inst = 
     if Hashtbl.mem mem_interesting fn_inst then
       Hashtbl.find mem_interesting fn_inst
+    else if List.exists (fun s ->
+        Str.string_match s (fst fn_inst) 0
+      ) Analysis.core_ops then
+      true
     else begin
       let (fn_name,m_args) = fn_inst in
       let fn_def = Env.EnvMap.find Env.fn_env fn_name in
