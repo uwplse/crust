@@ -1,7 +1,11 @@
 #!/bin/bash
 
+JOBHOST="54.148.202.229"
+
+WORKER_IPS=("54.148.135.179" "54.148.109.4" "52.11.192.79" "54.68.125.25" "54.148.109.20")
+
 function grep_test() {
-	egrep -o '(libtest_[[:digit:]]+\$)?crust_test_[[:digit:]]+' "$@" | sort | uniq
+	egrep -o 'libtest_[[:digit:]]+\$crust_test_[[:digit:]]+' "$@" | sort | uniq
 }
 
 function ec2ssh() {
@@ -9,9 +13,5 @@ function ec2ssh() {
 }
 
 function jhssh() {
-	ssh -i /home/jtoman/grad_school/research/crust/bin/crust_test.pem "ubuntu@52.10.62.245"
+	ssh -i /home/jtoman/grad_school/research/crust/bin/crust_test.pem "ubuntu@$JOBHOST"
 }
-
-WORKER_IPS=("54.69.23.204" "54.69.79.5" "54.69.39.4" "52.11.125.57" "54.68.27.160" "52.11.150.227" "54.68.163.64" "54.68.82.25")
-
-JOBHOST="52.10.62.245"

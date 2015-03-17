@@ -30,14 +30,13 @@ function build_worker() {
 }
 
 function build_all_workers() {
-	z3_loc=$(which z3);
 	for host in ${WORKER_IPS[@]}; do
 		build_worker $host $1
 	done
 }
 
 function launch_worker() {
-	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 'cd /home/ec2-user/crust/stdlib_tests/ringbuf_tests; TMPDIR=/media/ephemeral0/smt_temp/ nohup python2.7 ../../bin/run_tests.py --cbmc=/home/ec2-user/cbmc-5.0/src/cbmc/cbmc --timeout=3600 --unwind=5 --job-host="http://52.10.62.245:5000" --z3 --worker > ~/crust.out 2> ~/crust.err < /dev/null &'
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 'cd /home/ec2-user/crust/stdlib_tests/vecu8_tests; TMPDIR=/media/ephemeral0/smt_temp/ nohup python2.7 ../../bin/run_tests.py --cbmc=/home/ec2-user/cbmc-5.0/src/cbmc/cbmc --timeout=3600 --unwind=5 --job-host="http://'"$JOBHOST"':5000" --worker > ~/crust.out 2> ~/crust.err < /dev/null &'
 }
 
 function launch_all_workers() {
