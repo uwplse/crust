@@ -74,7 +74,11 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$transmute";
     i_params = [ "t1"; "u1" ];
-    i_body = Template "{u1} {mname}({t1} to_trans) { return *(({u1}* )&to_trans); }"
+    i_body = Template ("{u1} {mname}({t1} to_trans) {\n" ^
+                       "\t {t1} *temp = &to_trans;\n" ^
+                       "\t {u1} *temp2 = ({u1}* )temp;\n" ^
+                       "\t return *temp2;\n" ^
+                       "}")
   };
   {
     i_name = "core$intrinsics$ctlz64";
@@ -120,7 +124,8 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$move_val_init";
     i_params = ["t1"];
-    i_body = Inline "(((*{arg1}) = ({arg2})),0)"
+    i_body = Inline "memcpy({arg1}, &{arg2}, sizeof({t1}))"
+    (*i_body = Inline "((( *{arg1}) = ({arg2})),0)"*)
   };
   {
     i_name = "core$intrinsics$init";
@@ -135,48 +140,38 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$copy_memory";
     i_params = [ "t1" ];
-    i_body = Template ("rs_unit {mname}({t1}* dst_r, const {t1}* src_r, size_t n_elem) {\n" ^
-                       "\t size_t n = 0;\n" ^
-                       "\t rs_u8 *dst = (rs_u8*)dst_r;\n" ^
-                       "\t rs_u8 *src = (rs_u8*)src_r;\n" ^
-                       "\t size_t bounds = n_elem * sizeof({t1});\n" ^
-                       "\t for( ; n < bounds; n++) {\n" ^
-                       "\t\t *(dst + n) = *(src + n);\n" ^
-                       "\t }\n" ^
-                       "\t return 0;\n" ^
-                       "}")
+    i_body = Inline "memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))"
   };
-  {
+(*  {
     i_name = "core$ptr$swap";
     i_params = [ "t1" ];
     i_body = Template ("rs_unit {mname}({t1}* x, {t1}* y) {\n" ^
                        "\t {t1} temp; temp = *x; *x = *y; *y = temp; return 0;\n" ^
                        "}")
   };
+*)
   {
     i_name = "core$ptr$read";
     i_params = [ "t1" ];
-    i_body = Inline ("(*({arg1}))")
+    i_body = Template ("{t1} {mname}({t1} *ptr) { {t1} to_ret; if(sizeof({t1}) == 0) { return to_ret;} to_ret = *ptr; return to_ret; }")
   };
   {
     i_name = "core$intrinsics$copy_nonoverlapping_memory";
     i_params = [ "t1" ];
-    i_body = Inline "memcpy({arg1}, {arg2}, {arg3} * sizeof({t1}))"
-  };
-(*  {
-    i_name = "alloc$heap$allocate";
-    i_params = [];
-    i_body = Template ("rs_u8 *{mname}(size_t to_alloc, size_t align) {\n" ^
-                       "\t __CPROVER_assume(to_alloc < CRUST_MAX_MEM);\n" ^
-                       "\t return (rs_u8* )malloc(to_alloc);\n" ^
+    i_body = Template ("rs_unit {mname}({t1}* dst_r, const {t1}* src_r, size_t n_elem) {\n" ^
+                       "\t size_t n = 0;\n" ^
+                       "\t rs_u8 *dst = (rs_u8* )dst_r;\n" ^
+                       "\t rs_u8 *src = (rs_u8* )src_r;\n" ^
+                       "\t size_t bounds = CRUST_MAX_MEM * sizeof({t1});\n" ^
+                       "\t int n_iter = 0;\n" ^
+                       "\t for( ; n < bounds; n++) {\n" ^
+                       "\t\t if(n_iter == n_elem * sizeof({t1})) { break; }\n" ^
+                       "\t\t *(dst + n) = *(src + n);\n" ^
+                       "\t\t n_iter++;\n" ^
+                       "\t }\n" ^
+                       "\t return 0;\n" ^
                        "}")
   };
-  {
-    i_name = "alloc$heap$deallocate";
-    i_params = [];
-    i_body = Inline "(free({arg1}),0)"
-  };
-*)
   {
     i_name = "libc$funcs$c95$stdlib$free";
     i_params = [];
