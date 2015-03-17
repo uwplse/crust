@@ -10,6 +10,7 @@ class type emitter_t = object
 				method private maybe_put : string option -> unit
 				method private close_block : ?post:string -> unit -> unit
  				method private with_intercept : ?b:Buffer.t -> (unit -> unit) -> string
+     method private raw_emit : (Buffer.t -> unit) -> unit
 			  end
 class emitter _buf =
 object(self)
@@ -65,11 +66,14 @@ object(self)
        | None -> Buffer.create 100
        | Some _b -> Buffer.clear _b; _b
      in
+     let old_buf = buf in
      try
        buf <- temp_b;
        f ();
        let to_ret = Buffer.contents temp_b in
-       buf <- _buf;
+       buf <- old_buf;
        to_ret
-     with e -> buf <- _buf; raise e
+     with e -> buf <- old_buf; raise e
+   method private raw_emit (f: Buffer.t -> unit) = 
+     f buf
 end

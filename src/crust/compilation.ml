@@ -298,7 +298,7 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
               (TypeUtil.to_monomorph t_bindings t)
             ) args in
           let (mono_args,resolved_name) = Analysis.resolve_abstract_fn fn_name mono_args arg_types in
-          let mangled_name' = mangle_fn_name resolved_name @@ List.map (to_monomorph_c_type t_bindings) (mono_args :> Types.r_type list) in
+          let mangled_name' = mangle_fn_name resolved_name @@ List.map (TypeUtil.to_monomorph t_bindings) (mono_args : Types.mono_type list :> Types.r_type list) in
           begin
             self#put_all [ mangled_name'; "(" ];
             self#put_many ", " self#dump_args args;
@@ -360,7 +360,7 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
           self#with_intercept ~b:arg_buf (fun () -> self#dump_simple_expr expr)
         ) args in
       let t_strings = List.map type_to_string m_args in
-      Intrinsics.emit_intrinsic_call fn_name mangled_fn_name t_strings arg_strings buf
+      self#raw_emit (Intrinsics.emit_intrinsic_call fn_name mangled_fn_name t_strings arg_strings)
     method dump_match (match_condition,match_body) = 
       self#put_i "if(";
       self#dump_expr (match_condition :> CRep.all_expr);
