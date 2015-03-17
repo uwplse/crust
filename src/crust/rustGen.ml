@@ -185,7 +185,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     else (fun x -> x)
 
   method private filter_call_seq call_seqs = 
-    (self#mkf !skip_copy_use self#all_copy_var_used call_seqs)
+    (self#mkf (not !skip_copy_use) self#all_copy_var_used call_seqs)
     |> (if (!assume_ident_init && not !skip_symm_break) then self#break_symmetry else (fun x -> x))
     |> self#mkf (!assume_ident_init && not !skip_interfere_check) self#compute_interference
 

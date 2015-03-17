@@ -104,6 +104,7 @@ let do_it f =
     ("-no-interfere-check", Arg.Set RustGen.skip_interfere_check, "Disable interference checking");
     ("-no-interest-filter", Arg.Set RustGen.skip_interesting_check, "Disable interesting-ness heuristic");
     ("-no-mut-analysis", Arg.Set RustGen.no_mut_analysis, "Do not run mutation analysis, assume all methods are mutative");
+    ("-no-copy-check", Arg.Set RustGen.skip_copy_use, "Do not require copied values to be used in the test sequence")
   ] in
   Arg.parse arg_spec (fun s -> 
       try 
