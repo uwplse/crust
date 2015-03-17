@@ -2,6 +2,10 @@ let mut_action_len = ref 4;;
 let immut_action_len = ref 2;;
 let assume_ident_init = ref true;;
 let no_mut_analysis = ref false;;
+let skip_interfere_check = ref false;;
+let skip_symm_break = ref false;;
+let skip_interesting_check = ref false;;
+let skip_copy_use = ref false;;
 
 module MTSet = TypeUtil.MTSet
 
@@ -175,6 +179,15 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     List.iter (fun cc_seq ->
         self#emit_cc_sequence init_vars cc_seq
     ) final_call_seq
+
+  method private mkf flag f =
+    if flag then List.filter f
+    else (fun x -> x)
+
+  method private filter_call_seq call_seqs = 
+    (self#mkf !skip_copy_use self#all_copy_var_used call_seqs)
+    |> (if (!assume_ident_init && not !skip_symm_break) then self#break_symmetry else (fun x -> x))
+    |> self#mkf (!assume_ident_init && not !skip_interfere_check) self#compute_interference
 
   method private debug_call_seq action_seq = 
     self#put_i "// " ;
@@ -841,7 +854,8 @@ let infer_api_only = ref false
 
 let gen_call_seq pp fi_set = 
   let gen_functions = compute_gen fi_set in
-  let fi_set = filter_interesting gen_functions fi_set in
+  let fi_set = if !skip_interesting_check then fi_set else
+      filter_interesting gen_functions fi_set in
   let (mut_fn_set,const_fn_set) = 
     if !no_mut_analysis then
       (fi_set,Analysis.FISet.empty)

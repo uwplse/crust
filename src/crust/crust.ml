@@ -86,7 +86,6 @@ let do_it f =
     ("-mut-length", Arg.Set_int RustGen.mut_action_len, "Generate up to n mutative calls");
     ("-immut-length", Arg.Set_int RustGen.immut_action_len, "Generate up to n immutable calls");
     ("-no-assume-ident", Arg.Set RustGen.assume_ident_init, "Do not assume that values returned from crust_init are interchangeable");
-    ("-no-mut-analysis", Arg.Set RustGen.no_mut_analysis, "Do not run mutation analysis, assume all methods are mutative");
     ("-o", Arg.String (fun f_name ->
          output_channel := open_out f_name
        ), "Output to file");
@@ -99,7 +98,12 @@ let do_it f =
          set_command `Driver_Gen;
          RustGen.infer_api_only := true;
          ()
-       ), "Show the inferred mutable/immutable API after relevance analysis")
+       ), "Show the inferred mutable/immutable API after relevance analysis");
+    (* heuristic tuning *)
+    ("-no-symm-break", Arg.Set RustGen.skip_symm_break, "Disable symmetry breaking");
+    ("-no-interfere-check", Arg.Set RustGen.skip_interfere_check, "Disable interference checking");
+    ("-no-interest-filter", Arg.Set RustGen.skip_interesting_check, "Disable interesting-ness heuristic");
+    ("-no-mut-analysis", Arg.Set RustGen.no_mut_analysis, "Do not run mutation analysis, assume all methods are mutative");
   ] in
   Arg.parse arg_spec (fun s -> 
       try 
