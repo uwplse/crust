@@ -121,12 +121,25 @@ let i_list = arith_intrinsics @ [
     i_params = [];
     i_body = Inline "(__CPROVER_assume(0),0)"
   };
-  {
+(*  {
     i_name = "core$intrinsics$move_val_init";
     i_params = ["t1"];
     i_body = Inline "memcpy({arg1}, &{arg2}, sizeof({t1}))"
     (*i_body = Inline "((( *{arg1}) = ({arg2})),0)"*)
   };
+*)
+
+  {
+    i_name = "core$ptr$write";
+    i_params = [ "t1" ];
+    i_body = Template ("rs_unit {mname}({t1}* dst, {t1} src) {\n" ^
+                       "\t if(sizeof({t1})) { return; } \n" ^
+                       "\t *dst = src;\n" ^
+                       "\t return 0;\n" ^
+                       "}"
+                      )
+  };
+
   {
     i_name = "core$intrinsics$init";
     i_params = ["t1"];
