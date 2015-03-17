@@ -346,7 +346,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
       | `Ptr _ -> failwith "Unsupported pointer type in public api"
       | `Bottom -> failwith "Unsupported bottom type"
       | `Str
-      | `Vec _ -> failwith "stray dst type"
+      | `Vec _ -> []
       | (`Ref (_,t') as t) ->
         (if is_trivial_type t then [] else
            (build_var state t)) 
