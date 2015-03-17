@@ -343,11 +343,11 @@ let walk_public_fn fn_def f_state m_args =
       let w_state' = walk_fn_def w_state fn_def m_args in
       { f_state with w_state = w_state' }
     with 
-    | ResolutionFailed e -> prerr_endline ("Method resolution failed: " ^ e); { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
+    | ResolutionFailed e -> (*prerr_endline ("Method resolution failed: " ^ e);*) { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
     | TypeUtil.TyResolutionFailed -> (prerr_endline "Type resolution failed"; {
         f_state with fail_inst = FISet.add f_inst f_state.fail_inst
       })
-    | Env.Missing_binding e -> prerr_endline ("Failed due to missing function " ^ e); {
+    | Env.Missing_binding e -> (*prerr_endline ("Failed due to missing function " ^ e);*) {
         f_state with fail_inst = FISet.add f_inst f_state.fail_inst
       }
 
