@@ -12,7 +12,7 @@ import os
 import signal
 import urllib
 import urllib2
-
+import pipes
 #logger = multiprocessing.log_to_stderr()
 #logger.setLevel(logging.DEBUG)
 
@@ -34,7 +34,7 @@ BAD_TRANS = 3
 loop_re = re.compile(r'^Loop (.+):$')
 failed_re = re.compile(r'VERIFICATION FAILED\n$')
 
-builtin_loops = re.compile(r'^(core\$ptr\$|core\$intrinsics\$(?!copy_memory)|memmove|memcpy)')
+builtin_loops = re.compile(r'^(core\$ptr\$|core\$intrinsics\$|memmove|memcpy)')
 
 def find_loops(test_file, test_case_name):
     command = [ cbmc_binary, "-I", include_dir, "--show-loops", "--function", test_case_name, test_file ]
@@ -90,6 +90,7 @@ def do_run(test_file, test_case_name, unwinding, solve_z3):
         out = tempfile.NamedTemporaryFile(mode="rw", delete = True)
     else:
         out = dev_null
+    #print " ".join([ pipes.quote(s) for s in command ])
     child_proc = subprocess.Popen(command, stdout = out)
     start = time.time()
     now = time.time()
@@ -223,6 +224,7 @@ def parse_args():
     global job_host
     global local
     global test_source
+    global n_workers
 
     cbmc_binary = opts.cbmc
     unwind_bound = str(opts.unwind)
