@@ -103,7 +103,7 @@ type ty_state = {
 type action_call = 
   | Open_Block of string * Types.mono_type * string * (method_arg list)
   | Ptr_Assert of [`Immut | `Mut ] * string * string
-  | Null_Assert of string
+  | Null_Assert of [`Immut | `Mut ] * string
   | Close_Block
   | Copy_Action of string * string
 
@@ -308,8 +308,8 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     else
       []
 
-  method private gen_null_assert var = 
-    Null_Assert var
+  method private gen_null_assert mut_flag var = 
+    Null_Assert (mut_flag,var)
 
   method private is_dst ty = 
     match ty with
@@ -324,11 +324,11 @@ class rust_pp buf output_file_prefix num_tests = object(self)
            Ptr_Assert (`Mut,out_var,v2)) mut_ref
       ) @ (self#gen_ty_assertions state (fun v2 ->
           Ptr_Assert (`Immut,out_var,v2)) (`Ref (TypeUtil.dummy_lifetime,t))) 
-        @ [ self#gen_null_assert out_var ]
+        @ [ self#gen_null_assert `Mut out_var ]
     | `Ref (_,t) when not (self#is_dst t) ->
       self#gen_ty_assertions state (fun v1 ->
           Ptr_Assert (`Immut,v1,out_var)) (`Ref_Mut (TypeUtil.dummy_lifetime,t))
-      @ [ self#gen_null_assert out_var ]
+      @ [ self#gen_null_assert `Immut out_var ]
     | _ -> []
   method private get_args state arg_types = 
     self#get_args_aux [] [] state arg_types
@@ -410,9 +410,11 @@ class rust_pp buf output_file_prefix num_tests = object(self)
             self#newline ();
             accum
           end
-        | Null_Assert out_var ->
+        | Null_Assert (mut_flag,out_var) ->
           self#put_all [
-             "crust_assert("; out_var; " as *mut _ as u64 != 0);"
+            "crust_assert("; out_var; " as *" ; 
+            (match mut_flag with `Mut -> "mut" | `Immut -> "const");
+            " _ as u64 != 0);"
           ];
           self#newline ();
           accum
