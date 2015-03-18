@@ -81,6 +81,7 @@ main = do
                 "desugar-pattern-lets",
                 "desugar-for",
                 "desugar-unsize",
+                "fix-clone",
                 "fix-address",
                 "fix-special-fn",
                 "fix-bottom",
@@ -124,8 +125,30 @@ runPass "cleanup-drops" = cleanupDrops
 runPass "cleanup-temps" = cleanupTemps
 runPass "scrub" = scrub
 runPass "dump" = dumpIr "dump"
+runPass "fix-clone" = fixClone
 runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runPass "id" = id
+
+fixClone = everywhere (mkT addDropCheckT)
+  where
+    addDropCheckT (IFn (FnDef v n l t arg ret impl@(Just (ImplClause "core$clone$Clone$clone" _ [ty])) e)) =
+      let e' = addTypeCheck ty e in
+      IFn (FnDef v n l t arg ret impl e')
+    addDropCheckT e = e
+
+    sizeOfCall ty = Expr (TInt PtrSize) (ECall "core$mem$size_of" [] [ty] [])
+    dummyRetVar ty = Expr ty (EBlock [ SLet (Pattern ty (PVar "__dummy_return")) Nothing ] (Expr ty (EVar "__dummy_return")))
+    mkMatch :: Ty -> Ty -> Expr -> Expr
+    mkMatch ty e_ty e =
+      let zero_pattern = MatchArm (Pattern (TInt PtrSize) (PSimpleLiteral "0")) (dummyRetVar e_ty) in
+      let else_pattern = MatchArm (Pattern (TInt PtrSize) PWild) e in
+      Expr e_ty (EBlock [] (Expr e_ty $ EMatch (sizeOfCall ty) [zero_pattern, else_pattern]))
+
+    addTypeCheck :: Ty -> Expr -> Expr
+    addTypeCheck ty expr@(Expr e_ty _) = mkMatch ty e_ty expr
+                        
+                        
+                        
 
 cleanupDrops = everywhere (mkT cleanupDropT)
   where
