@@ -1,0 +1,62 @@
+diff --git a/src/libcore/cell.rs b/src/libcore/cell.rs
+index 9430716..84a2fb1 100644
+--- a/src/libcore/cell.rs
++++ b/src/libcore/cell.rs
+@@ -559,3 +559,7 @@ impl<T> UnsafeCell<T> {
+     #[stable]
+     pub unsafe fn into_inner(self) -> T { self.value }
+ }
++///
++pub fn crust_init(elem: u8) -> (RefCell<u8>,RefCell<u8>) {
++    (RefCell::new(elem),RefCell::new(elem))
++}
+diff --git a/src/libcore/macros.rs b/src/libcore/macros.rs
+index d44eaae..b2bb415 100644
+--- a/src/libcore/macros.rs
++++ b/src/libcore/macros.rs
+@@ -8,23 +8,24 @@
+ // option. This file may not be copied, modified, or distributed
+ // except according to those terms.
+ 
+-/// Entry point of task panic, for details, see std::macros
+ #[macro_export]
+ macro_rules! panic {
+     () => (
+-        panic!("explicit panic")
++        unsafe { $crate::intrinsics::abort() }
+     );
+     ($msg:expr) => ({
+-        static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
+-        ::core::panicking::panic(&_MSG_FILE_LINE)
++        /*static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
++        ::core::panicking::panic(&_MSG_FILE_LINE)*/
++        unsafe { $crate::intrinsics::abort() }
+     });
+     ($fmt:expr, $($arg:tt)*) => ({
++        panic!("trans_panic");
+         // The leading _'s are to avoid dead code warnings if this is
+         // used inside a dead function. Just `#[allow(dead_code)]` is
+         // insufficient, since the user may have
+         // `#[forbid(dead_code)]` and which cannot be overridden.
+-        static _FILE_LINE: (&'static str, usize) = (file!(), line!());
+-        ::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
++        //static _FILE_LINE: (&'static str, usize) = (file!(), line!());
++        //::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
+     });
+ }
+ 
+@@ -56,12 +57,12 @@ macro_rules! panic {
+ macro_rules! assert {
+     ($cond:expr) => (
+         if !$cond {
+-            panic!(concat!("assertion failed: ", stringify!($cond)))
++            panic!(/*concat!("assertion failed: ", stringify!($cond))*/)
+         }
+     );
+     ($cond:expr, $($arg:tt)+) => (
+         if !$cond {
+-            panic!($($arg)+)
++            panic!(/*$($arg)+*/)
+         }
+     );
+ }
