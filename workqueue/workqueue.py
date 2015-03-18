@@ -10,6 +10,11 @@ import time
 # create our little application :)
 app = Flask(__name__)
 
+use_sat = False
+
+if len(sys.argv) > 1:
+    use_sat = sys.argv[1] == "--sat"
+
 # configuration
 DEBUG = os.environ.get('WQ_DEBUG') is not None
 SECRET_KEY = os.environ.get('WQ_SECRET_KEY') or 'development key'
@@ -36,10 +41,11 @@ def get_pqueue(task):
         return None
 
 with open('tasks.txt') as f:
+    target_queue = sat_tasks if use_sat else tasks
     for line in f:
         task = line.strip()
         if not os.path.exists(outfile(task)):
-            tasks.add(task)
+            target_queue.add(task)
 
 n_tasks = len(set(tasks))
 
