@@ -75,9 +75,9 @@ let i_list = arith_intrinsics @ [
     i_name = "core$intrinsics$transmute";
     i_params = [ "t1"; "u1" ];
     i_body = Template ("{u1} {mname}({t1} to_trans) {\n" ^
-                       "\t {t1} *temp = &to_trans;\n" ^
-                       "\t {u1} *temp2 = ({u1}* )temp;\n" ^
-                       "\t return *temp2;\n" ^
+                       "\t union { {t1} source; {u1} dest; } _cast_temp;\n"^
+                       "\t _cast_temp.source = to_trans;\n" ^
+                       "\t return _cast_temp.dest;" ^
                        "}")
   };
   {
