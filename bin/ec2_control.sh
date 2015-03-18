@@ -29,6 +29,24 @@ function build_worker() {
 	ssh -t -i $THIS_DIR/crust_test.pem ec2-user@$host "bash /home/ec2-user/setup_worker.sh; exit"
 }
 
+function deploy_worker() {
+	worker_scp $1 $2 "~/crust_worker.tar.bz2"
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "rm -rf ~/crust/*"
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "tar xvf ~/crust_worker.tar.bz2 -C ~/crust"
+}
+
+function deploy_all_workers() {
+    for host in ${WORKER_IPS[@]}; do
+		deploy_worker $host $1
+	done
+}
+
+function get_results() {
+	ssh -i $THIS_DIR/crust_test.pem ubuntu@$JOBHOST "tar cf ~/_temp_results.tar.bz2 -C ~/workqueue/ results";
+	scp -i $THIS_DIR/crust_test.pem ubuntu@$JOBHOST:~/_temp_results.tar.bz2 $1
+	ssh -i $THIS_DIR/crust_test.pem ubuntu@$JOBHOST "rm ~/_temp_results.tar.bz2"
+}
+
 function build_all_workers() {
 	for host in ${WORKER_IPS[@]}; do
 		build_worker $host $1
