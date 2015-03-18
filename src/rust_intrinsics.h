@@ -132,7 +132,7 @@
 
 #define UNSIGNED_MUL(width)						\
   unsigned_result(width) __crust_mul_op(u, width)(__crust_uint(width) ui_a, __crust_uint(width) ui_b) { \
-	if(ui_a > UINT##width##_MAX / ui_b) {								\
+	if(ui_a != 0 && ui_b != 0 && ui_a > UINT##width##_MAX / ui_b) {		\
 	  __crust_unsigned_fail(width);										\
 	} else {															\
 	  __crust_unsigned_success(width, (ui_a * ui_b));					\
