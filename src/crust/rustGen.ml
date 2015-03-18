@@ -832,7 +832,9 @@ let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f =
     do_gen_mut mut_fn_set const_fn_set seq_len state (succ index) path f
   end
 and do_gen_immut const_fn_set seq_len state index path f =
-  if seq_len = !immut_action_len then
+  if !immut_action_len = 0 then
+     f path
+  else if seq_len = !immut_action_len then
     ()
   else if index = (Array.length const_fn_set) then
     ()
