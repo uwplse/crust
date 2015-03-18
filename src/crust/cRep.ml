@@ -90,8 +90,10 @@ let fresh_temp () =
   counter := !counter + 1;
   Printf.sprintf "__temp_%d" new_id
 
+let literal_unit_name = "UNIT";;
+
 let trivial_expr = `Bool,(`Literal "1")
-let literal_unit = `Unit,`Literal "0"
+let literal_unit = `Unit,`Literal literal_unit_name
 
 
 let mk_assign = 
@@ -230,7 +232,7 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
 						  | "0" -> "0"
 						  | _ -> failwith @@ "Unknown boolean representation: " ^ s
 					end
-		 | `Unit -> "0"
+		 | `Unit -> literal_unit_name
 		 | _ -> s
 	   in
 	   (fst expr,`Literal lit_rep)
@@ -314,7 +316,7 @@ and (simplify_ir : Ir.expr -> all_expr) = fun expr ->
         match stmt with
         | [] -> (`Unit,`While (c',b'))
         | [`Declare _; s] ->
-          let final_expr = `Unit,(`Literal "0") in
+          let final_expr = `Unit,(`Literal literal_unit_name) in
           let loop_body = `Block ([`Expr b';s],final_expr) in
           let t_loop_body : all_expr = `Unit,loop_body in
           let loop_ast : all_expr = `Unit,(`While (c',t_loop_body)) in

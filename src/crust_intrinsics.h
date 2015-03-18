@@ -19,5 +19,5 @@ rs_f64 nondet_crust_f64();
 
 rs_unit crust_assert(int cond) {
   assert(cond);
-  return 0;
+  return UNIT;
 }

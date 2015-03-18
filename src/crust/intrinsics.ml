@@ -114,12 +114,12 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$abort";
     i_params = [];
-    i_body = Inline "(__CPROVER_assume(0),0)"
+    i_body = Inline ("(__CPROVER_assume(0)," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "core$panicking$panic";
     i_params = [];
-    i_body = Inline "(__CPROVER_assume(0),0)"
+    i_body = Inline ("(__CPROVER_assume(0)," ^ CRep.literal_unit_name ^ ")")
   };
 (*  {
     i_name = "core$intrinsics$move_val_init";
@@ -133,9 +133,9 @@ let i_list = arith_intrinsics @ [
     i_name = "core$ptr$write";
     i_params = [ "t1" ];
     i_body = Template ("rs_unit {mname}({t1}* dst, {t1} src) {\n" ^
-                       "\t if(sizeof({t1})) { return; } \n" ^
+                       "\t if(sizeof({t1}) == 0) { return; } \n" ^
                        "\t *dst = src;\n" ^
-                       "\t return 0;\n" ^
+                       "\t return " ^ CRep.literal_unit_name ^ ";\n" ^
                        "}"
                       )
   };
@@ -148,21 +148,13 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$forget";
     i_params = [""];
-    i_body = Inline "0" (* change this to be in line with the unit repr *)
+    i_body = Inline CRep.literal_unit_name (* change this to be in line with the unit repr *)
   };
   {
     i_name = "core$intrinsics$copy_memory";
     i_params = [ "t1" ];
-    i_body = Inline "memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))"
+    i_body = Inline ("(memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))," ^ CRep.literal_unit_name ^ ")")
   };
-(*  {
-    i_name = "core$ptr$swap";
-    i_params = [ "t1" ];
-    i_body = Template ("rs_unit {mname}({t1}* x, {t1}* y) {\n" ^
-                       "\t {t1} temp; temp = *x; *x = *y; *y = temp; return 0;\n" ^
-                       "}")
-  };
-*)
   {
     i_name = "core$ptr$read";
     i_params = [ "t1" ];
@@ -182,13 +174,13 @@ let i_list = arith_intrinsics @ [
                        "\t\t *(dst + n) = *(src + n);\n" ^
                        "\t\t n_iter++;\n" ^
                        "\t }\n" ^
-                       "\t return 0;\n" ^
+                       "\t return "^ CRep.literal_unit_name ^ ";\n" ^
                        "}")
   };
   {
     i_name = "libc$funcs$c95$stdlib$free";
     i_params = [];
-    i_body = Inline "(free({arg1}),0)"
+    i_body = Inline ("(free({arg1})," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "alloc$heap$imp$posix_memalign";

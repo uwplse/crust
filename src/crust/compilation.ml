@@ -269,11 +269,13 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         self#dump_simple_expr lhs;
         self#put_i " = ";
         self#dump_simple_expr rhs;
-        self#put "),0)"
+        self#put_all [ "),"; CRep.literal_unit_name; ")" ]
       | `Assign_Op (op,e1,(_,e2)) ->
+        self#put_i "((";
         self#dump_simple_expr e1;
         self#put_all [ string_of_binop op; "=" ];
-        self#dump_simple_expr e2
+        self#dump_simple_expr e2;
+        self#put_all [ ")," ; CRep.literal_unit_name; ")" ]
       | `Cast ((_,expr),t) ->
         self#put_i "(";
         self#put @@ Printf.sprintf "(%s)" @@ self#t_string t;
@@ -338,7 +340,7 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
         | _ -> assert false
       in
       self#drop_type drop_type arg_string;
-      self#put "0)"
+      self#put_all [ CRep.literal_unit_name ; ")" ]
     method drop_type (ty : Types.mono_type) arg_string = 
       match ty with
       | `Tuple tl -> 
@@ -452,7 +454,7 @@ class static_emitter buf =
 
 let simple_type_repr t = 
   match t with
-  | `Unit -> "char"
+  | `Unit -> "struct { }"
   | `Bool -> "uint8_t"
   | `Int (`Bit_Size w) ->
     Printf.sprintf "int%d_t" w
@@ -788,6 +790,7 @@ let emit out_channel t_set f_set statics =
   end;
   dump_includes out_channel;
   Printf.fprintf out_channel "#define CRUST_MAX_MEM %d\n" !crust_mem_limit;
+  Printf.fprintf out_channel "%s %s;\n" (type_to_string `Unit) CRep.literal_unit_name;
   List.iter (emit_typedefs out_channel) t_list;
   (
     if Intrinsics.need_iheader (f_list :> (string * Types.r_type list) list)  then
