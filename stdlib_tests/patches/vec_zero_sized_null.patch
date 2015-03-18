@@ -50,7 +50,7 @@ index a2643f4..eaf8595 100644
  
      #[inline]
 diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
-index 0de9b57..0590c00 100644
+index 0de9b57..1a678b9 100644
 --- a/src/libcollections/vec.rs
 +++ b/src/libcollections/vec.rs
 @@ -136,7 +136,7 @@ use core::uint;
@@ -192,30 +192,28 @@ index 0de9b57..0590c00 100644
              };
              self.set_len(0);
              Drain {
-@@ -1052,6 +1038,22 @@ impl<T: Clone> Vec<T> {
+@@ -1052,6 +1038,20 @@ impl<T: Clone> Vec<T> {
      }
  }
  
-+pub struct S;
-+
-+static mut item_ind : uint = 0;
 +
 +/// 
-+pub fn crust_init(num: usize, cap: usize, index: uint) -> (Vec<S>,&'static uint) {
++pub fn crust_init(num: usize, cap: usize) -> (Vec<()>,Vec<()>) {
 +    assert!(num <= cap);
 +    assert!(cap < 5);
 +    let mut to_ret = Vec::with_capacity(cap);
++    let mut to_ret2 = Vec::with_capacity(cap);
 +    for i in 0..num {
-+        to_ret.push(S);
++        to_ret.push(());
++        to_ret2.push(());
 +    }
-+    unsafe { item_ind = index }
-+    (to_ret,unsafe { &item_ind })
++    (to_ret,to_ret2)
 +}
 +
  impl<T: PartialEq> Vec<T> {
      /// Removes consecutive repeated elements in the vector.
      ///
-@@ -1162,15 +1164,12 @@ impl<T> Vec<T> {
+@@ -1162,15 +1162,12 @@ impl<T> Vec<T> {
      /// If the capacity for `self` is already equal to or greater than the
      /// requested capacity, then no action is taken.
      fn grow_capacity(&mut self, capacity: uint) {
@@ -233,7 +231,7 @@ index 0de9b57..0590c00 100644
              }
              self.cap = capacity;
          }
-@@ -1189,11 +1188,9 @@ unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T
+@@ -1189,11 +1186,9 @@ unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T
  
  #[inline]
  unsafe fn dealloc<T>(ptr: *mut T, len: uint) {
@@ -248,7 +246,26 @@ index 0de9b57..0590c00 100644
  }
  
  ////////////////////////////////////////////////////////////////////////////////
-@@ -1381,6 +1378,7 @@ macro_rules! impl_eq {
+@@ -1205,7 +1200,8 @@ impl<T:Clone> Clone for Vec<T> {
+     fn clone(&self) -> Vec<T> { ::slice::SliceExt::to_vec(self.as_slice()) }
+ 
+     fn clone_from(&mut self, other: &Vec<T>) {
+-        // drop anything in self that will not be overwritten
++        panic!()
++/*        // drop anything in self that will not be overwritten
+         if self.len() > other.len() {
+             self.truncate(other.len())
+         }
+@@ -1218,7 +1214,7 @@ impl<T:Clone> Clone for Vec<T> {
+         // self.len <= other.len due to the truncate above, so the
+         // slice here is always in-bounds.
+         let slice = &other[self.len()..];
+-        self.push_all(slice);
++        self.push_all(slice);*/
+     }
+ }
+ 
+@@ -1381,6 +1377,7 @@ macro_rules! impl_eq {
  impl_eq! { Vec<A>, &'b [B] }
  impl_eq! { Vec<A>, &'b mut [B] }
  
@@ -256,7 +273,7 @@ index 0de9b57..0590c00 100644
  impl<'a, A, B> PartialEq<Vec<B>> for CowVec<'a, A> where A: PartialEq<B> + Clone {
      #[inline]
      fn eq(&self, other: &Vec<B>) -> bool { PartialEq::eq(&**self, &**other) }
-@@ -1415,7 +1413,7 @@ macro_rules! impl_eq_for_cowvec {
+@@ -1415,7 +1412,7 @@ macro_rules! impl_eq_for_cowvec {
  
  impl_eq_for_cowvec! { &'b [B] }
  impl_eq_for_cowvec! { &'b mut [B] }
@@ -265,7 +282,7 @@ index 0de9b57..0590c00 100644
  #[unstable = "waiting on PartialOrd stability"]
  impl<T: PartialOrd> PartialOrd for Vec<T> {
      #[inline]
-@@ -1451,7 +1449,7 @@ impl<T> AsSlice<T> for Vec<T> {
+@@ -1451,7 +1448,7 @@ impl<T> AsSlice<T> for Vec<T> {
      fn as_slice<'a>(&'a self) -> &'a [T] {
          unsafe {
              mem::transmute(RawSlice {
@@ -274,7 +291,7 @@ index 0de9b57..0590c00 100644
                  len: self.len
              })
          }
-@@ -1480,7 +1478,7 @@ impl<T> Drop for Vec<T> {
+@@ -1480,7 +1477,7 @@ impl<T> Drop for Vec<T> {
                  for x in self.iter() {
                      ptr::read(x);
                  }
@@ -283,7 +300,7 @@ index 0de9b57..0590c00 100644
              }
          }
      }
-@@ -1514,8 +1512,8 @@ impl<'a> fmt::Writer for Vec<u8> {
+@@ -1514,8 +1511,8 @@ impl<'a> fmt::Writer for Vec<u8> {
  
  #[unstable = "unclear how valuable this alias is"]
  /// A clone-on-write vector
@@ -294,7 +311,7 @@ index 0de9b57..0590c00 100644
  #[unstable]
  impl<'a, T> FromIterator<T> for CowVec<'a, T> where T: Clone {
      fn from_iter<I: Iterator<Item=T>>(it: I) -> CowVec<'a, T> {
-@@ -1534,7 +1532,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
+@@ -1534,7 +1531,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
          Cow::Borrowed(self)
      }
  }
@@ -303,8 +320,20 @@ index 0de9b57..0590c00 100644
  ////////////////////////////////////////////////////////////////////////////////
  // Iterators
  ////////////////////////////////////////////////////////////////////////////////
-@@ -1560,7 +1558,7 @@ impl<T> IntoIter<T> {
-             for _x in self { }
+@@ -1557,10 +1554,18 @@ impl<T> IntoIter<T> {
+     #[unstable]
+     pub fn into_inner(mut self) -> Vec<T> {
+         unsafe {
+-            for _x in self { }
++            //for _x in self { }
++            let mut keep_going = true;
++            while keep_going {
++                let y = self.next();
++                match y {
++                    Some(_) => (),
++                    None => keep_going = false
++                }
++            }
              let IntoIter { allocation, cap, ptr: _ptr, end: _end } = self;
              mem::forget(self);
 -            Vec { ptr: NonZero::new(allocation), cap: cap, len: 0 }
@@ -312,6 +341,23 @@ index 0de9b57..0590c00 100644
          }
      }
  }
+@@ -1635,7 +1640,15 @@ impl<T> Drop for IntoIter<T> {
+     fn drop(&mut self) {
+         // destroy the remaining elements
+         if self.cap != 0 {
+-            for _x in *self {}
++            //for _x in *self {}
++            let mut keep_going = true;
++            while keep_going {
++                let y = self.next();
++                match y {
++                    Some(x) => (),
++                    None => keep_going = false
++                }
++            }
+             unsafe {
+                 dealloc(self.allocation, self.cap);
+             }
 diff --git a/src/libcore/iter.rs b/src/libcore/iter.rs
 index 4910c03..75cb957 100644
 --- a/src/libcore/iter.rs
