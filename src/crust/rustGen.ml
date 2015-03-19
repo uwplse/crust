@@ -675,8 +675,8 @@ let rec build_deps gen_funcs to_analyze =
           (* pull in their deps too *)
           build_deps_aux (Analysis.FISet.add fn_inst accum) dep_fun
         end
-      ) accum to_analyze
-  in 
+      ) to_analyze accum
+  in
   build_deps_aux Analysis.FISet.empty to_analyze
 
 let rec filter_interesting = 
@@ -685,10 +685,6 @@ let rec filter_interesting =
   let rec is_interesting pub_set fn_inst = 
     if Hashtbl.mem mem_interesting fn_inst then
       Hashtbl.find mem_interesting fn_inst
-    else if List.exists (fun s ->
-        Str.string_match s (fst fn_inst) 0
-      ) Analysis.core_ops then
-      true
     else begin
       let (fn_name,m_args) = fn_inst in
       let fn_def = Env.EnvMap.find Env.fn_env fn_name in
@@ -699,15 +695,15 @@ let rec filter_interesting =
     end
   (* you must be thinking: there is no way this works... but it DOES *)
   and is_abort_block = function
-    | ([`Let (s,`Unit,Some (`Unit,(`Call ("core$intrinsics$abort",[],[],[]))))],
-       (`Unit,`Var s')) when s = s' -> true
+    | (`Let (_,_,Some (_,(`Call ("core$intrinsics$abort",[],[],[]))))::_,_) -> true
     | _ -> false
   and find_interesting_expr pub_set t_bindings (_,expr) = 
     match expr with
     (* terminal nodes *)
     | `Literal _
     | `Var _ -> false
-    | `Unsafe (s,e) -> not @@ is_abort_block (s,e)
+    | `Unsafe (s,e) -> 
+      not @@ is_abort_block (s,e)
     (* single nodes *)
     | `Struct_Field (e,_)
     | `Deref e
@@ -765,7 +761,12 @@ let rec filter_interesting =
         is_interesting fn_set fi
       ) fn_set in
     (* now collect the dependency functions for our interesting functions *)
-    build_deps gen_func interesting_fn
+    let core_functions = Analysis.FISet.filter (fun (fn_name,_) ->
+        fn_name = "core$option$Option$1$T$1$$unwrap"
+      ) fn_set in
+    Analysis.FISet.union 
+      (build_deps gen_func interesting_fn)
+      core_functions
 
 let mut_analysis gen_funcs fn_set = 
   let rec has_mut_ref = function
@@ -785,16 +786,22 @@ let mut_analysis gen_funcs fn_set =
   let mut_fn = build_deps gen_funcs mut_fn in
   (mut_fn,Analysis.FISet.diff fn_set mut_fn)
 
+let dump_state s = 
+  let f = String.concat ", " @@ List.map Types.pp_t (s.t_list : Types.mono_type list :> Types.r_type list) in
+  let t_set = String.concat ", " @@ List.map Types.pp_t @@ (MTSet.elements s.public_types : Types.mono_type list :> Types.r_type list) in
+  prerr_endline @@ "Type stack [ " ^ f ^ " ]";
+  prerr_endline @@ "Type set { " ^ t_set ^ " }"
+
 let valid_extend state api_action = 
   match api_action with
   | Drop -> begin
-    match state.t_list with
-    | [] -> None
-    | h::t -> 
-      if List.mem h t then
-        Some { state with t_list = t }
-      else
-        Some { t_list = t; public_types = MTSet.remove h state.public_types }
+      match state.t_list with
+      | [] -> None
+      | h::t -> 
+        if List.mem h t then
+          Some { state with t_list = t }
+        else
+          Some { t_list = t; public_types = MTSet.remove h state.public_types }
     end
   | Copy -> begin
       match state.t_list with
@@ -819,16 +826,15 @@ let rec do_gen_mut mut_fn_set const_fn_set seq_len state index path f =
       | None -> ()
       | Some st -> begin
           let new_path = mut_fn_set.(index)::path in
-          do_gen_immut const_fn_set 0 state 0 new_path f;
+          do_gen_immut const_fn_set 0 st 0 new_path f;
+          f new_path;
           do_gen_mut mut_fn_set const_fn_set (succ seq_len) st 0 new_path f
         end
     );
     do_gen_mut mut_fn_set const_fn_set seq_len state (succ index) path f
   end
 and do_gen_immut const_fn_set seq_len state index path f =
-  if !immut_action_len = 0 then
-     f path
-  else if seq_len = !immut_action_len then
+  if seq_len = !immut_action_len then
     ()
   else if index = (Array.length const_fn_set) then
     ()

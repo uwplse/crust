@@ -366,7 +366,7 @@ let has_inst w_state f_name =
 
 
 let core_ops = [
-  Str.regexp_string "^core$option$Option$1$T$1$$unwrap$";
+  Str.regexp ("^" ^ (Str.quote "core$option$Option$1$T$1$$unwrap") ^ "$");
   Str.regexp_string "core$slice$$x5bT$x5d$$ops$x3a$x3aIndexMut$1$uint$1$$index_mut";
   Str.regexp_string "core$slice$$x5bT$x5d$$ops$x3a$x3aIndex$1$uint$1$$index"
 ]
