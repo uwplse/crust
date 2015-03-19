@@ -50,7 +50,7 @@ index a2643f4..eaf8595 100644
  
      #[inline]
 diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
-index 0de9b57..1a678b9 100644
+index 0de9b57..23bb90a 100644
 --- a/src/libcollections/vec.rs
 +++ b/src/libcollections/vec.rs
 @@ -136,7 +136,7 @@ use core::uint;
@@ -358,6 +358,23 @@ index 0de9b57..1a678b9 100644
              unsafe {
                  dealloc(self.allocation, self.cap);
              }
+@@ -1724,7 +1737,15 @@ impl<'a, T> Drop for Drain<'a, T> {
+         // so we can use #[unsafe_no_drop_flag].
+ 
+         // destroy the remaining elements
+-        for _x in *self {}
++        //for _x in *self {}
++        let mut keep_going = true;
++        while keep_going {
++            let y = self.next();
++            match y {
++                Some(x) => (),
++                None => keep_going = false
++            }
++        }
+     }
+ }
+ 
 diff --git a/src/libcore/iter.rs b/src/libcore/iter.rs
 index 4910c03..75cb957 100644
 --- a/src/libcore/iter.rs

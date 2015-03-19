@@ -48,16 +48,15 @@ diff --git a/src/libcore/slice.rs b/src/libcore/slice.rs
 index f08978d..0fdb4b1 100644
 --- a/src/libcore/slice.rs
 +++ b/src/libcore/slice.rs
-@@ -814,6 +814,14 @@ pub struct IterMut<'a, T: 'a> {
+@@ -814,6 +814,13 @@ pub struct IterMut<'a, T: 'a> {
      marker: marker::ContravariantLifetime<'a>,
  }
  
-+impl<'a, T> Copy for IterMut<'a, T> {}
 +
 +static mut fix_vec : [u8;3] = [1,2,3];
 +
 +/// 
-+pub fn crust_init() -> (IterMut<'static, u8>,) {
++pub fn crust_init() -> (IterMut<'static,u8>,) {
 +    (unsafe { fix_vec.as_mut_slice().iter_mut() },)
 +}
  
