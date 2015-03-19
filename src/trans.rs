@@ -1260,7 +1260,9 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                             format!("# unimplemented trait method")
                         },
                         ProvidedMethod(ref method) => {
-                            let name = mangled_def_name(trcx, local_def(method.id));
+                            let did = local_def(method.id);
+                            let name = mangled_def_name(trcx, did);
+                            trcx.observed_abstract_fns.insert(name.clone(), did);
                             try_str(|| trans_method(trcx, self, &**method), &*name)
                         },
                         _ => format!("# non-method trait item"),
@@ -1414,7 +1416,7 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
         _ => panic!("expected ItemImpl"),
     };
 
-    let (name, generics, _, exp_self, style, decl, body, _) = match method.node {
+    let (name, generics, _, exp_self, style, decl, body, vis) = match method.node {
         MethDecl(a, ref b, c, ref d, e, ref f, ref g, h) => (a, b, c, d, e, f, g, h),
         MethMac(_) => panic!("unexpected MethMac"),
     };
@@ -1478,9 +1480,16 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
         };
 
     let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics, is_default);
+    let vis_str =
+        if trait_ref.is_none() {
+            vis.trans(trcx)
+        } else {
+            format!("pub")
+        };
 
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
-    format!("fn pub {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+    format!("fn {} {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+            vis_str,
             mangled_name,
             if is_default { "$$__default" } else { "" },
             lifetimes.trans(trcx),
