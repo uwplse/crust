@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -e
+set -u
 
 THIS_DIR=$(cd $(dirname $0) && pwd)
 
@@ -23,6 +24,7 @@ function build_worker() {
 	z3_loc=$(which z3);
 	host=$1
 	ssh -i $THIS_DIR/crust_test.pem ec2-user@$host rm -rf ~/cbmc-5.0 ~/crust ~/z3;
+	worker_scp $host $THIS_DIR/../cbmc-5.0.tar.bz2 "~/cbmc-5.0.tar.bz2"
 	worker_scp $host $z3_loc "~/z3"
 	worker_scp $host $THIS_DIR/setup_worker.sh "~/setup_worker.sh"
 	worker_scp $host $2 "~/crust_worker.tar.bz2"
@@ -64,7 +66,7 @@ function launch_all_workers() {
 }
 
 function kill_worker() {
-	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "kill $(pgrep -f cbmc)"
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 'kill $(pgrep -f cbmc)'
 }
 
 function kill_all_workers() {
