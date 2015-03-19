@@ -137,15 +137,18 @@ trans_test() {
 }
 
 trans_stdlib_test() {
-	if [ \! -e $2 ]; then
-		mkdir -p $2
+    local filter=$1
+    local dir=$2
+    shift 2
+	if [ \! -e $dir ]; then
+		mkdir -p $dir
 	fi
-	dump_items $1 > $SCRATCH/item_filter
+	dump_items $filter > $SCRATCH/item_filter
 	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
 	mkdir -p $SCRATCH/test_cases
-	edo ../bin/crust.native -driver-gen -api-filter $1 -immut-length 0 -mut-length 4 -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	edo ../bin/crust.native -driver-gen -api-filter $filter -immut-length 1 -mut-length 1 "$@" -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
 	for i in $SCRATCH/test_cases/*.rs; do
-		trans_test $i $2;
+		trans_test $i $dir;
 	done
 }
 
@@ -169,6 +172,19 @@ set_scratch() {
 		echo "Scratch already set!";
 		exit -1
 	fi
+}
+
+evaluate_heuristics() {
+    local args
+    for h in default symm-break interfere-check interest-filter mut-analysis copy-check; do
+        if [[ "$h" == "default" ]]; then
+            args=
+        else
+            args=-no-$h
+        fi
+        mkdir -p hcount/$h hcount/${h}_scratch
+        edo tmux new-window "bash $0 set_scratch hcount/${h}_scratch trans_stdlib_test vec.filter hcount/$h $args |& tee hcount/${h}.log"
+    done
 }
 
 "$@"
