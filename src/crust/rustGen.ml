@@ -169,13 +169,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     var_counter <- 0;
     self#debug_call_seq sequence;
     let init_vars,concrete_call_seqs = self#concretize sequence in
-    let final_call_seq = 
-      List.filter self#all_copy_var_used @@
-      if !assume_ident_init then
-        self#break_symmetry @@ List.filter self#compute_interference concrete_call_seqs
-      else
-        concrete_call_seqs
-    in
+    let final_call_seq = self#filter_call_seq concrete_call_seqs in
     List.iter (fun cc_seq ->
         self#emit_cc_sequence init_vars cc_seq
     ) final_call_seq

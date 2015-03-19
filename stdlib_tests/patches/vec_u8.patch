@@ -18,7 +18,7 @@ index a2643f4..4de86d1 100644
              new_ptr
          }
 diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
-index 0de9b57..265bb08 100644
+index 0de9b57..589e3bb 100644
 --- a/src/libcollections/vec.rs
 +++ b/src/libcollections/vec.rs
 @@ -1052,6 +1052,18 @@ impl<T: Clone> Vec<T> {
@@ -59,6 +59,42 @@ index 0de9b57..265bb08 100644
      }
  }
  
+@@ -1380,7 +1395,7 @@ macro_rules! impl_eq {
+ 
+ impl_eq! { Vec<A>, &'b [B] }
+ impl_eq! { Vec<A>, &'b mut [B] }
+-
++/*
+ impl<'a, A, B> PartialEq<Vec<B>> for CowVec<'a, A> where A: PartialEq<B> + Clone {
+     #[inline]
+     fn eq(&self, other: &Vec<B>) -> bool { PartialEq::eq(&**self, &**other) }
+@@ -1415,7 +1430,7 @@ macro_rules! impl_eq_for_cowvec {
+ 
+ impl_eq_for_cowvec! { &'b [B] }
+ impl_eq_for_cowvec! { &'b mut [B] }
+-
++*/
+ #[unstable = "waiting on PartialOrd stability"]
+ impl<T: PartialOrd> PartialOrd for Vec<T> {
+     #[inline]
+@@ -1511,7 +1526,7 @@ impl<'a> fmt::Writer for Vec<u8> {
+ ////////////////////////////////////////////////////////////////////////////////
+ // Clone-on-write
+ ////////////////////////////////////////////////////////////////////////////////
+-
++/*
+ #[unstable = "unclear how valuable this alias is"]
+ /// A clone-on-write vector
+ pub type CowVec<'a, T> = Cow<'a, Vec<T>, [T]>;
+@@ -1534,7 +1549,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
+         Cow::Borrowed(self)
+     }
+ }
+-
++*/
+ ////////////////////////////////////////////////////////////////////////////////
+ // Iterators
+ ////////////////////////////////////////////////////////////////////////////////
 @@ -1557,7 +1572,15 @@ impl<T> IntoIter<T> {
      #[unstable]
      pub fn into_inner(mut self) -> Vec<T> {
