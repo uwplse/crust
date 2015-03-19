@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -u
 
 if ! [[ -e src ]]; then
     echo "You must create a symlink ./src pointing to the rust source code"
@@ -64,15 +65,24 @@ trans_all_libs() {
     done
 }
 
+get_test_num() {
+	t_num=$(basename $1)
+	t_num=${t_num/.rs/}
+	t_num=${t_num/libtest_/}
+	echo $t_num
+}
+
 scrub_test_error() {
 	TO_SCRUB=$1
+	test_num=$(get_test_num $TO_SCRUB)
 	for i in $(seq 0 3); do
-		if run_rbmc $TO_SCRUB > $SCRATCH/tests.ir 2> $SCRATCH/failing_tests; then
+		if run_rbmc $TO_SCRUB > $SCRATCH/test_${test_num}.ir 2> $SCRATCH/failing_tests_${test_num}; then
+			rm $SCRATCH/scrubbed_*_${test_num}.rs $SCRATCH/failing_tests_${test_num} $SCRATCH/pre_scrubbed_*_${test_num}.rs
 			return
 		fi
-		cp $TO_SCRUB $SCRATCH/pre_scrubbed_${i}.rs
-		egrep -o '.+error:' $SCRATCH/failing_tests | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python ../bin/filter_errors.py $TO_SCRUB > $SCRATCH/scrubbed_${i}.rs;
-		cp $SCRATCH/scrubbed_${i}.rs $TO_SCRUB
+		cp $TO_SCRUB $SCRATCH/pre_scrubbed_${i}_${test_num}.rs
+		egrep -o '.+error:' $SCRATCH/failing_tests_${test_num} | sed -r -e 's/[^:]+:([[:digit:]]+):.+/\1/g' | python ../bin/filter_errors.py $TO_SCRUB > $SCRATCH/scrubbed_${i}_${test_num}.rs;
+		cp $SCRATCH/scrubbed_${i}_${test_num}.rs $TO_SCRUB
 	done
 	echo "Failed to scrub tests"
 	exit 1
@@ -80,9 +90,11 @@ scrub_test_error() {
 
 compile_test () {
 	scrub_test_error $1;
-	../bin/Preprocess > $SCRATCH/tests2.ir < $SCRATCH/tests.ir;
-	cat $2 >> $SCRATCH/tests2.ir;
-	../bin/crust.native -test-compile $SCRATCH/tests2.ir;
+	test_num=$(get_test_num $1)
+	../bin/Preprocess > $SCRATCH/test2_${test_num}.ir < $SCRATCH/test_${test_num}.ir;
+	cat $2 >> $SCRATCH/test2_${test_num}.ir;
+	../bin/crust.native -test-compile $SCRATCH/test2_${test_num}.ir;
+	rm $SCRATCH/test_${test_num}.ir $SCRATCH/test2_${test_num}.ir
 }
 
 run_rbmc() {
@@ -104,6 +116,7 @@ apply_patch() {
 unapply_last_patch() {
     if [[ -e "patches/last.patch" ]]; then
         patch -p1 -R <patches/last.patch
+		rm patches/last.patch
     fi
 }
 
@@ -117,8 +130,9 @@ scratch_cleanup() {
 }
 
 instrument_intrinsics() {
-	python ../bin/crust_macros.py --intrinsics $1 > $SCRATCH/temp.rs
-	mv $SCRATCH/temp.rs $1
+	test_num=$(get_test_num $1)
+	python ../bin/crust_macros.py --intrinsics $1 > $SCRATCH/temp_${test_num}.rs
+	mv $SCRATCH/temp_${test_num}.rs $1
 }
 
 dump_items() {
@@ -126,7 +140,7 @@ dump_items() {
 }
 
 dump_api() {
-	 ../bin/crust.native -dump-api -api-filter $1 ir/stdlib.ir
+	../bin/crust.native -dump-heuristic -api-filter $1 ir/stdlib.ir
 }
 
 trans_test() {
@@ -146,10 +160,8 @@ trans_stdlib_test() {
 	dump_items $filter > $SCRATCH/item_filter
 	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
 	mkdir -p $SCRATCH/test_cases
-	edo ../bin/crust.native -driver-gen -api-filter $filter -immut-length 0 -mut-length 4 "$@" -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
-	for i in $SCRATCH/test_cases/*.rs; do
-		trans_test $i $dir;
-	done
+	edo ../bin/crust.native -driver-gen -api-filter $filter -immut-length 2 -mut-length 3 "$@" -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	ls $SCRATCH/test_cases/*.rs | parallel --halt 2 bash $0 set_scratch $SCRATCH trans_test '{}' $dir
 }
 
 with_scratch() {
