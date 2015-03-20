@@ -320,28 +320,41 @@ let state_size w_state =
 type inference_state = {
   restrict_fn : SSet.t;
   fail_inst : FISet.t;
+  restrict_types: MTSet.t;
+  restrict_adt : SSet.t;
   w_state : walk_state
 }
 
 
-let walk_public_fn fn_def f_state m_args = 
+let walk_public_fn =
+  let is_restrict_type f_state ty = 
+    match ty with
+    | `Adt_type { Types.type_name = a; _ } when
+        SSet.mem a f_state.restrict_adt ->
+      not (MTSet.mem ty f_state.restrict_types)
+    |  _ -> false
+  in
+  fun fn_def f_state m_args ->
   let f_inst = fn_def.fn_name,m_args in
   if FISet.mem f_inst f_state.w_state.public_fn then
     f_state
   else if FISet.mem f_inst f_state.fail_inst then
     f_state
-  else
+  else begin
     try
-      let w_state = f_state.w_state in
       let t_binding = Types.type_binding fn_def.Ir.fn_tparams m_args in
-      let w_state = add_public_fn w_state f_inst in
       let mono_ret_type = (TypeUtil.to_monomorph t_binding fn_def.Ir.ret_type) in
-      let w_state = match mono_ret_type with
-        | #simple_type -> w_state (* we don't need to track this crap at runtime *)
-        | _ -> add_public_type w_state mono_ret_type 
-      in
-      let w_state' = walk_fn_def w_state fn_def m_args in
-      { f_state with w_state = w_state' }
+      if is_restrict_type f_state mono_ret_type then
+        { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
+      else
+        let w_state = f_state.w_state in
+        let w_state = add_public_fn w_state f_inst in
+        let w_state = match mono_ret_type with
+          | #simple_type -> w_state (* we don't need to track this crap at runtime *)
+          | _ -> add_public_type w_state mono_ret_type 
+        in
+        let w_state' = walk_fn_def w_state fn_def m_args in
+        { f_state with w_state = w_state' }
     with 
     | ResolutionFailed e -> (*prerr_endline ("Method resolution failed: " ^ e);*) { f_state with fail_inst = FISet.add f_inst f_state.fail_inst }
     | TypeUtil.TyResolutionFailed -> (prerr_endline "Type resolution failed"; {
@@ -350,6 +363,7 @@ let walk_public_fn fn_def f_state m_args =
     | Env.Missing_binding e -> (*prerr_endline ("Failed due to missing function " ^ e);*) {
         f_state with fail_inst = FISet.add f_inst f_state.fail_inst
       }
+  end
 
 let get_inst t_set fn_def = 
     let arg_types = List.map snd fn_def.Ir.fn_args in
@@ -474,10 +488,18 @@ let run_analysis () =
     | None -> init_state
     | Some crust_init_def -> walk_fn_def init_state crust_init_def []
   in
+  let (restrict_adt,restrict_type) = List.fold_left (fun (r_a,r_t) ty ->
+      match ty with
+      | `Adt_type { Types.type_name = a; _ } -> 
+        (SSet.add a r_a,MTSet.add ty r_t)
+      | _ -> (r_a,r_t)
+    ) (SSet.empty,MTSet.empty) seed_types in
   (find_fn {
     restrict_fn = restrict_fn;
     w_state = w_state;
-    fail_inst = FISet.empty
+    fail_inst = FISet.empty;
+    restrict_adt = restrict_adt;
+    restrict_types = restrict_type
   }).w_state
 
 let crust_test_regex = Str.regexp ("^.+" ^ (Str.quote "$") ^ "crust_test_[0-9]+$");;
