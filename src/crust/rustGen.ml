@@ -756,13 +756,20 @@ let rec filter_interesting =
         if Analysis.FISet.mem call_inst pub_set then false else
           is_interesting pub_set call_inst 
   in
+  let op_regex = Str.regexp @@ "^" ^ (Str.quote "core$ops$") in
   fun gen_func fn_set ->
     let interesting_fn = Analysis.FISet.filter (fun fi ->
         is_interesting fn_set fi
       ) fn_set in
     (* now collect the dependency functions for our interesting functions *)
     let core_functions = Analysis.FISet.filter (fun (fn_name,_) ->
-        fn_name = "core$option$Option$1$T$1$$unwrap"
+        fn_name = "core$option$Option$1$T$1$$unwrap" ||
+        let { Ir.fn_impl = impl; _ } = Env.EnvMap.find Env.fn_env fn_name in
+         match impl with
+         | None -> false
+         | Some { Ir.abstract_name = a; _ } ->
+           Str.string_match op_regex a 0 &&
+           a <> "core$ops$Drop$drop"
       ) fn_set in
     Analysis.FISet.union 
       (build_deps gen_func interesting_fn)
