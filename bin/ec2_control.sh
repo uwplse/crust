@@ -8,12 +8,13 @@ THIS_DIR=$(cd $(dirname $0) && pwd)
 . $THIS_DIR/util.sh
 
 function mkworker() {
+	mkdir -p $THIS_DIR/../workers 2> /dev/null
 	ROOT_DIR=$(cd $THIS_DIR/../ && pwd)
 	TEST_DIR=$(cd $1 && pwd)
 	TEST_DIR=${TEST_DIR#$ROOT_DIR/}
-	tar cvf /tmp/crust_worker.tar.bz2 -j -C $THIS_DIR/../  src/rust_intrinsics.h src/crust_intrinsics.h bin/run_tests.py $TEST_DIR
+	tar cf /tmp/crust_worker.tar.bz2 -j -C $THIS_DIR/../  src/rust_intrinsics.h src/crust_intrinsics.h bin/run_tests.py $TEST_DIR
 	
-	mv /tmp/crust_worker.tar.bz2 .
+	mv /tmp/crust_worker.tar.bz2 $THIS_DIR/../workers/${2}_worker.tar.bz2
 }
 
 function worker_scp() {
@@ -34,7 +35,7 @@ function build_worker() {
 function deploy_worker() {
 	worker_scp $1 $2 "~/crust_worker.tar.bz2"
 	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "rm -rf ~/crust/*"
-	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "tar xvf ~/crust_worker.tar.bz2 -C ~/crust"
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 "tar xf ~/crust_worker.tar.bz2 -C ~/crust"
 }
 
 function deploy_all_workers() {
@@ -66,7 +67,7 @@ function launch_all_workers() {
 }
 
 function kill_worker() {
-	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 'kill $(pgrep -f cbmc)'
+	ssh -i $THIS_DIR/crust_test.pem ec2-user@$1 'kill -9 $(pgrep -f cbmc)'
 }
 
 function kill_all_workers() {
@@ -83,6 +84,47 @@ function dashboard() {
 	for host in ${WORKER_IPS[@]}; do
 		xfce4-terminal --geometry 80x15 --command "ssh -t -i $THIS_DIR/crust_test.pem ec2-user@$host htop"
 	done
+}
+
+function build_bh() {
+	if [ ! -e /tmp/rust_code.tar.bz2 ]; then
+		tar cf /tmp/rust_code.tar.bz2 -j /opt/rust-alpha
+	fi
+	tar cf /tmp/build_host_tools.tar.bz2 -j -C $THIS_DIR/.. bin/build_all_ir.sh bin/Preprocess bin/crust.native stdlib_tests/bin/driver.sh bin/filter_errors.py bin/bh_bootstrap.sh bin/crust_macros.py src/crust_macros.rs src/crust_intrinsics.rs src/main.rs src/trans.rs stdlib_tests/x86_64-custom-linux-gnu.json
+	scp -i $THIS_DIR/crust_test.pem /tmp/build_host_tools.tar.bz2 ubuntu@$BUILDHOST:~/
+	if ! ssh -i $THIS_DIR/crust_test.pem ubuntu@$BUILDHOST "/opt/rust-alpha/bin/rustc --version > /dev/null"; then
+		scp -i $THIS_DIR/crust_test.pem /tmp/rust_code.tar.bz2 ubuntu@$BUILDHOST:~/
+	fi
+	ssh -i $THIS_DIR/crust_test.pem -t ubuntu@$BUILDHOST "bash ~/bin/bh_bootstrap.sh"
+}
+
+function build_irs() {
+	IR_OUT=$THIS_DIR/../stdlib_tests/cached_ir
+	mkdir -p $IR_OUT 2> /dev/null
+	for i in ${TEST_PATCHES[@]}; do
+		(cd $THIS_DIR/../stdlib_tests; 
+			bash bin/driver.sh prepare_remote_ir $THIS_DIR/../stdlib_tests/patches/$i $IR_OUT)
+	done
+	scp -i $THIS_DIR/crust_test.pem $IR_OUT/*.tar.bz2 ubuntu@$BUILDHOST:~/
+	scp -i $THIS_DIR/crust_test.pem $THIS_DIR/build_all_ir.sh ubuntu@$BUILDHOST:~/
+	ssh -i $THIS_DIR/crust_test.pem ubuntu@$BUILDHOST "bash ~/bin/build_all_ir.sh"
+	scp -i $THIS_DIR/crust_test.pem ubuntu@$BUILDHOST:~/comp_ir.tar.bz2 /tmp/comp_ir.tar.bz2
+	tar xvf /tmp/comp_ir.tar.bz2 -C $THIS_DIR/../stdlib_tests/precomp
+	rm /tmp/comp_ir.tar.bz2
+}
+
+function mktest_worker() {
+	test_dir=$THIS_DIR/../stdlib_tests/libtests/${3}_tests
+	mkdir -p $test_dir 2> /dev/null
+	patch_file=$(realpath $1)
+	filter_file=$(realpath $2)
+	(cd $THIS_DIR/../stdlib_tests/; bin/driver.sh prepare_remote_build $patch_file /tmp/rust_libs.tar.bz2 $filter_file /tmp/rust_tests.tar.bz2);
+	scp -i $THIS_DIR/crust_test.pem /tmp/rust_tests.tar.bz2 ubuntu@$BUILDHOST:~/
+	scp -i $THIS_DIR/crust_test.pem /tmp/rust_libs.tar.bz2 ubuntu@$BUILDHOST:~/
+	ssh -i $THIS_DIR/crust_test.pem -t ubuntu@$BUILDHOST "cd stdlib_tests; bash bin/driver.sh do_remote_build ~/rust_libs.tar.bz2 ~/rust_tests.tar.bz2"
+	scp -i $THIS_DIR/crust_test.pem ubuntu@$BUILDHOST:~/comp_tests.tar.bz2 /tmp/comp_tests.tar.bz2
+	tar xf /tmp/comp_tests.tar.bz2 -C $test_dir
+	mkworker $test_dir $3
 }
 
 "$@"
