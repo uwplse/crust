@@ -398,9 +398,8 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         | Close_Block -> 
           (self#close_block(); self#newline (); (pred accum))
         | Ptr_Assert (mut_flag,v1,v2) -> begin
-            self#put_all [ "crust_assert("; v1; " as *mut _ as u64 != "; v2; " as *";
-                           (match mut_flag with `Mut -> "mut" | `Immut -> "const");
-                           " _ as u64);"];
+            let function_name = match mut_flag with | `Mut -> "crust_mref_check" | `Immut -> "crust_imref_check" in
+            self#put_all [ function_name; "("; v1; ", "; v2; ");"];
             self#newline ();
             accum
           end

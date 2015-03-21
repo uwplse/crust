@@ -101,3 +101,19 @@ fn nondet_crust_f64() -> f64 {
 fn crust_assert(_: bool) -> () {
     // this body should be replaced
 }
+
+fn crust_imref_check<T>(x: &mut T, y: &T) -> () {
+    if core::mem::size_of::<T>() == 0 {
+        return;
+    }
+    crust_assert(x as *mut _ as usize != 
+                 y as *const _ as usize);
+}
+
+fn crust_mref_check<T>(x: &mut T, y: &mut T) -> () {
+    if core::mem::size_of::<T>() == 0 {
+        return ;
+    }
+    crust_assert(x as *mut _ as usize !=
+                 y as *mut _ as usize);
+}
