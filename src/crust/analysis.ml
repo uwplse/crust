@@ -26,6 +26,8 @@ let (>>=) f g = fun x ->
 
 let rev_app f = fun x y -> f y x;;
 
+let sequence_len = ref 6;;
+
 exception ResolutionFailed of string;;
 exception MonomorphizationFailed of string;;
 
@@ -388,26 +390,29 @@ let core_ops = [
 let pattern_list = ref core_ops;;
 let type_filters = ref SSet.empty;;
 
-let rec find_fn find_state = 
-  let old_size = state_size find_state.w_state in
-  let find_state = Env.EnvMap.fold (fun fn_name fn_def f_state ->
-      if not (List.exists (fun patt ->
-          Str.string_match patt fn_name 0
-        ) !pattern_list) then
-        f_state
-      else if SSet.mem fn_name f_state.restrict_fn then
-        f_state
-      else begin
-        match get_inst f_state.w_state.public_type fn_def with
-        | None -> f_state
-        | Some inst_list ->
-          List.fold_left (walk_public_fn fn_def) f_state inst_list
-      end
-    ) Env.fn_env find_state in
-  if old_size = (state_size find_state.w_state) then
+let rec find_fn ?(iter=0) find_state = 
+  if iter = !sequence_len then
     find_state
   else
-    find_fn find_state
+    let old_size = state_size find_state.w_state in
+    let find_state = Env.EnvMap.fold (fun fn_name fn_def f_state ->
+        if not (List.exists (fun patt ->
+            Str.string_match patt fn_name 0
+          ) !pattern_list) then
+          f_state
+        else if SSet.mem fn_name f_state.restrict_fn then
+          f_state
+        else begin
+          match get_inst f_state.w_state.public_type fn_def with
+          | None -> f_state
+          | Some inst_list ->
+            List.fold_left (walk_public_fn fn_def) f_state inst_list
+        end
+      ) Env.fn_env find_state in
+    if old_size = (state_size find_state.w_state) then
+      find_state
+    else
+      find_fn ~iter:(succ iter) find_state
 
 let build_nopub_fn =
   let is_restrict_fn fn_def = 

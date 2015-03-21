@@ -119,6 +119,7 @@ let do_it f =
 	  failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in
   Env.set_env ast;
+  Analysis.sequence_len := (!RustGen.mut_action_len + !RustGen.immut_action_len);
   match !command with
   | None -> code_gen !output_channel
   | Some `Dump_Api -> do_api_dump !output_channel
