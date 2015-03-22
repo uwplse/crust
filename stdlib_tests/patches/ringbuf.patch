@@ -1,8 +1,8 @@
 diff --git a/src/liballoc/heap.rs b/src/liballoc/heap.rs
-index a2643f4..e693504 100644
+index a2643f4..4de86d1 100644
 --- a/src/liballoc/heap.rs
 +++ b/src/liballoc/heap.rs
-@@ -294,9 +294,9 @@ mod imp {
+@@ -294,11 +294,11 @@ mod imp {
  
      #[inline]
      pub unsafe fn reallocate(ptr: *mut u8, old_size: uint, size: uint, align: uint) -> *mut u8 {
@@ -12,13 +12,181 @@ index a2643f4..e693504 100644
 -        } else {
 +        } else */{
              let new_ptr = allocate(size, align);
-             ptr::copy_memory(new_ptr, ptr, cmp::min(size, old_size));
+-            ptr::copy_memory(new_ptr, ptr, cmp::min(size, old_size));
++            ptr::copy_nonoverlapping_memory(new_ptr, ptr, cmp::min(size, old_size));
              deallocate(ptr, old_size, align);
+             new_ptr
+         }
 diff --git a/src/libcollections/ring_buf.rs b/src/libcollections/ring_buf.rs
-index 338166c..920c297 100644
+index 338166c..7dcfed7 100644
 --- a/src/libcollections/ring_buf.rs
 +++ b/src/libcollections/ring_buf.rs
-@@ -1316,6 +1316,19 @@ impl<T: Clone> RingBuf<T> {
+@@ -970,7 +970,8 @@ impl<T> RingBuf<T> {
+         let contiguous = self.is_contiguous();
+ 
+         match (contiguous, distance_to_tail <= distance_to_head, idx >= self.tail) {
+-            (true, true, _) if i == 0 => {
++            (true, true, _) => {
++                if i == 0 {
+                 // push_front
+                 //
+                 //       T
+@@ -982,34 +983,36 @@ impl<T> RingBuf<T> {
+                 //
+ 
+                 self.tail = self.wrap_index(self.tail - 1);
+-            },
+-            (true, true, _) => unsafe {
+-                // contiguous, insert closer to tail:
+-                //
+-                //             T   I         H
+-                //      [. . . o o A o o o o . . . . . .]
+-                //
+-                //           T               H
+-                //      [. . o o I A o o o o . . . . . .]
+-                //           M M
+-                //
+-                // contiguous, insert closer to tail and tail is 0:
+-                //
+-                //
+-                //       T   I         H
+-                //      [o o A o o o o . . . . . . . . .]
+-                //
+-                //                       H             T
+-                //      [o I A o o o o o . . . . . . . o]
+-                //       M                             M
+-
+-                let new_tail = self.wrap_index(self.tail - 1);
+-
+-                self.copy(new_tail, self.tail, 1);
+-                // Already moved the tail, so we only copy `i - 1` elements.
+-                self.copy(self.tail, self.tail + 1, i - 1);
+-
+-                self.tail = new_tail;
++                } else {
++                    unsafe {
++                        // contiguous, insert closer to tail:
++                        //
++                        //             T   I         H
++                        //      [. . . o o A o o o o . . . . . .]
++                        //
++                        //           T               H
++                        //      [. . o o I A o o o o . . . . . .]
++                        //           M M
++                        //
++                        // contiguous, insert closer to tail and tail is 0:
++                        //
++                        //
++                        //       T   I         H
++                        //      [o o A o o o o . . . . . . . . .]
++                        //
++                        //                       H             T
++                        //      [o I A o o o o o . . . . . . . o]
++                        //       M                             M
++                        
++                        let new_tail = self.wrap_index(self.tail - 1);
++                        
++                        self.copy(new_tail, self.tail, 1);
++                        // Already moved the tail, so we only copy `i - 1` elements.
++                        self.copy(self.tail, self.tail + 1, i - 1);
++                        
++                        self.tail = new_tail;
++                    }
++                }
+             },
+             (true, false, _) => unsafe {
+                 //  contiguous, insert closer to head:
+@@ -1058,45 +1061,50 @@ impl<T> RingBuf<T> {
+ 
+                 self.head += 1;
+             },
+-            (false, true, false) if idx == 0 => unsafe {
+-                // discontiguous, insert is closer to tail, head section,
+-                // and is at index zero in the internal buffer:
+-                //
+-                //       I                   H     T
+-                //      [A o o o o o o o o o . . . o o o]
+-                //
+-                //                           H   T
+-                //      [A o o o o o o o o o . . o o o I]
+-                //                               M M M
+-
+-                // copy elements up to new tail
+-                self.copy(self.tail - 1, self.tail, self.cap - self.tail);
+-
+-                // copy last element into empty spot at bottom of buffer
+-                self.copy(self.cap - 1, 0, 1);
+-
+-                self.tail -= 1;
+-            },
+-            (false, true, false) => unsafe {
+-                // discontiguous, insert closer to tail, head section:
+-                //
+-                //             I             H     T
+-                //      [o o o A o o o o o o . . . o o o]
+-                //
+-                //                           H   T
+-                //      [o o I A o o o o o o . . o o o o]
+-                //       M M                     M M M M
+-
+-                // copy elements up to new tail
+-                self.copy(self.tail - 1, self.tail, self.cap - self.tail);
+-
+-                // copy last element into empty spot at bottom of buffer
+-                self.copy(self.cap - 1, 0, 1);
+-
+-                // move elements from idx-1 to end forward not including ^ element
+-                self.copy(0, 1, idx - 1);
+-
+-                self.tail -= 1;
++            (false, true, false) => {
++                if idx == 0 {
++                    unsafe {
++                        // discontiguous, insert is closer to tail, head section,
++                        // and is at index zero in the internal buffer:
++                        //
++                        //       I                   H     T
++                        //      [A o o o o o o o o o . . . o o o]
++                        //
++                        //                           H   T
++                        //      [A o o o o o o o o o . . o o o I]
++                        //                               M M M
++
++                        // copy elements up to new tail
++                        self.copy(self.tail - 1, self.tail, self.cap - self.tail);
++
++                        // copy last element into empty spot at bottom of buffer
++                        self.copy(self.cap - 1, 0, 1);
++
++                        self.tail -= 1;
++                    }
++                } else {
++                    unsafe {
++                        // discontiguous, insert closer to tail, head section:
++                        //
++                        //             I             H     T
++                        //      [o o o A o o o o o o . . . o o o]
++                        //
++                        //                           H   T
++                        //      [o o I A o o o o o o . . o o o o]
++                        //       M M                     M M M M
++
++                        // copy elements up to new tail
++                        self.copy(self.tail - 1, self.tail, self.cap - self.tail);
++
++                        // copy last element into empty spot at bottom of buffer
++                        self.copy(self.cap - 1, 0, 1);
++
++                        // move elements from idx-1 to end forward not including ^ element
++                        self.copy(0, 1, idx - 1);
++
++                        self.tail -= 1;
++                    }
++                }
+             },
+             (false, false, false) => unsafe {
+                 // discontiguous, insert closer to head, head section:
+@@ -1316,6 +1324,19 @@ impl<T: Clone> RingBuf<T> {
      }
  }
  
@@ -38,7 +206,7 @@ index 338166c..920c297 100644
  /// Returns the index in the underlying buffer for a given logical element index.
  #[inline]
  fn wrap_index(index: uint, size: uint) -> uint {
-@@ -1502,7 +1515,14 @@ pub struct Drain<'a, T: 'a> {
+@@ -1502,7 +1523,14 @@ pub struct Drain<'a, T: 'a> {
  #[stable]
  impl<'a, T: 'a> Drop for Drain<'a, T> {
      fn drop(&mut self) {

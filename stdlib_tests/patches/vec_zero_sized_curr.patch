@@ -1,0 +1,212 @@
+diff --git a/src/liballoc/heap.rs b/src/liballoc/heap.rs
+index a2643f4..4de86d1 100644
+--- a/src/liballoc/heap.rs
++++ b/src/liballoc/heap.rs
+@@ -294,11 +294,11 @@ mod imp {
+ 
+     #[inline]
+     pub unsafe fn reallocate(ptr: *mut u8, old_size: uint, size: uint, align: uint) -> *mut u8 {
+-        if align <= MIN_ALIGN {
++/*        if align <= MIN_ALIGN {
+             libc::realloc(ptr as *mut libc::c_void, size as libc::size_t) as *mut u8
+-        } else {
++        } else */{
+             let new_ptr = allocate(size, align);
+-            ptr::copy_memory(new_ptr, ptr, cmp::min(size, old_size));
++            ptr::copy_nonoverlapping_memory(new_ptr, ptr, cmp::min(size, old_size));
+             deallocate(ptr, old_size, align);
+             new_ptr
+         }
+diff --git a/src/libcollections/vec.rs b/src/libcollections/vec.rs
+index 0de9b57..e353730 100644
+--- a/src/libcollections/vec.rs
++++ b/src/libcollections/vec.rs
+@@ -1052,6 +1052,18 @@ impl<T: Clone> Vec<T> {
+     }
+ }
+ 
++pub fn crust_init(size : uint, n_elem : uint) -> (Vec<()>,Vec<()>) {
++    assert!(n_elem <= size);
++    assert!(size < 4);
++    let mut v1 = Vec::with_capacity(size);
++    let mut v2 = Vec::with_capacity(size);
++    for i in 0..n_elem {
++        v1.push(());
++        v2.push(());
++    }
++    (v1,v2)
++}
++
+ impl<T: PartialEq> Vec<T> {
+     /// Removes consecutive repeated elements in the vector.
+     ///
+@@ -1205,6 +1217,8 @@ impl<T:Clone> Clone for Vec<T> {
+     fn clone(&self) -> Vec<T> { ::slice::SliceExt::to_vec(self.as_slice()) }
+ 
+     fn clone_from(&mut self, other: &Vec<T>) {
++        panic!()
++            /*
+         // drop anything in self that will not be overwritten
+         if self.len() > other.len() {
+             self.truncate(other.len())
+@@ -1218,7 +1232,8 @@ impl<T:Clone> Clone for Vec<T> {
+         // self.len <= other.len due to the truncate above, so the
+         // slice here is always in-bounds.
+         let slice = &other[self.len()..];
+-        self.push_all(slice);
++            self.push_all(slice);
++         */
+     }
+ }
+ 
+@@ -1380,7 +1395,7 @@ macro_rules! impl_eq {
+ 
+ impl_eq! { Vec<A>, &'b [B] }
+ impl_eq! { Vec<A>, &'b mut [B] }
+-
++/*
+ impl<'a, A, B> PartialEq<Vec<B>> for CowVec<'a, A> where A: PartialEq<B> + Clone {
+     #[inline]
+     fn eq(&self, other: &Vec<B>) -> bool { PartialEq::eq(&**self, &**other) }
+@@ -1415,7 +1430,7 @@ macro_rules! impl_eq_for_cowvec {
+ 
+ impl_eq_for_cowvec! { &'b [B] }
+ impl_eq_for_cowvec! { &'b mut [B] }
+-
++*/
+ #[unstable = "waiting on PartialOrd stability"]
+ impl<T: PartialOrd> PartialOrd for Vec<T> {
+     #[inline]
+@@ -1511,7 +1526,7 @@ impl<'a> fmt::Writer for Vec<u8> {
+ ////////////////////////////////////////////////////////////////////////////////
+ // Clone-on-write
+ ////////////////////////////////////////////////////////////////////////////////
+-
++/*
+ #[unstable = "unclear how valuable this alias is"]
+ /// A clone-on-write vector
+ pub type CowVec<'a, T> = Cow<'a, Vec<T>, [T]>;
+@@ -1534,7 +1549,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
+         Cow::Borrowed(self)
+     }
+ }
+-
++*/
+ ////////////////////////////////////////////////////////////////////////////////
+ // Iterators
+ ////////////////////////////////////////////////////////////////////////////////
+@@ -1557,7 +1572,15 @@ impl<T> IntoIter<T> {
+     #[unstable]
+     pub fn into_inner(mut self) -> Vec<T> {
+         unsafe {
+-            for _x in self { }
++            let mut keep_going = true;
++            while keep_going {
++                let y = self.next();
++                match y {
++                    Some(_) => (),
++                    None => keep_going = false
++                }
++            }
++            //for _x in self { }
+             let IntoIter { allocation, cap, ptr: _ptr, end: _end } = self;
+             mem::forget(self);
+             Vec { ptr: NonZero::new(allocation), cap: cap, len: 0 }
+@@ -1635,7 +1658,15 @@ impl<T> Drop for IntoIter<T> {
+     fn drop(&mut self) {
+         // destroy the remaining elements
+         if self.cap != 0 {
+-            for _x in *self {}
++            //for _x in *self {}
++            let mut keep_going = true;
++            while keep_going {
++                let y = self.next();
++                match y {
++                    Some(x) => (),
++                    None => keep_going = false
++                }
++            }
+             unsafe {
+                 dealloc(self.allocation, self.cap);
+             }
+@@ -1724,7 +1755,14 @@ impl<'a, T> Drop for Drain<'a, T> {
+         // so we can use #[unsafe_no_drop_flag].
+ 
+         // destroy the remaining elements
+-        for _x in *self {}
++        let mut keep_going = true;
++        while keep_going {
++            match self.next() {
++                Some(x) => (),
++                None => keep_going = false
++            }
++        }
++        //for _x in *self {}
+     }
+ }
+ 
+diff --git a/src/libcore/macros.rs b/src/libcore/macros.rs
+index d44eaae..b2bb415 100644
+--- a/src/libcore/macros.rs
++++ b/src/libcore/macros.rs
+@@ -8,23 +8,24 @@
+ // option. This file may not be copied, modified, or distributed
+ // except according to those terms.
+ 
+-/// Entry point of task panic, for details, see std::macros
+ #[macro_export]
+ macro_rules! panic {
+     () => (
+-        panic!("explicit panic")
++        unsafe { $crate::intrinsics::abort() }
+     );
+     ($msg:expr) => ({
+-        static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
+-        ::core::panicking::panic(&_MSG_FILE_LINE)
++        /*static _MSG_FILE_LINE: (&'static str, &'static str, usize) = ($msg, file!(), line!());
++        ::core::panicking::panic(&_MSG_FILE_LINE)*/
++        unsafe { $crate::intrinsics::abort() }
+     });
+     ($fmt:expr, $($arg:tt)*) => ({
++        panic!("trans_panic");
+         // The leading _'s are to avoid dead code warnings if this is
+         // used inside a dead function. Just `#[allow(dead_code)]` is
+         // insufficient, since the user may have
+         // `#[forbid(dead_code)]` and which cannot be overridden.
+-        static _FILE_LINE: (&'static str, usize) = (file!(), line!());
+-        ::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
++        //static _FILE_LINE: (&'static str, usize) = (file!(), line!());
++        //::core::panicking::panic_fmt(format_args!($fmt, $($arg)*), &_FILE_LINE)
+     });
+ }
+ 
+@@ -56,12 +57,12 @@ macro_rules! panic {
+ macro_rules! assert {
+     ($cond:expr) => (
+         if !$cond {
+-            panic!(concat!("assertion failed: ", stringify!($cond)))
++            panic!(/*concat!("assertion failed: ", stringify!($cond))*/)
+         }
+     );
+     ($cond:expr, $($arg:tt)+) => (
+         if !$cond {
+-            panic!($($arg)+)
++            panic!(/*$($arg)+*/)
+         }
+     );
+ }
+diff --git a/src/libcore/nonzero.rs b/src/libcore/nonzero.rs
+index abaf252..d4f2ecc 100644
+--- a/src/libcore/nonzero.rs
++++ b/src/libcore/nonzero.rs
+@@ -49,7 +49,8 @@ impl<T: Zeroable> Deref for NonZero<T> {
+ 
+     #[inline]
+     fn deref<'a>(&'a self) -> &'a T {
+-        let NonZero(ref inner) = *self;
+-        inner
++        match self {
++            &NonZero(ref inner) => inner
++        }
+     }
+ }

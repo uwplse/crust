@@ -5,7 +5,7 @@ JOBHOST="54.148.202.229"
 WORKER_IPS=("54.148.135.179" "54.148.109.4" "52.11.192.79" "54.68.125.25" "54.148.109.20")
 
 function grep_test() {
-	egrep -o 'libtest_[[:digit:]]+\$crust_test_[[:digit:]]+' "$@" | sort | uniq
+	egrep -H -o 'libtest_[[:digit:]]+\$crust_test_[[:digit:]]+' "$@" | sort | uniq
 }
 
 function ec2ssh() {

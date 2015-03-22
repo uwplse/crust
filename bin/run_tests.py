@@ -25,6 +25,7 @@ job_host = None
 n_workers = multiprocessing.cpu_count()
 local = True
 test_source = None
+show_command = False
 
 SUCC = 0
 FAIL = 1
@@ -90,7 +91,8 @@ def do_run(test_file, test_case_name, unwinding, solve_z3):
         out = tempfile.NamedTemporaryFile(mode="rw", delete = True)
     else:
         out = dev_null
-    #print " ".join([ pipes.quote(s) for s in command ])
+    if show_command:
+        print " ".join([ pipes.quote(s) for s in command ])
     child_proc = subprocess.Popen(command, stdout = out)
     start = time.time()
     now = time.time()
@@ -214,6 +216,7 @@ def parse_args():
     parser.add_argument("--job-host", dest="job_host", action="store")
     parser.add_argument("test_names", action="store", nargs = "?")
     parser.add_argument("--worker", action="store_true", default = False)
+    parser.add_argument("--verbose", action="store_true", default = False)
 
     opts = parser.parse_args()
     global cbmc_binary
@@ -225,6 +228,7 @@ def parse_args():
     global local
     global test_source
     global n_workers
+    global show_command
 
     cbmc_binary = opts.cbmc
     unwind_bound = str(opts.unwind)
@@ -232,6 +236,7 @@ def parse_args():
     use_z3 = opts.z3
     timeout = opts.timeout
     n_workers = opts.nworkers
+    show_command = opts.verbose
     if opts.worker:
         local = False
     if not local and opts.job_host is None:

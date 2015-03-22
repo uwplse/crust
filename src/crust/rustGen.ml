@@ -398,9 +398,8 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         | Close_Block -> 
           (self#close_block(); self#newline (); (pred accum))
         | Ptr_Assert (mut_flag,v1,v2) -> begin
-            self#put_all [ "crust_assert("; v1; " as *mut _ as u64 != "; v2; " as *";
-                           (match mut_flag with `Mut -> "mut" | `Immut -> "const");
-                           " _ as u64);"];
+            let function_name = match mut_flag with | `Mut -> "crust_mref_check" | `Immut -> "crust_imref_check" in
+            self#put_all [ function_name; "("; v1; ", "; v2; ");"];
             self#newline ();
             accum
           end
@@ -756,17 +755,52 @@ let rec filter_interesting =
         if Analysis.FISet.mem call_inst pub_set then false else
           is_interesting pub_set call_inst 
   in
+  let op_regex = Str.regexp @@ "^" ^ (Str.quote "core$ops$") in
   fun gen_func fn_set ->
     let interesting_fn = Analysis.FISet.filter (fun fi ->
         is_interesting fn_set fi
       ) fn_set in
     (* now collect the dependency functions for our interesting functions *)
     let core_functions = Analysis.FISet.filter (fun (fn_name,_) ->
-        fn_name = "core$option$Option$1$T$1$$unwrap"
+        fn_name = "core$option$Option$1$T$1$$unwrap" ||
+        let { Ir.fn_impl = impl; _ } = Env.EnvMap.find Env.fn_env fn_name in
+         match impl with
+         | None -> false
+         | Some { Ir.abstract_name = a; _ } ->
+           Str.string_match op_regex a 0 &&
+           a <> "core$ops$Drop$drop"
       ) fn_set in
     Analysis.FISet.union 
       (build_deps gen_func interesting_fn)
       core_functions
+
+let rec has_unsafe_type ty = match ty with
+  | `Fixed_Vec (_,t)
+  | `Ref_Mut (_,t)
+  | `Ptr_Mut t
+  | `Ptr t
+  | `Ref (_,t) -> has_unsafe_type t
+
+  | `Tuple tl -> List.exists has_unsafe_type tl
+                   
+  | `Adt_type { Types.type_name = "core$cell$UnsafeCell"; _ } ->
+    true
+  | `Adt_type { Types.type_name = t_name; Types.type_param = t_args; _ } ->
+    begin
+      match Env.EnvMap.find Env.adt_env t_name with
+      | `Enum_def { Ir.e_tparam = t_params; Ir.variants = var; _ } ->
+        let t_binding = Types.type_binding t_params t_args in
+        List.exists (fun { Ir.variant_fields = fields; _ } ->
+            List.exists has_unsafe_type @@ List.map (TypeUtil.to_monomorph t_binding) fields
+          ) var
+      | `Struct_def { Ir.s_tparam = t_params; Ir.struct_fields = fields; _ } ->
+        let t_binding = Types.type_binding t_params t_args in
+        List.exists has_unsafe_type @@ List.map (TypeUtil.to_monomorph t_binding) @@ List.map snd fields
+    end  
+  | #Types.simple_type -> false
+  | `Vec _
+  | `Bottom -> false
+  | `Str -> false
 
 let mut_analysis gen_funcs fn_set = 
   let rec has_mut_ref = function
@@ -778,9 +812,10 @@ let mut_analysis gen_funcs fn_set =
   in
   let mut_fn = Analysis.FISet.fold (fun fn_inst accum ->
       let (arg_types,_) = memo_get_fn_types fn_inst in
-      if List.exists has_mut_ref arg_types then
+      if List.exists has_mut_ref arg_types ||
+         List.exists has_unsafe_type arg_types then
         Analysis.FISet.add fn_inst accum
-      else
+      else 
         accum
     ) fn_set Analysis.FISet.empty in
   let mut_fn = build_deps gen_funcs mut_fn in

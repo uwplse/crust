@@ -77,7 +77,7 @@ scrub_test_error() {
 	test_num=$(get_test_num $TO_SCRUB)
 	for i in $(seq 0 3); do
 		if run_rbmc $TO_SCRUB > $SCRATCH/test_${test_num}.ir 2> $SCRATCH/failing_tests_${test_num}; then
-			rm $SCRATCH/scrubbed_*_${test_num}.rs $SCRATCH/failing_tests_${test_num} $SCRATCH/pre_scrubbed_*_${test_num}.rs
+			rm -f $SCRATCH/scrubbed_*_${test_num}.rs $SCRATCH/failing_tests_${test_num} $SCRATCH/pre_scrubbed_*_${test_num}.rs
 			return
 		fi
 		cp $TO_SCRUB $SCRATCH/pre_scrubbed_${i}_${test_num}.rs
@@ -150,6 +150,8 @@ trans_test() {
 	edo compile_test $1 $SCRATCH/simple_ir > $2/$OUTPUT_NAME
 }
 
+DRIVER_FLAGS="-driver-gen -immut-length 2 -mut-length 3"
+
 trans_stdlib_test() {
 	local filter=$1
 	local dir=$2
@@ -160,8 +162,71 @@ trans_stdlib_test() {
 	dump_items $filter > $SCRATCH/item_filter
 	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
 	mkdir -p $SCRATCH/test_cases
-	edo ../bin/crust.native -driver-gen -api-filter $filter -immut-length 2 -mut-length 3 "$@" -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	edo ../bin/crust.native $DRIVER_FLAGS -api-filter $filter "$@" -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
 	ls $SCRATCH/test_cases/*.rs | parallel --halt 2 bash $0 set_scratch $SCRATCH trans_test '{}' $dir
+}
+
+_prepare_remote_build() {
+	filter=$1
+	output_file=$2
+	shift 2
+	dump_items $filter > $SCRATCH/item_filter
+	../bin/Preprocess --filter $SCRATCH/item_filter < ./ir/stdlib.ir > $SCRATCH/simple_ir
+	mkdir -p $SCRATCH/test_cases
+	edo ../bin/crust.native $DRIVER_FLAGS -api-filter $filter "$@" -test-case-prefix $SCRATCH/test_cases/libtest $SCRATCH/simple_ir
+	tar cf $output_file -C $SCRATCH test_cases simple_ir
+}
+
+prepare_remote_build() {
+	local patch=$1
+	local lib_files=$2
+	shift 2
+	apply_and_build $patch
+	with_scratch _prepare_remote_build "$@"
+	tar cf $lib_files -C ./lib $(cd lib; ls *.rlib)
+}
+
+_do_remote_build() {
+	rm -f ~/comp_tests.tar.bz2
+	rm -rf ~/built_tests
+	mkdir -p ~/built_tests 2> /dev/null
+	tar xf $1 -C lib
+	tar xf $2 -C $SCRATCH
+	ls $SCRATCH/test_cases/*.rs | parallel --halt 2 bash $0 set_scratch $SCRATCH trans_test '{}' ~/built_tests
+	tar cf ~/comp_tests.tar.bz2 -C ~/built_tests $(cd ~/built_tests; ls *.c)
+}
+
+do_remote_build() {
+	with_scratch _do_remote_build $1 $2
+}
+
+apply_and_build() {
+	PATCH_SUM=$(md5sum $1 | awk '{print $1}');
+	apply_patch $1
+	if [ -e "precomp/${PATCH_SUM}.ir" ]; then
+		cp "precomp/${PATCH_SUM}.ir" ./ir/stdlib.ir
+	else
+		trans_stdlib
+		cp ir/stdlib.ir "precomp/${PATCH_SUM}.ir"
+	fi
+	build_all_libs
+}
+
+# [patch] [filter] [output]
+build_test() {
+	apply_and_build $1
+	with_scratch trans_stdlib_test $2 $3
+}
+
+prepare_remote_ir() {
+	PATCH_SUM=$(md5sum $1 | awk '{print $1}')
+	if [ -e "$2/${PATCH_SUM}.tar.bz2" ]; then
+		exit 0
+	fi
+	apply_patch $1;
+	rm -f ir/stdlib.ir
+	trans_all_libs
+	tar cvf $2/${PATCH_SUM}.tar.bz2 -j -C ir $(cd ir; ls *.ir)
 }
 
 with_scratch() {
@@ -173,6 +238,15 @@ with_scratch() {
 		echo "Scratch already set!";
 		exit -1;
 	fi
+}
+
+build_cache() {
+	for i in "$@"; do
+		checksum=$(md5sum $i | awk '{print $1}');
+		apply_patch $i;
+		trans_stdlib
+		cp ./ir/stdlib.ir ./precomp/${checksum}.ir
+	done
 }
 
 set_scratch() {
