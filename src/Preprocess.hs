@@ -24,6 +24,8 @@ import Rename
 import Pprint
 import DropGlue
 import Builder
+import Unify
+import DriverSpec
 
 import Debug.Trace
 
@@ -37,12 +39,14 @@ data Mode =
     | MFilter
     | MCollectUnsafe
     | MCollectTypes
+    | MDriverGen
   deriving (Eq, Show)
 
 data Config = Config
     { c_scrub :: Bool
     , c_mode :: Mode
     , c_library_filter_file :: Maybe String
+    , c_construction_filter_file :: Maybe String
     , c_filter_file :: String
     , c_passes :: [String]
     }
@@ -51,6 +55,7 @@ defaultConfig = Config
     { c_scrub = False
     , c_mode = MDefault
     , c_library_filter_file = Nothing
+    , c_construction_filter_file = Nothing
     , c_filter_file = ""
     , c_passes = []
     }
@@ -61,7 +66,9 @@ readArgs config args = go args config
     go ("--pprint" : args) config = go args $ config { c_mode = MPPrint }
     go ("--collect-types" : args) config = go args $ config { c_mode = MCollectTypes }
     go ("--collect-unsafe" : args) config = go args $ config { c_mode = MCollectUnsafe }
+    go ("--driver-gen" : args) config = go args $ config { c_mode = MDriverGen }
     go ("--library-filter" : path : args) config = go args $ config { c_library_filter_file = Just path }
+    go ("--construction-filter" : path : args) config = go args $ config { c_construction_filter_file = Just path }
     go ("--filter" : path : args) config = go args $ config { c_filter_file = path, c_mode = MFilter }
     go ("--passes" : passes : args) config = go args $
         config { c_passes = words $ map (\c -> case c of ',' -> ' '; c -> c) passes
@@ -88,6 +95,15 @@ main = do
         MCollectTypes -> do
             forM_ (collectTypes items) $ \(name, tps, args, ret) -> do
                 putStrLn $ intercalate " " [name, pp tps, pp args, pp ret]
+
+        MDriverGen -> do
+            let funcs = mapMaybe getFnDesc items
+            let drivers = genDrivers 3 funcs funcs
+            forM_ drivers $ \d -> do
+                putStrLn ""
+                putStrLn " ----------"
+                putStrLn ""
+                dumpDriver 0 d
 
         MFilter -> do
             content <- readFile $ c_filter_file config

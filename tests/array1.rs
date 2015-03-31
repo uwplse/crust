@@ -57,7 +57,7 @@ impl<T: Copy> Array<T> {
         // BUG: forgetting check allows out-of-bounds access
         // BUG: casting index to int before checking against len allows out-of-bounds access
         if index >= self.len {
-            crust_abort();
+            unsafe { core::intrinsics::abort() };
         }
 
         unsafe { &*self.ptr.offset(index as int) }
@@ -66,7 +66,7 @@ impl<T: Copy> Array<T> {
     // BUG: using &'a self instead of &'a mut self allows inappropriate aliasing
     fn get_mut<'a>(&'a mut self, index: uint) -> &'a mut T {
         if index >= self.len {
-            crust_abort();
+            unsafe { core::intrinsics::abort() };
         }
 
         unsafe { &mut *self.ptr.offset(index as int) }
@@ -82,4 +82,4 @@ impl<T> Drop for Array<T> {
     }
 }
 
-fn crust_init() -> (Array<u32>,) { (Array::new(10),) }
+//fn crust_init() -> (Array<u32>,) { (Array::new(10),) }

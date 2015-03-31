@@ -85,3 +85,6 @@ unify uty ty = go M.empty uty (fst $ toUTy ty)
     goZip m (x:xs) (y:ys) = do
         m' <- go m x y
         goZip m' xs ys
+
+getUnifiedArg :: UnifyResult -> Int -> Ty
+getUnifiedArg m i = fromUTy m (UVar i ("arg" ++ show i))
