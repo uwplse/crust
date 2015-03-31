@@ -104,20 +104,31 @@ ppEnumDef (EnumDef name lps tps variants mDtor) = do
             Nothing -> return ()
     line $ tell "}"
 
+ppPredicate :: (MonadReader Int m, MonadWriter String m) => Predicate -> m ()
+ppPredicate (PImpl name tys) = tell "impl " >> tell name >> listNe angles (map ppTy tys)
+ppPredicate (PEq ty1 ty2) = ppTy ty1 >> tell " == " >> ppTy ty2
+
 ppFnDef :: (MonadReader Int m, MonadWriter String m) => FnDef -> m ()
-ppFnDef (FnDef vis name lps tps args retTy implClause body) = do
+ppFnDef (FnDef vis name lps tps args retTy implClause preds body) = do
     line $ do
         tell "fn " >> ppVis vis >> tell " " >> tell name
         listNe angles (map ppLifetime lps ++ map tell tps)
         parens $ commaSep $ map ppArgDecl args
         tell " -> " >> ppTy retTy
         case implClause of
-            Nothing -> tell " "
+            Nothing -> tell ""
             Just implClause -> do
                 nl
                 indent $ indent $ indentation
-                tell "/* impl " >> ppImplClause implClause >> tell " */ "
-        ppExpr body
+                tell "/* impl " >> ppImplClause implClause >> tell " */"
+        case preds of
+            [] -> tell ""
+            _ -> do
+                forM_ preds $ \pred -> do
+                    nl
+                    indent $ indent $ indentation
+                    tell "where " >> ppPredicate pred
+        tell " " >> ppExpr body
 
 ppAbstractFnDef :: (MonadReader Int m, MonadWriter String m) => AbstractFnDef -> m ()
 ppAbstractFnDef (AbstractFnDef name lps tps args retTy) = do

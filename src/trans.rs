@@ -307,18 +307,7 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
             // ty_unboxed_closure
             ty_tup(ref ts) if ts.len() == 0 => format!("unit"),
             ty_tup(ref ts) => format!("tuple {}", ts.trans(trcx)),
-            ty_projection(ref proj) => {
-                let trait_did = proj.trait_ref.def_id;
-                let name = format!("{}${}",
-                                   mangled_def_name(trcx, proj.trait_ref.def_id),
-                                   proj.item_name.trans(trcx));
-
-                trcx.observed_abstract_types.insert(name.clone(), trait_did);
-
-                format!("abstract {} {}",
-                        name,
-                        proj.trait_ref.substs.trans(trcx))
-            },
+            ty_projection(ref proj) => proj.trans(trcx),
             ty_param(ref param) => {
                 format!("var {}{}",
                         param.space.trans(trcx),
@@ -331,6 +320,21 @@ impl<'tcx> Trans for ty::Ty<'tcx> {
 
         };
         format!("[{}]", s)
+    }
+}
+
+impl<'tcx> Trans for ty::ProjectionTy<'tcx> {
+    fn trans(&self, trcx: &mut TransCtxt) -> String {
+        let trait_did = self.trait_ref.def_id;
+        let name = format!("{}${}",
+                           mangled_def_name(trcx, self.trait_ref.def_id),
+                           self.item_name.trans(trcx));
+
+        trcx.observed_abstract_types.insert(name.clone(), trait_did);
+
+        format!("abstract {} {}",
+                name,
+                self.trait_ref.substs.trans(trcx))
     }
 }
 
@@ -1103,6 +1107,33 @@ impl<'b, 'a, 'tcx, 'v> Visitor<'v> for TransVisitor<'b, 'a, 'tcx> {
     }
 }
 
+impl<'tcx> Trans for ty::Generics<'tcx> {
+    fn trans(&self, trcx: &mut TransCtxt) -> String {
+        let mut parts = Vec::new();
+        for p in self.predicates.iter() {
+            match *p {
+                ty::Predicate::Trait(ref trait_p) => {
+                    parts.push(format!("ty_impl {} {}",
+                                       mangled_def_name(trcx, trait_p.0.trait_ref.def_id),
+                                       trait_p.0.trait_ref.substs.trans(trcx)));
+                },
+                ty::Predicate::Equate(ref eq_p) => {
+                    parts.push(format!("ty_eq {} {}",
+                                       (eq_p.0).0.trans(trcx),
+                                       (eq_p.0).1.trans(trcx)));
+                },
+                ty::Predicate::Projection(ref proj_p) => {
+                    parts.push(format!("ty_eq_proj {} {}",
+                                       proj_p.0.projection_ty.trans(trcx),
+                                       proj_p.0.ty.trans(trcx)));
+                },
+                _ => {},
+            }
+        }
+        parts.trans(trcx)
+    }
+}
+
 impl<'a> TransExtra<&'a HashSet<String>> for Item {
     fn trans_extra(&self, trcx: &mut TransCtxt, filter_fn: &'a HashSet<String>) -> String {
         match self.node {
@@ -1125,11 +1156,13 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                 if filter_fn.contains(&mangled_name) {
                     format!("")
                 } else {
-                    format!("fn {} {} {} {} 0 body {} {} {{\n{}\t{}\n}}\n\n",
+                    format!("fn {} {} {} {} 0 preds {} body {} {} {{\n{}\t{}\n}}\n\n",
                             self.vis.trans(trcx),
                             mangled_name,
                             generics.trans_extra(trcx, FnSpace),
                             decl.trans(trcx),
+                            trcx.tcx.tcache.borrow().get(&local_def(self.id))
+                                .unwrap().generics.trans(trcx),
                             decl.output.trans(trcx),
                             match style {
                                 Unsafety::Unsafe => "unsafe",
@@ -1487,8 +1520,27 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
             format!("pub")
         };
 
+
+    /*
+    let impl_or_trait_items = trcx.tcx.impl_or_trait_items.borrow();
+    let opt_method = impl_or_trait_items.get(&local_def(method.id));
+    let 
+
+    let match opt_method {
+        None => panic!("no ty::ImplOrTraitItem for method"),
+        Some(x) => match x {
+            &ty::MethodTraitItem(ref m) => {
+                println!("generics {}", m.generics.repr(trcx.tcx));
+            },
+            _ => panic!("expected MethodTraitItem"),
+        }
+    }
+    */
+
+
+
     arg_strs.extend(decl.inputs.slice_from(offset).iter().map(|x| x.trans(trcx)));
-    format!("fn {} {}{} {} {} (args {}) return {} {} body {} {} {{\n{}\t{}\n}}\n\n",
+    format!("fn {} {}{} {} {} (args {}) return {} {} preds {} body {} {} {{\n{}\t{}\n}}\n\n",
             vis_str,
             mangled_name,
             if is_default { "$$__default" } else { "" },
@@ -1497,6 +1549,8 @@ fn trans_method(trcx: &mut TransCtxt, trait_: &Item, method: &Method) -> String 
             arg_strs.trans(trcx),
             decl.output.trans(trcx),
             impl_clause,
+            trcx.tcx.tcache.borrow().get(&local_def(method.id))
+                .unwrap().generics.trans(trcx),
             decl.output.trans(trcx),
             match style {
                 Unsafety::Unsafe => "unsafe",

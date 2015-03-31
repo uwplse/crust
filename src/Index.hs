@@ -53,13 +53,13 @@ ty_tyParams (TEnum (EnumDef _ _ ps _ _)) = ps
 ty_dtor (TStruct (StructDef _ _ _ _ d)) = d
 ty_dtor (TEnum (EnumDef _ _ _ _ d)) = d
 
-fn_lifetimeParams (FConcrete (FnDef _ _ ps _ _ _ _ _)) = ps
+fn_lifetimeParams (FConcrete (FnDef _ _ ps _ _ _ _ _ _)) = ps
 fn_lifetimeParams (FAbstract (AbstractFnDef _ ps _ _ _)) = ps
 fn_lifetimeParams (FExtern (ExternFnDef _ _ ps _ _ _)) = ps
-fn_tyParams (FConcrete (FnDef _ _ _ ps _ _ _ _)) = ps
+fn_tyParams (FConcrete (FnDef _ _ _ ps _ _ _ _ _)) = ps
 fn_tyParams (FAbstract (AbstractFnDef _ _ ps _ _)) = ps
 fn_tyParams (FExtern (ExternFnDef _ _ _ ps _ _)) = ps
-fn_retTy (FConcrete (FnDef _ _ _ _ _ r _ _)) = r
+fn_retTy (FConcrete (FnDef _ _ _ _ _ r _ _ _)) = r
 fn_retTy (FAbstract (AbstractFnDef _ _ _ _ r)) = r
 fn_retTy (FExtern (ExternFnDef _ _ _ _ _ r)) = r
 
@@ -77,7 +77,7 @@ mkIndex items = Index fns types consts statics
     consts = M.fromList $ mapMaybe onConst items
     statics = M.fromList $ mapMaybe onStatic items
 
-    onFn (IFn x@(FnDef _ name _ _ _ _ _ _)) = Just (name, FConcrete x)
+    onFn (IFn x@(FnDef _ name _ _ _ _ _ _ _)) = Just (name, FConcrete x)
     onFn (IAbstractFn x@(AbstractFnDef name _ _ _ _)) = Just (name, FAbstract x)
     onFn (IExternFn x@(ExternFnDef _ name _ _ _ _)) = Just (name, FExtern x)
     onFn _ = Nothing
@@ -201,7 +201,7 @@ adtName ty = case ty of
 itemName (IStruct (StructDef name _ _ _ _)) = name
 itemName (IEnum (EnumDef name _ _ _ _)) = name
 itemName (IConst (ConstDef name _ _)) = name
-itemName (IFn (FnDef _ name _ _ _ _ _ _)) = name
+itemName (IFn (FnDef _ name _ _ _ _ _ _ _)) = name
 itemName (IAbstractFn (AbstractFnDef name _ _ _ _)) = name
 itemName (IExternFn (ExternFnDef _ name _ _ _ _)) = name
 itemName (IAbstractType (AbstractTypeDef name _ _)) = name

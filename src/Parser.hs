@@ -69,7 +69,7 @@ data IntSize = BitSize Int | PtrSize
   deriving (Eq, Show, Data, Typeable)
 
 data Visibility =
-  Public
+    Public
   | Private
   deriving (Eq, Show, Data, Typeable)
 
@@ -95,7 +95,12 @@ data EnumDef = EnumDef Name [LifetimeParam] [TyParam] [VariantDef] (Maybe Name)
 data VariantDef = VariantDef Name [Ty]
   deriving (Eq, Show, Data, Typeable)
 
-data FnDef = FnDef Visibility Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) Expr
+data Predicate =
+      PImpl Name [Ty]
+    | PEq Ty Ty
+  deriving (Eq, Show, Data, Typeable)
+
+data FnDef = FnDef Visibility Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) [Predicate] Expr
   deriving (Eq, Show, Data, Typeable)
 
 data AbstractFnDef = AbstractFnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty
@@ -246,9 +251,14 @@ enumDef = exactWord "enum" >>
 variantDef = VariantDef <$> name <*> counted ty
 
 visibility = tagged
-   [ ("priv", return Private)
-   , ("pub", return Public)
-   ]
+    [ ("priv", return Private)
+    , ("pub", return Public)
+    ]
+
+predicate = tagged
+    [ ("ty_impl", PImpl <$> name <*> (counted lifetime >> counted ty))
+    , ("ty_eq", PEq <$> ty <*> ty)
+    ]
 
 fnDef = do
     exactWord "fn"
@@ -259,6 +269,8 @@ fnDef = do
     f <- f <$> ty
     implClause <- optional $ implClause
     f <- f <$> return implClause
+    exactWord "preds"
+    f <- f <$> counted predicate
     exactWord "body"
     f <$> expr
 
@@ -426,12 +438,17 @@ instance Pp EnumDef where
 instance Pp VariantDef where
     pp' (VariantDef a b) = map pp [pp a, pp b]
 
+instance Pp Predicate where
+    pp' (PImpl a b) = ["ty_impl", pp a, pp b]
+    pp' (PEq a b) = ["ty_eq", pp a, pp b]
+
 instance Pp FnDef where
-    pp' (FnDef vis name lifetimeParams tyParams args retTy implClause body) =
+    pp' (FnDef vis name lifetimeParams tyParams args retTy implClause preds body) =
         ["fn", pp vis, pp name, pp lifetimeParams, pp tyParams,
          "args", pp args,
          "return", pp retTy,
          pp implClause,
+         "preds", pp preds,
          "body", pp body]
 
 instance Pp AbstractFnDef where

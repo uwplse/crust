@@ -30,27 +30,42 @@ import Debug.Trace
 dumpIr msg ir = trace text ir
   where text = "\n\n --- IR Dump (" ++ msg ++ ") ---\n\n" ++ runPp (mapM_ ppItem ir)
 
+data Mode =
+      MDefault
+    | MRunPasses
+    | MPPrint
+    | MFilter
+    | MCollectUnsafe
+    | MCollectTypes
+  deriving (Eq, Show)
+
 data Config = Config
     { c_scrub :: Bool
-    , c_pprint :: Bool
-    , c_filter_file :: Maybe String
-    , c_passes :: Maybe [String]
+    , c_mode :: Mode
+    , c_library_filter_file :: Maybe String
+    , c_filter_file :: String
+    , c_passes :: [String]
     }
 
 defaultConfig = Config
     { c_scrub = False
-    , c_pprint = False
-    , c_filter_file = Nothing
-    , c_passes = Nothing
+    , c_mode = MDefault
+    , c_library_filter_file = Nothing
+    , c_filter_file = ""
+    , c_passes = []
     }
 
 readArgs config args = go args config
   where
     go ("--scrub" : args) config = go args $ config { c_scrub = True }
-    go ("--pprint" : args) config = go args $ config { c_pprint = True }
-    go ("--filter" : path : args) config = go args $ config { c_filter_file = Just path }
+    go ("--pprint" : args) config = go args $ config { c_mode = MPPrint }
+    go ("--collect-types" : args) config = go args $ config { c_mode = MCollectTypes }
+    go ("--collect-unsafe" : args) config = go args $ config { c_mode = MCollectUnsafe }
+    go ("--library-filter" : path : args) config = go args $ config { c_library_filter_file = Just path }
+    go ("--filter" : path : args) config = go args $ config { c_filter_file = path, c_mode = MFilter }
     go ("--passes" : passes : args) config = go args $
-        config { c_passes = Just $ words $ map (\c -> case c of ',' -> ' '; c -> c) passes }
+        config { c_passes = words $ map (\c -> case c of ',' -> ' '; c -> c) passes
+               , c_mode = MRunPasses }
     go [] config = config
 
 main = do
@@ -59,47 +74,61 @@ main = do
 
     items <- parseContents item
 
-    if c_pprint config then do
-        evaluate (dumpIr "pprint" $ items)
-        return ()
-    else if isJust $ c_filter_file config then do
-        content <- readFile $ fromJust $ c_filter_file config
-        let filt = S.fromList $ lines content
-        putStrLn $ concatMap pp $ filterItems items filt
-    else if isJust $ c_passes config then do
-        let items' = foldl (flip runPass) items $ fromJust $ c_passes config
-        evaluate (dumpIr "pprint" $ items')
-        return ()
-    else do
-        let passes = [
-                if c_scrub config then "scrub" else "id",
-                "generate-default-methods",
-                "lift-strings",
-                "fix-block-ret",
-                "desugar-index",
-                "desugar-range",
-                "desugar-arg-patterns",
-                "desugar-pattern-lets",
-                "desugar-for",
-                "desugar-unsize",
-                "fix-clone",
-                "fix-address",
-                "fix-special-fn",
-                "fix-bottom",
-                "fix-bool",
-                "fix-if",
-                "const-expand",
-                "lift-temps",
-                "rename-locals",
-                "add-cleanup",
-                "rename-locals",
-                "filter-extern-fns",
-                "generate-drop-glues",
-                "cleanup-drops",
-                "cleanup-temps"
-                ]
-        let items' = foldl (flip runPass) items passes
-        putStrLn $ concatMap pp items'
+    case c_mode config of
+        MPPrint -> do
+            evaluate (dumpIr "pprint" $ items)
+            return ()
+
+        MCollectUnsafe -> do
+            let libraryFilterFile = fromMaybe (error $ "must set --library-filter-file") $
+                    c_library_filter_file config
+            libraryFilter <- (S.fromList . lines) <$> readFile libraryFilterFile
+            mapM_ putStrLn $ unsafeItemNames libraryFilter items
+
+        MCollectTypes -> do
+            forM_ (collectTypes items) $ \(name, tps, args, ret) -> do
+                putStrLn $ intercalate " " [name, pp tps, pp args, pp ret]
+
+        MFilter -> do
+            content <- readFile $ c_filter_file config
+            let filt = S.fromList $ lines content
+            putStrLn $ concatMap pp $ filterItems items filt
+
+        MRunPasses -> do
+            let items' = foldl (flip runPass) items $ c_passes config
+            evaluate (dumpIr "pprint" $ items')
+            return ()
+
+        MDefault -> do
+            let passes = [
+                    if c_scrub config then "scrub" else "id",
+                    "generate-default-methods",
+                    "lift-strings",
+                    "fix-block-ret",
+                    "desugar-index",
+                    "desugar-range",
+                    "desugar-arg-patterns",
+                    "desugar-pattern-lets",
+                    "desugar-for",
+                    "desugar-unsize",
+                    "fix-clone",
+                    "fix-address",
+                    "fix-special-fn",
+                    "fix-bottom",
+                    "fix-bool",
+                    "fix-if",
+                    "const-expand",
+                    "lift-temps",
+                    "rename-locals",
+                    "add-cleanup",
+                    "rename-locals",
+                    "filter-extern-fns",
+                    "generate-drop-glues",
+                    "cleanup-drops",
+                    "cleanup-temps"
+                    ]
+            let items' = foldl (flip runPass) items passes
+            putStrLn $ concatMap pp items'
 
 runPass "desugar-index" = \is -> desugarIndex (mkIndex is) is
 runPass "desugar-range" = desugarRange
@@ -131,9 +160,9 @@ runPass "id" = id
 
 fixClone = everywhere (mkT addDropCheckT)
   where
-    addDropCheckT (IFn (FnDef v n l t arg ret impl@(Just (ImplClause "core$clone$Clone$clone" _ [ty])) e)) =
+    addDropCheckT (IFn (FnDef v n l t arg ret impl@(Just (ImplClause "core$clone$Clone$clone" _ [ty])) preds e)) =
       let e' = addTypeCheck ty e in
-      IFn (FnDef v n l t arg ret impl e')
+      IFn (FnDef v n l t arg ret impl preds e')
     addDropCheckT e = e
 
     sizeOfCall ty = Expr (TInt PtrSize) (ECall "core$mem$size_of" [] [ty] [])
@@ -152,8 +181,8 @@ fixClone = everywhere (mkT addDropCheckT)
 
 cleanupDrops = everywhere (mkT cleanupDropT)
   where
-    cleanupDropT (IFn (FnDef v n l t arg ret impl e)) =
-      IFn (FnDef v n l t arg ret impl (walkDef e))
+    cleanupDropT (IFn (FnDef v n l t arg ret impl preds e)) =
+      IFn (FnDef v n l t arg ret impl preds (walkDef e))
     cleanupDropT e = e
 
     walkDef = everywhere (mkT scrubDropStmt)
@@ -180,10 +209,10 @@ cleanupTemps = everywhere (mkT cleanupTempT)
     collectUsedVars (EVar s) = S.singleton s
     collectUsedVars _ = S.empty
     
-    cleanupTempT (IFn (FnDef v n l t arg ret impl e)) =
+    cleanupTempT (IFn (FnDef v n l t arg ret impl preds e)) =
       let usedVars = getUsedVars e in
       let new_e = everywhere (mkT (scrubUselessAssign usedVars)) e in
-      (IFn (FnDef v n l t arg ret impl new_e))
+      (IFn (FnDef v n l t arg ret impl preds new_e))
     cleanupTempT i = i
 
     scrubUselessAssign usedVar (EBlock s e) =
@@ -213,7 +242,7 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
   where
     aborts :: S.Set String
     aborts = everything S.union (S.empty `mkQ` collectAborts) items
-    collectAborts (FnDef _ f_name _ _ _ _ _ _)
+    collectAborts (FnDef _ f_name _ _ _ _ _ _ _)
       | isSuffixOf "$crust_abort" f_name = S.singleton f_name
     collectAborts _ = S.empty
    
@@ -224,14 +253,14 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
           ECall "crust_abort" l t e
     renameAbortCall e = e
     
-    renameAbort (FnDef v f_name lp tp arg rt impl e)
+    renameAbort (FnDef v f_name lp tp arg rt impl preds e)
       | f_name == canonAbort =
-          (FnDef v "crust_abort" lp tp arg rt impl e)
+          (FnDef v "crust_abort" lp tp arg rt impl preds e)
     renameAbort e = e
 
     renameAbortDef = if S.null aborts then (\x -> x) else renameAbort
 
-    isAbort (IFn (FnDef _ f_name _ _ _ _ _ _)) = isSuffixOf "$crust_abort" f_name
+    isAbort (IFn (FnDef _ f_name _ _ _ _ _ _ _)) = isSuffixOf "$crust_abort" f_name
     isAbort _ = False
 
 isExternFn (IExternFn _) = True
@@ -379,9 +408,9 @@ desugarRange = everywhere (mkT go)
 
 desugarArgPatterns = map go
   where
-    go (IFn (FnDef vis name lps tps args retTy impl body)) =
+    go (IFn (FnDef vis name lps tps args retTy impl preds body)) =
         let (args', body') = fixArgs args body
-        in IFn (FnDef vis name lps tps args' retTy impl body')
+        in IFn (FnDef vis name lps tps args' retTy impl preds body')
     go (IAbstractFn (AbstractFnDef name lps tps args retTy)) =
         let args' = numberArgs args
         in IAbstractFn (AbstractFnDef name lps tps args' retTy)
@@ -544,7 +573,7 @@ generateDefaultMethods ix items = zipWith go [0..] items
         clause = ImplClause name (las ++ fnLas) (tas ++ fnTas)
         body = Expr retTy' $ ECall (name ++ "$$__default") (las ++ fnLas) (tas ++ fnTas) $
             map (\(ArgDecl (Pattern ty (PVar name))) -> Expr ty $ EVar name) args'
-        def = FnDef Public name' (lps ++ fnLps) (tps ++ fnTps) args' retTy' (Just clause) $
+        def = FnDef Public name' (lps ++ fnLps) (tps ++ fnTps) args' retTy' (Just clause) [] $
                 Expr retTy' $ EBlock [] body
 
     go _ i = i
@@ -558,7 +587,7 @@ filterItems items itemFilter = filter isAllowed items
       isAllowed (IAbstractType _) = True
 
       isAllowed (IStatic (StaticDef n _ _)) = S.member n itemFilter
-      isAllowed (IFn (FnDef _ n _ _ _ _ _ _)) = S.member n itemFilter
+      isAllowed (IFn (FnDef _ n _ _ _ _ _ _ _)) = S.member n itemFilter
       isAllowed (IAbstractFn (AbstractFnDef n _ _ _ _)) = S.member n itemFilter
       isAllowed (IStruct (StructDef n _ _ _ _)) = S.member n itemFilter
       isAllowed (IEnum (EnumDef n _ _ _ _)) = S.member n itemFilter
@@ -597,6 +626,25 @@ scrub items = scrubbed'
 
     hasAbstractFn d@(IUseDefault (UseDefault _ _ (ImplClause name _ _))) = name `M.member` i_fns ix || traceShow ("discard", (itemName d), "missing abstract fn") False
     hasAbstractFn _ = True
+
+
+unsafeItemNames filter items = mapMaybe go items
+  where
+    -- Only consider functions where the top-level expression is EBlock, not
+    -- EUnsafe.
+    go (IFn (FnDef _ name _ _ _ _ _ _ (Expr _ b@(EBlock _ _))))
+      | name `S.member` filter && hasUnsafe b = Just name
+    go _ = Nothing
+
+    hasUnsafe x = everything (||) (False `mkQ` isUnsafe) x
+
+    isUnsafe (EUnsafe _ _) = True
+    isUnsafe _ = False
+
+collectTypes items = mapMaybe go items
+  where go (IFn (FnDef _ name _lps tps args retTy _ preds _)) =
+            Just (name, tps, map (\(ArgDecl (Pattern ty _)) -> ty) args, retTy)
+        go _ = Nothing
 
 
 mkCast e t = Expr t (ECast e)
