@@ -5,6 +5,8 @@ where
 
 import Control.Applicative ((<$>))
 import Control.Monad
+import Control.Monad.State
+import Control.Monad.Writer
 import Data.Generics
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -30,13 +32,12 @@ data DriverExpr =
     | DETupleElim DriverExpr Int
     | DERefIntro DriverExpr
     | DERefElim DriverExpr
-    | DEPtrIntro DriverExpr
   deriving (Eq, Show, Data, Typeable)
 
-genDrivers :: Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
-genDrivers limit lib constr = do
+genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
+genDrivers ix limit lib constr = do
     (name, argTys, retTy) <- lib
-    let tyParams = collectParams (retTy : argTys)
+    let tyParams = fn_tyParams $ runCtxM ix $ getFn name
     tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) tyParams
     let argTys' = map (subst ([], tyParams) ([], tyArgs)) argTys
     argExprs <- mapM (go (limit - 1)) argTys'
@@ -44,14 +45,13 @@ genDrivers limit lib constr = do
   where
     go limit ty | isPrimitive ty = [DENondet]
     go limit (TRef _ _ ty) = DERefIntro <$> go limit ty
-    go limit (TPtr _ ty) = DEPtrIntro <$> go limit ty
     go limit (TTuple tys) = DETupleIntro <$> mapM (go limit) tys
     -- Remaining cases require fuel to operate.
     go 0 ty = []
     go limit ty = do
         (name, argTys, retTy) <- constr
         (retPart, destructOp) <- destructure retTy
-        let tyParams = collectParams (retTy : argTys)
+        let tyParams = fn_tyParams $ runCtxM ix $ getFn name
         tyArgs <- chooseTyArgs tyParams retTy ty
         let argTys' = map (subst ([], tyParams) ([], tyArgs)) argTys
         argExprs <- mapM (go (limit - 1)) argTys'
@@ -73,11 +73,6 @@ destructure ty = (ty, id) : case ty of
     TTuple tys' -> concatMap destructure tys'
     _ -> []
 
-collectParams tys = S.toList $ everything (S.union) (S.empty `mkQ` go) tys
-  where
-    go (TVar n) = S.singleton n
-    go _ = S.empty
-
 chooseTyArgs params retTy targetTy = do
     let (uty, intern) = toUTy retTy
     result <- unify uty targetTy
@@ -85,6 +80,38 @@ chooseTyArgs params retTy targetTy = do
         case M.lookup param intern of
             Just i -> return $ getUnifiedArg result i
             Nothing -> [TUnit, TInt (BitSize 8)]
+
+
+expandDriver :: DriverExpr -> Expr
+expandDriver de = Expr TBottom $ EBlock stmts expr
+  where
+    (expr, stmts) = evalState (runWriterT (go de)) 0
+
+    go (DECall name tyArgs argDes) = do
+        argExprs <- mapM go argDes
+        outVar <- mkVar
+        let e = Expr TBottom $ ECall name [] tyArgs argExprs
+        tell [SLet (Pattern TBottom $ PVar outVar) (Just e)]
+        return $ Expr TBottom $ EVar outVar
+    go DENondet = return $ Expr TBottom $ ECall "__crust$nondet" [] [TBottom] []
+    go (DETupleIntro des) = do
+        exprs <- mapM go des
+        return $ Expr TBottom $ ETupleLiteral exprs
+    go (DETupleElim de idx) = do
+        expr <- go de
+        return $ Expr TBottom $ EField expr ("field" ++ show idx)
+    go (DERefIntro de) = do
+        expr <- go de
+        return $ Expr TBottom $ EAddrOf expr
+    go (DERefElim de) = do
+        expr <- go de
+        return $ Expr TBottom $ EDeref expr
+
+    mkVar = do
+        idx <- get
+        modify (+1)
+        return $ "v" ++ show idx
+        
 
 
 dumpDriver depth de = case de of
@@ -103,9 +130,6 @@ dumpDriver depth de = case de of
         dumpDriver (depth + 1) de'
     DERefElim de' -> do
         putInd $ "deref"
-        dumpDriver (depth + 1) de'
-    DEPtrIntro de' -> do
-        putInd $ "ptrAddrOf"
         dumpDriver (depth + 1) de'
   where
     putInd msg = putStrLn $ replicate (4 * depth) ' ' ++ msg
