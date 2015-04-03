@@ -373,7 +373,14 @@ let parse_fn =
 	)
     | "abstract_fn"::fn_name::t ->
       let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return in
-      parse_function t (fun _ -> cb (`Abstract_Fn fn_name))
+      parse_function t (fun (((lps, tps), args), ret_ty) ->
+        cb (`Abstract_Fn {
+          Ir.afn_name = fn_name;
+          Ir.afn_lifetime_params = lps;
+          Ir.afn_tparams = tps;
+          Ir.aret_type = ret_ty;
+          Ir.afn_args = args;
+        }))
     | _ -> raise (Parse_failure ("parse_fn", tokens))
 
 let parse_struct_def tokens cb = match tokens with
@@ -467,13 +474,17 @@ let rec parse_module tokens cb =
         parse_module rest cb
       )
   | "static"::_ -> parse_static tokens cb
+  | "driver"::rest -> parse_expr rest (fun e rest -> cb (`Driver e) rest)
   | _ -> (raise (Parse_failure ("parse_module",tokens)))
 
-let parse_string s = 
+let parse_string' p s = 
   (* terrible memory!!!!!!! *)
   let tokens = List.filter (fun s -> s <> "") (Str.split (Str.regexp split_regex) s) in
-  consume_to_end tokens parse_module (fun s -> s)
+  consume_to_end tokens p (fun s -> s)
 
-let parse_channel ?(close=true) c = 
-  parse_string (slurp_file close c)
+let parse_channel' p ?(close=true) c = 
+  parse_string' p (slurp_file close c)
+
+let parse_string s = parse_string' parse_module s
+let parse_channel ?(close=true) c = parse_channel' parse_module ~close:close c
 

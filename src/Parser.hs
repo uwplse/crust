@@ -448,7 +448,7 @@ instance Pp FnDef where
          "args", pp args,
          "return", pp retTy,
          pp implClause,
-         "preds", pp preds,
+         --"preds", pp preds,
          "body", pp body]
 
 instance Pp AbstractFnDef where

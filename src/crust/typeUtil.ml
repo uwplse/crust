@@ -351,6 +351,31 @@ let rec get_free_vars accum t =
       get_free_vars accum t
 ;;
 
+let rec subst_tys (params : string list) (args : Types.r_type list) (tys : Types.r_type list) =
+  let map = Hashtbl.create (List.length params) in
+  List.iter2 (Hashtbl.add map) params args;
+  let rec go (t : Types.r_type) =
+    match t with
+    | #Types.simple_type -> t
+    | `Bottom -> t
+    | `Str -> t
+    | `Adt_type adt -> `Adt_type { adt with
+        Types.type_param = List.map go adt.Types.type_param }
+    | `Ref (l,t) -> `Ref (l, go t)
+    | `Ref_Mut (l,t) -> `Ref_Mut (l, go t)
+    | `Ptr t -> `Ptr (go t)
+    | `Ptr_Mut t -> `Ptr_Mut (go t)
+    | `Tuple tys -> `Tuple (List.map go tys)
+    | `Fixed_Vec (n, t) -> `Fixed_Vec (n, go t)
+    | `Vec ty -> `Vec (go ty)
+    | `Abstract abs -> `Abstract { abs with
+        Types.a_params = List.map go abs.Types.a_params }
+    | `T_Var name -> Hashtbl.find map name
+  in
+  List.map go tys
+;;
+
+
 let matcher = new type_matcher false;;
 
 let resolution_matcher = new type_matcher true;;

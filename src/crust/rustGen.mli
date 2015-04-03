@@ -1,4 +1,4 @@
-val gen_driver : string -> int -> TypeUtil.MTSet.t -> Analysis.FISet.t -> unit 
+val gen_driver : string -> int -> unit 
 val dump_api : out_channel -> TypeUtil.MTSet.t -> Analysis.FISet.t -> unit
 
 val no_mut_analysis : bool ref

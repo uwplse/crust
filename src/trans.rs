@@ -1214,9 +1214,15 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
 
                 let opt_ty_trait_ref = ty::impl_trait_ref(trcx.tcx, local_def(self.id));
                 if let Some(ty_trait_ref) = opt_ty_trait_ref {
+                    println!("# impling for trait");
                     for item in ty::trait_items(trcx.tcx, ty_trait_ref.def_id).iter() {
                         match *item {
                             ty::MethodTraitItem(ref method) => {
+                                let did = method.def_id;
+                                let name = mangled_def_name(trcx, did);
+                                println!("# SAW {}", name);
+                                trcx.observed_abstract_fns.insert(name, did);
+
                                 let base_name = method.name.trans(trcx);
                                 if !seen_methods.contains(&base_name) {
                                     let self_ty_str = self_ty.trans(trcx);
@@ -1230,9 +1236,6 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                     let code = format!("use_default {} {}",
                                                        impl_generics.trans_extra(trcx, TypeSpace),
                                                        i);
-                                    /*let did = method.def_id;
-                                    let name = mangled_def_name(trcx, did);
-                                    trcx.observed_abstract_fns.insert(name, did);*/
                                     result.push_str(code.as_slice());
                                     result.push_str("\n");
                                 }
@@ -1240,6 +1243,8 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                             ty::TypeTraitItem(..) => {},
                         }
                     }
+                } else {
+                    println!("# inherent impl");
                 }
 
                 result

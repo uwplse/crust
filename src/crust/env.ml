@@ -13,9 +13,11 @@ end
 type adt_env_t = (string,Ir.type_expr) Hashtbl.t
 let adt_env = Hashtbl.create 10;;
 let fn_env = Hashtbl.create 10;;
+let abstract_fn_env = Hashtbl.create 10;;
 let abstract_impl = Hashtbl.create 10;;
 let associated_types = Hashtbl.create 10;;
 let static_env = Hashtbl.create 10;;
+let driver_env = ref [];;
 
 let is_abstract name = Hashtbl.mem abstract_impl name
 
@@ -53,9 +55,14 @@ let rec set_env = function
     Hashtbl.add static_env name (ty,expr);
     set_env t
   (* these are ignored for the moment *)
-  | `Abstract_Type _::t
-  | `Abstract_Fn _::t ->
+  | `Abstract_Type _::t -> set_env t
+  | `Abstract_Fn f::t ->
+    Hashtbl.add abstract_fn_env f.Ir.afn_name f;
     set_env t
+  | `Driver e :: t -> begin
+      set_env t;
+      driver_env := e :: !driver_env;
+    end
 
 let init_opt = ref false;;
 

@@ -37,3 +37,5 @@ val dummy_lifetime : string
 
 val string_of_inst : (string * Types.mono_type list) -> string
 val pp_inst : type_inst -> string
+
+val subst_tys : string list -> Types.r_type list -> Types.r_type list -> Types.r_type list

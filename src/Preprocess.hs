@@ -99,11 +99,8 @@ main = do
         MDriverGen -> do
             let funcs = mapMaybe getFnDesc items
             let drivers = genDrivers (mkIndex items) 3 funcs funcs
-            forM_ drivers $ \d -> do
-                putStrLn ""
-                putStrLn " ----------"
-                putStrLn ""
-                putStrLn $ runPp . ppExpr $ expandDriver d
+            forM_ items $ putStrLn . pp
+            forM_ drivers $ putStrLn . ("driver " ++) . pp . expandDriver
 
         MFilter -> do
             content <- readFile $ c_filter_file config

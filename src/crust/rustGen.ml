@@ -9,6 +9,8 @@ let skip_copy_use = ref false;;
 
 module MTSet = TypeUtil.MTSet
 
+exception Unexpected of string;;
+
 type seq_state = {
   public_types : MTSet.t;
   t_list : Types.mono_type list
@@ -68,6 +70,11 @@ let unmangle_name =
           (depth,t_list)
       ) (0,[]) tokens
 
+let split_last_segment path =
+  let idx = String.rindex path ':' in
+  (String.sub path 0 (idx - 1),
+    String.sub path (idx + 1) (String.length path - (idx + 1)))
+
 let rust_name fn_name =
   let fn_def = Env.EnvMap.find Env.fn_env fn_name in
   let to_transmute =
@@ -76,7 +83,20 @@ let rust_name fn_name =
     | Some i -> i.Ir.abstract_name
   in
   unmangle_name to_transmute
-  
+
+let args_by_param_space params ty_args =
+  let ty_space = ref [] in
+  let fn_space = ref [] in
+  let self_space = ref [] in
+  List.iter2 (fun arg param ->
+    match param.[0] with
+    | 'f' -> fn_space := arg :: !fn_space
+    | 't' -> ty_space := arg :: !ty_space
+    | 's' -> self_space := arg :: !self_space
+    | _ -> raise (Unexpected "ty param first character")
+  ) ty_args params;
+  (List.rev !ty_space, List.rev !fn_space, List.rev !self_space)
+
 
 
 type method_arg = 
@@ -197,7 +217,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     Buffer.clear buf
 
   method flush_buffer () = 
-    if curr_tests = 0 then () else begin
+    begin
       let file_name = Printf.sprintf "%s_%d.rs" output_file_prefix test_counter in
       let f = open_out file_name in
       List.iter (fun l ->
@@ -434,6 +454,149 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     self#close_block ();
     self#newline ()
 
+  method emit_blocks bs = begin
+    self#put_many "\n;;;;\n" self#emit_expr bs
+  end
+
+  method emit_stmt (s : Ir.stmt) =
+    match s with
+    | `Let (name, _ty, Some expr) -> begin
+        self#put "let ";
+        self#put name;
+        self#put " = ";
+        self#emit_expr expr;
+        self#put ";";
+      end
+    | _ -> raise (Unexpected "stmt variant")
+
+  method emit_expr (e : Ir.expr) =
+    match snd e with
+    | `Var name -> self#put name
+    | `Deref e -> begin
+        self#put "*";
+        self#emit_expr e;
+      end
+    | `Address_of e -> begin
+        self#put "&";
+        self#emit_expr e;
+      end
+    | `Call (name, las, tas, args) -> begin
+        self#emit_call_path name tas;
+        self#put "(";
+        self#put_many ", " self#emit_expr args;
+        self#put ")";
+      end
+    | `Tuple exprs -> begin
+        self#put "(";
+        self#put_many ", " self#emit_expr exprs;
+        self#put ")";
+      end
+    | `Struct_Field (expr, field) -> begin
+        self#emit_expr expr;
+        self#put ".";
+        self#put field;
+      end
+    | `Block (stmts, expr) -> begin
+        self#put_many "\n" self#emit_stmt stmts;
+        self#put "\n";
+        self#emit_expr expr;
+      end
+    | _ -> raise (Unexpected "expr variant")
+
+  method emit_ty (t : Types.r_type) =
+    match t with
+    (* | `T_Var -> raise (Unexpected "ty var") *)
+    (* | `Abstract -> raise (Unexpected "abstract type") *)
+    | `Adt_type { Types.type_name = t_name; Types.type_param = t_args; _ } ->
+        self#put (unmangle_name t_name);
+        if List.length t_args > 0 then begin
+          self#put "<";
+          self#put_many ", " self#emit_ty t_args;
+          self#put ">";
+        end;
+    | `Ref (_, ty) -> begin self#put "&"; self#emit_ty ty end
+    | `Ref_Mut (_, ty) -> begin self#put "&mut "; self#emit_ty ty end
+    | `Ptr ty -> begin self#put "*const "; self#emit_ty ty end
+    | `Ptr_Mut ty -> begin self#put "*mut "; self#emit_ty ty end
+    | `Int `Ptr_Size -> self#put "isize"
+    | `Int (`Bit_Size n) -> begin self#put "i"; self#put (string_of_int n) end
+    | `UInt `Ptr_Size -> self#put "usize"
+    | `UInt (`Bit_Size n) -> begin self#put "u"; self#put (string_of_int n) end
+    | `Bool -> self#put "bool"
+    | `Unit -> self#put "()"
+    | `Float n -> begin self#put "f"; self#put (string_of_int n) end
+    | `Char -> self#put "char"
+    | `Tuple tys -> begin
+        self#put "(";
+        self#put_many ", " self#emit_ty tys;
+        self#put ")";
+      end
+    (* NB: Actually emit "_" (ty_infer) instead of "!" *)
+    | `Bottom -> self#put "_"
+    | `Fixed_Vec (n, ty) -> begin
+        self#put "[";
+        self#emit_ty ty;
+        self#put "; ";
+        self#put (string_of_int n);
+        self#put "]";
+      end
+    | `Str -> self#put "str"
+    | `Vec ty -> begin
+        self#put "[";
+        self#emit_ty ty;
+        self#put "]";
+      end
+    | _ -> self#put "wat"
+
+  method emit_call_path fn_name ty_args =
+    if String.compare fn_name "__crust$nondet" == 0
+      then self#put "__crust::nondet"
+      else begin
+        let fn_def = Env.EnvMap.find Env.fn_env fn_name in
+        match fn_def.Ir.fn_impl with
+        | None -> begin
+          let (ty_space, fn_space, self_space) = args_by_param_space fn_def.Ir.fn_tparams ty_args in
+          (if List.length ty_space == 0
+            then self#put (unmangle_name fn_name)
+            else begin
+              let (ty_name, fn_basename) = split_last_segment (unmangle_name fn_name) in
+              self#put ty_name;
+              self#put "::<";
+              self#put_many ", " self#emit_ty ty_space;
+              self#put ">";
+              self#put "::";
+              self#put fn_basename;
+            end);
+          (if List.length fn_space != 0
+            then begin
+              self#put "::<";
+              self#put_many ", " self#emit_ty fn_space;
+              self#put ">";
+            end else ());
+        end
+        | Some i -> begin
+          let afn_def = Env.EnvMap.find Env.abstract_fn_env i.Ir.abstract_name in
+          let afn_ty_args = TypeUtil.subst_tys fn_def.Ir.fn_tparams ty_args
+                (i.Ir.i_types @ [i.Ir.i_self]) in
+          let (ty_space, fn_space, self_space) = 
+            args_by_param_space afn_def.Ir.afn_tparams afn_ty_args in
+          let (ty_name, fn_basename) = split_last_segment (unmangle_name afn_def.Ir.afn_name) in
+          Printf.printf "name %s -> %s :: %s\n" afn_def.Ir.afn_name ty_name fn_basename;
+          self#put "<";
+          self#put_many ", " self#emit_ty self_space;
+          self#put " as ";
+          self#put ty_name;
+          (if List.length ty_space > 0
+            then begin
+              self#put "<";
+              self#put_many ", " self#emit_ty ty_space;
+              self#put ">";
+            end else ());
+          self#put ">::";
+          self#put fn_basename;
+        end
+      end
+
   method private emit_arg arg = 
     match arg with
     | Primitive s -> self#put s
@@ -575,6 +738,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     let ref_vars = self#walk_call_seq SSet.add SSet.empty call_seq in
     SSet.is_empty @@ SSet.diff copy_vars ref_vars
 
+    (*
   initializer 
     let (init_args,_) = memo_get_fn_types (Env.crust_init_name_e(), []) in
     let empty_state = {
@@ -586,6 +750,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     | [t] -> init_arg_list <- t
     | [] -> failwith "No resolution found for crust_init arguments"
     | _ -> failwith "Ambiguous argument resolution found for crust_init"
+    *)
 end
 
 let rec complex_drop ty = match ty with
@@ -918,10 +1083,12 @@ let gen_call_seq pp fi_set =
       t_list = []
     } 0 [] (gen_call pp)
 
-let gen_driver output_prefix test_slice pt_set pf_set = 
+let gen_driver output_prefix test_slice = 
   let out_buffer = Buffer.create 1000 in
   let pp_rust = new rust_pp out_buffer output_prefix test_slice in
-  gen_call_seq pp_rust pf_set;
+  (* gen_call_seq pp_rust pf_set; *)
+  Printf.printf "%d items\n" (List.length !Env.driver_env);
+  pp_rust#emit_blocks !Env.driver_env;
   pp_rust#flush_buffer ()
 
 let dump_api out_channel pt_set pf_set = 

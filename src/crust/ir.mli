@@ -89,6 +89,14 @@ type fn_def = {
   fn_vis : visibility
 }
 
+type abstract_fn_def = {
+  afn_name : string;
+  afn_lifetime_params : Types.lifetime list;
+  afn_tparams : Types.type_param list;
+  aret_type : Types.r_type;
+  afn_args : (string * Types.r_type) list;
+}
+
 type struct_def = {
 	struct_name : string;
 	s_lifetime_param : Types.lifetime list;
@@ -119,8 +127,9 @@ type type_expr = [
 type module_expr = [
   | type_expr
   | `Fn of fn_def
-  | `Abstract_Fn of string
+  | `Abstract_Fn of abstract_fn_def
   | `Assoc_type of Types.associated_type
   | `Abstract_Type of Types.abstract_type_def
   | `Static of string * Types.r_type * expr
+  | `Driver of expr
   ]

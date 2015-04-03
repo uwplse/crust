@@ -38,10 +38,6 @@ let do_item_dump = crust_action dump_used_items
 
 let code_gen = crust_action Compilation.emit
 
-let generate_driver test_prefix test_slice = 
-  let w_state = Analysis.run_analysis () in
-  RustGen.gen_driver test_prefix test_slice w_state.Analysis.public_type w_state.Analysis.public_fn
-
 let do_api_dump out_chan = 
   let w_state = Analysis.run_analysis () in
   RustGen.dump_api out_chan w_state.Analysis.public_type w_state.Analysis.public_fn
@@ -112,19 +108,21 @@ let do_it f =
         close_in := true
       with Sys_error _ -> raise @@ Arg.Bad ("Failed to open input file: " ^ s)
     ) "Compile Rust IR to C";
+  Printf.printf "before\n";
   let ast =
     try
-	  Parser.parse_channel ~close:!close_in !input_channel
+      Parser.parse_channel ~close:!close_in !input_channel
     with Parser.Parse_failure (f_name,tokens) ->
-	  failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
+      failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in
   Env.set_env ast;
+  Printf.printf "after\n";
   Analysis.sequence_len := (!RustGen.mut_action_len + !RustGen.immut_action_len);
   match !command with
   | None -> code_gen !output_channel
   | Some `Dump_Api -> do_api_dump !output_channel
   | Some `Dump_Used_Items -> do_item_dump !output_channel
   | Some `Test_Compile -> compile_tests !output_channel
-  | Some `Driver_Gen -> generate_driver !test_output_file !test_chunk_size
+  | Some `Driver_Gen -> RustGen.gen_driver !test_output_file !test_chunk_size
 
 let _ = do_it Sys.argv.(1)
