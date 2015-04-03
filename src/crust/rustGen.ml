@@ -472,13 +472,16 @@ class rust_pp buf output_file_prefix num_tests = object(self)
   method emit_expr (e : Ir.expr) =
     match snd e with
     | `Var name -> self#put name
-    | `Deref e -> begin
+    | `Deref e' -> begin
         self#put "*";
-        self#emit_expr e;
+        self#emit_expr e';
       end
-    | `Address_of e -> begin
+    | `Address_of e' -> begin
         self#put "&";
-        self#emit_expr e;
+        (match fst e with
+        | `Ptr_Mut _ -> self#put "mut "
+        | _ -> ());
+        self#emit_expr e';
       end
     | `Call (name, las, tas, args) -> begin
         self#emit_call_path name tas;

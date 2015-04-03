@@ -30,7 +30,7 @@ data DriverExpr =
     | DENondet
     | DETupleIntro [DriverExpr]
     | DETupleElim DriverExpr Int
-    | DERefIntro DriverExpr
+    | DERefIntro Mutbl DriverExpr
     | DERefElim DriverExpr
   deriving (Eq, Show, Data, Typeable)
 
@@ -44,7 +44,7 @@ genDrivers ix limit lib constr = do
     return $ DECall name tyArgs argExprs
   where
     go limit ty | isPrimitive ty = [DENondet]
-    go limit (TRef _ _ ty) = DERefIntro <$> go limit ty
+    go limit (TRef _ mutbl ty) = DERefIntro mutbl <$> go limit ty
     go limit (TTuple tys) = DETupleIntro <$> mapM (go limit) tys
     -- Remaining cases require fuel to operate.
     go 0 ty = []
@@ -100,9 +100,9 @@ expandDriver de = Expr TBottom $ EBlock stmts expr
     go (DETupleElim de idx) = do
         expr <- go de
         return $ Expr TBottom $ EField expr ("field" ++ show idx)
-    go (DERefIntro de) = do
+    go (DERefIntro mutbl de) = do
         expr <- go de
-        return $ Expr TBottom $ EAddrOf expr
+        return $ Expr (TPtr mutbl TBottom) $ EAddrOf expr
     go (DERefElim de) = do
         expr <- go de
         return $ Expr TBottom $ EDeref expr
@@ -125,8 +125,8 @@ dumpDriver depth de = case de of
     DETupleElim de' i -> do
         putInd $ "tupleProj " ++ show i
         dumpDriver (depth + 1) de'
-    DERefIntro de' -> do
-        putInd $ "addrOf"
+    DERefIntro mutbl de' -> do
+        putInd $ "addrOf " ++ show mutbl
         dumpDriver (depth + 1) de'
     DERefElim de' -> do
         putInd $ "deref"
