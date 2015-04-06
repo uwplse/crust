@@ -7,13 +7,16 @@ import Control.Applicative ((<$>))
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Generics
+import Data.Generics hiding (typeOf)
 import qualified Data.Map as M
+import Data.Maybe
 import qualified Data.Set as S
 
+import Builder (typeOf)
 import Index
 import Parser
 import Pprint (ppTy, runPp)
+import RefSeek
 import Unify
 
 
@@ -28,6 +31,7 @@ getFnDesc _ = Nothing
 data DriverExpr =
       DECall Name [Ty] [DriverExpr]
     | DENondet
+    | DEDrop DriverExpr
     | DETupleIntro [DriverExpr]
     | DETupleElim DriverExpr Int
     | DERefIntro Mutbl DriverExpr
@@ -82,36 +86,61 @@ chooseTyArgs params retTy targetTy = do
             Nothing -> [TUnit, TInt (BitSize 8)]
 
 
-expandDriver :: DriverExpr -> Expr
-expandDriver de = Expr TBottom $ EBlock stmts expr
+expandDriver' :: Index -> DriverExpr -> Expr
+expandDriver' ix de = Expr (typeOf expr) $ EBlock stmts expr
   where
     (expr, stmts) = evalState (runWriterT (go de)) 0
 
     go (DECall name tyArgs argDes) = do
         argExprs <- mapM go argDes
-        outVar <- mkVar
-        let e = Expr TBottom $ ECall name [] tyArgs argExprs
-        tell [SLet (Pattern TBottom $ PVar outVar) (Just e)]
-        return $ Expr TBottom $ EVar outVar
+        outVar <- fresh
+        let retTy = fnRetTy name tyArgs
+        let e = Expr retTy $ ECall name [] tyArgs argExprs
+        tell [SLet (Pattern retTy $ PVar outVar) (Just e)]
+        return $ Expr retTy $ EVar outVar
     go DENondet = return $ Expr TBottom $ ECall "__crust$nondet" [] [TBottom] []
     go (DETupleIntro des) = do
         exprs <- mapM go des
-        return $ Expr TBottom $ ETupleLiteral exprs
+        return $ Expr (TTuple $ map typeOf exprs) $ ETupleLiteral exprs
     go (DETupleElim de idx) = do
         expr <- go de
-        return $ Expr TBottom $ EField expr ("field" ++ show idx)
+        return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr ("field" ++ show idx)
     go (DERefIntro mutbl de) = do
         expr <- go de
-        return $ Expr (TPtr mutbl TBottom) $ EAddrOf expr
+        return $ Expr (TRef "_" mutbl $ typeOf expr) $ EAddrOf expr
     go (DERefElim de) = do
         expr <- go de
-        return $ Expr TBottom $ EDeref expr
+        return $ Expr (derefTy $ typeOf expr) $ EDeref expr
 
-    mkVar = do
+    fresh = do
         idx <- get
         modify (+1)
         return $ "v" ++ show idx
-        
+
+    fnRetTy name tas =
+        let fn = fromMaybe (error $ "no fn " ++ show name) $ M.lookup name $ i_fns ix
+        in subst ([], fn_tyParams fn) ([], tas) $ fn_retTy fn
+
+    tupleFieldTy idx (TTuple tys) = tys !! idx
+    derefTy (TRef _ _ ty) = ty
+
+
+
+expandDriver :: Index -> DriverExpr -> Expr
+expandDriver ix de = block
+  where
+    driverExpr = expandDriver' ix de
+    driverTy = typeOf driverExpr
+
+    block = Expr TUnit $ EBlock
+        [ SLet (Pattern driverTy $ PVar "driver_out") (Just $ driverExpr)
+        , SExpr $ withCollectedRefs ix mkBody $ Expr driverTy $ EVar "driver_out"
+        ]
+        (Expr TUnit $ ESimpleLiteral "unit")
+
+    mkBody es = Expr TBottom $ ETupleLiteral es
+
+
 
 
 dumpDriver depth de = case de of

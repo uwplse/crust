@@ -26,16 +26,20 @@ import DropGlue
 import Builder
 import Unify
 import DriverSpec
+import RefSeek
 
 import Debug.Trace
 
-dumpIr msg ir = trace text ir
-  where text = "\n\n --- IR Dump (" ++ msg ++ ") ---\n\n" ++ runPp (mapM_ ppItem ir)
+dumpIr msg ir = dumpIr' ppItem msg ir
+
+dumpIr' pp msg ir = trace text ir
+  where text = "\n\n --- IR Dump (" ++ msg ++ ") ---\n\n" ++ runPp (mapM_ pp ir)
 
 data Mode =
       MDefault
     | MRunPasses
-    | MPPrint
+    | MPprint
+    | MPprintExpr
     | MFilter
     | MCollectUnsafe
     | MCollectTypes
@@ -63,7 +67,8 @@ defaultConfig = Config
 readArgs config args = go args config
   where
     go ("--scrub" : args) config = go args $ config { c_scrub = True }
-    go ("--pprint" : args) config = go args $ config { c_mode = MPPrint }
+    go ("--pprint" : args) config = go args $ config { c_mode = MPprint }
+    go ("--pprint-expr" : args) config = go args $ config { c_mode = MPprintExpr }
     go ("--collect-types" : args) config = go args $ config { c_mode = MCollectTypes }
     go ("--collect-unsafe" : args) config = go args $ config { c_mode = MCollectUnsafe }
     go ("--driver-gen" : args) config = go args $ config { c_mode = MDriverGen }
@@ -79,10 +84,16 @@ main = do
     args <- getArgs
     let config = readArgs defaultConfig args
 
+    if c_mode config == MPprintExpr then do
+        exprs <- parseContents expr
+        evaluate (dumpIr' ppExpr "pprint-expr" $ exprs)
+        return ()
+    else do
+
     items <- parseContents item
 
     case c_mode config of
-        MPPrint -> do
+        MPprint -> do
             evaluate (dumpIr "pprint" $ items)
             return ()
 
@@ -100,7 +111,7 @@ main = do
             let funcs = mapMaybe getFnDesc items
             let drivers = genDrivers (mkIndex items) 3 funcs funcs
             forM_ items $ putStrLn . pp
-            forM_ drivers $ putStrLn . ("driver " ++) . pp . expandDriver
+            forM_ drivers $ putStrLn . ("driver " ++) . pp . expandDriver (mkIndex items)
 
         MFilter -> do
             content <- readFile $ c_filter_file config
