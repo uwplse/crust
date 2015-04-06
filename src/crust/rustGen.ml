@@ -162,10 +162,19 @@ end
 let prelude = [
   "#![crate_type = \"lib\"]";
   "#![no_std]";
-  "#![feature(unsafe_destructor)]";
+  "#![feature(unsafe_destructor, no_std)]";
+  "#![feature(core, alloc, collections)]";
   "extern crate core;";
   "extern crate alloc;";
-  "extern crate collections;"
+  "extern crate collections;";
+  "extern crate array1b;";
+  "";
+  "mod __crust {";
+  "    pub fn nondet<T>() -> T {";
+  "        ::core::intrinsics::abort()";
+  "    }";
+  "}";
+  "";
 ]
 
 
@@ -454,9 +463,12 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     self#close_block ();
     self#newline ()
 
-  method emit_blocks bs = begin
-    self#put_many "\n;;;;\n" self#emit_expr bs
-  end
+  method emit_blocks bs =
+    List.iteri (fun i b ->
+      self#put (Printf.sprintf "fn __crust_test_%d() {\n" i);
+      self#emit_expr b;
+      self#put ";\n}\n\n";
+    ) bs
 
   method emit_stmt (s : Ir.stmt) =
     match s with
