@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
@@ -33,4 +35,4 @@ fn i(x: i32) -> i32 {
     x
 }
 
-fn crust_init() -> (uint, ) { (0, ) }
+fn crust_init() -> (usize, ) { (0, ) }

@@ -1,15 +1,17 @@
+#![feature(no_std)]
+#![feature(core)]
 // Known broken: no handling of statics yet.
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 
 struct S<'a> {
-    x: &'a uint,
+    x: &'a usize,
 }
 
-fn get_x(s: S) -> uint {
+fn get_x(s: S) -> usize {
     *s.x
 }
 
-static ZERO: uint = 0;
+static ZERO: usize = 0;
 fn crust_init() -> (S<'static>,) { (S { x: &ZERO },) }

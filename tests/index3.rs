@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 #![feature(unsafe_destructor)]
@@ -8,16 +10,16 @@ struct S {
     x: u8,
 }
 
-impl Index<uint> for S {
+impl Index<usize> for S {
     type Output = u8;
-    fn index(&self, index: &uint) -> &u8 {
+    fn index(&self, index: &usize) -> &u8 {
         &self.x
     }
 }
 
-impl IndexMut<uint> for S {
+impl IndexMut<usize> for S {
     type Output = u8;
-    fn index_mut(&mut self, index: &uint) -> &mut u8 {
+    fn index_mut(&mut self, index: &usize) -> &mut u8 {
         &mut self.x
     }
 }

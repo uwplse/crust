@@ -1,4 +1,11 @@
 // Builds with rustc 336349c (Mon Nov 17 20:37:19 2014 +0000)
+#![feature(core)]
+#![feature(convert)]
+#![feature(libc)]
+#![feature(as_slice)]
+#![feature(collections)]
+#![feature(std_misc)]
+#![feature(rustc_private)]
 
 #![crate_name = "rbmc"]
 extern crate getopts;
@@ -13,9 +20,14 @@ extern crate rustc_resolve;
 extern crate libc;
 extern crate arena;
 
-use std::io;
+use std::io::prelude::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::env;
+use std::fs;
+use std::io;
+use std::os;
+use std::path::{Path, PathBuf};
 use rustc::metadata::common::*;
 use rustc::plugin;
 use rustc::session::config;
@@ -31,7 +43,7 @@ use arena::TypedArena;
 mod trans;
 
 fn main() {
-    run_compiler(std::os::args().as_slice().slice_from(1));
+    run_compiler(&env::args().collect::<Vec<_>>()[1..]);
 }
 
 fn build_filter_list(matches : &getopts::Matches) -> HashSet<String> {
@@ -39,7 +51,7 @@ fn build_filter_list(matches : &getopts::Matches) -> HashSet<String> {
         None => HashSet::new(),
         Some(ref f_name) => {
             let mut to_ret = HashSet::new();
-            let mut f = io::BufferedReader::new(io::File::open(&Path::new(f_name)));
+            let mut f = io::BufReader::new(fs::File::open(&PathBuf::from(f_name)).unwrap());
             for line in f.lines() {
                 let l = line.unwrap();
                 if l.as_slice().is_empty() {
@@ -56,8 +68,7 @@ fn build_filter_list(matches : &getopts::Matches) -> HashSet<String> {
 fn run_compiler(args: &[String]) {
     let mut tool_opts = config::optgroups();
     tool_opts.push(getopts::optopt("", "crust-filter", "Filter function definitions from file", ""));
-    let matches = getopts::getopts(std::os::args().as_slice().slice_from(1),
-                                   tool_opts.as_slice()).unwrap();
+    let matches = getopts::getopts(args, tool_opts.as_slice()).unwrap();
 
     let sopts = config::build_session_options(&matches);
     let (input, input_file_path) = match matches.free.len() {
@@ -67,11 +78,12 @@ fn run_compiler(args: &[String]) {
         1 => {
             let ifile = matches.free[0].as_slice();
             if ifile == "-" {
-                let contents = io::stdin().read_to_end().unwrap();
+                let mut contents = vec![];
+                io::stdin().read_to_end(&mut contents).unwrap();
                 let src = String::from_utf8(contents).unwrap();
                 (Input::Str(src), None)
             } else {
-                (Input::File(Path::new(ifile)), Some(Path::new(ifile)))
+                (Input::File(PathBuf::from(ifile)), Some(PathBuf::from(ifile)))
             }
         }
         _ => panic!("multiple input filenames provided")
@@ -81,8 +93,8 @@ fn run_compiler(args: &[String]) {
     let descriptions = syntax::diagnostics::registry::Registry::new(&[]);
     let sess = session::build_session(sopts, input_file_path, descriptions);
     let cfg = config::build_configuration(&sess);
-    let odir = matches.opt_str("out-dir").map(|o| Path::new(o));
-    let ofile = matches.opt_str("o").map(|o| Path::new(o));
+    let odir = matches.opt_str("out-dir").map(|o| PathBuf::from(o));
+    let ofile = matches.opt_str("o").map(|o| PathBuf::from(o));
 
     compile_input(sess, cfg, &input, &odir, &ofile, filter_fn);
 }
@@ -90,8 +102,8 @@ fn run_compiler(args: &[String]) {
 pub fn compile_input(sess: session::Session,
                      cfg: ast::CrateConfig,
                      input: &Input,
-                     outdir: &Option<Path>,
-                     output: &Option<Path>,
+                     outdir: &Option<PathBuf>,
+                     output: &Option<PathBuf>,
                      filter_fn: HashSet<String>) {
     let (outputs, expanded_crate, id) = {
         let krate = driver::phase_1_parse_input(&sess, cfg, input);
@@ -112,9 +124,9 @@ pub fn compile_input(sess: session::Session,
     };
 
     let mut forest = ast_map::Forest::new(expanded_crate);
-    let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
-
-    let arenas = rustc::middle::ty::CtxtArenas::new();
+    let (ast_map, arenas) =
+        (driver::assign_node_ids_and_map(&sess, &mut forest),
+         rustc::middle::ty::CtxtArenas::new());
     let analysis = driver::phase_3_run_analysis_passes(sess,
                                                        ast_map,
                                                        &arenas,

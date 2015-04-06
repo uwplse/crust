@@ -1,9 +1,11 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 
 extern crate core;
 
-fn foo(z: int) -> uint {
+fn foo(z: isize) -> usize {
     let x = 4u;
     let y = 5u;
     return match z {
@@ -12,4 +14,4 @@ fn foo(z: int) -> uint {
     }
 }
 
-fn crust_init() -> (int,) { (0i,) }
+fn crust_init() -> (isize,) { (0i,) }

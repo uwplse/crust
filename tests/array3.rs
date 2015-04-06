@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 #![feature(unsafe_destructor)]
@@ -103,7 +105,7 @@ impl<T: Copy> Vec<T> {
     // BUG: removing 'a from self allows inappropriate aliasing (with get_mut)
     fn get<'a>(&'a self, index: usize) -> &'a T {
         // BUG: forgetting check allows out-of-bounds access
-        // BUG: casting index to int before checking against len allows out-of-bounds access
+        // BUG: casting index to isize before checking against len allows out-of-bounds access
         if index >= self.len {
             crust_abort();
         }

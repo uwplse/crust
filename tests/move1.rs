@@ -1,12 +1,14 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 
 struct S {
-    x : int
+    x : isize
 }
 
-fn do_thing(x : S) -> int {
+fn do_thing(x : S) -> isize {
     x.x
 }
 

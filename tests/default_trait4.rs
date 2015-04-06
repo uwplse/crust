@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 
 trait T {

@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 #![feature(unsafe_destructor)]
@@ -23,14 +25,14 @@ use core::ops::{Index, IndexMut, Deref, Add};
 use core::ops;
 use core::ptr;
 use core::raw::Slice as RawSlice;
-use core::uint;
+use core::usize;
 
 #[unsafe_no_drop_flag]
 #[stable]
 pub struct Vec<T> {
     ptr: *mut T,
-    len: uint,
-    cap: uint,
+    len: usize,
+    cap: usize,
 }
 
 const MAX_VEC_SIZE : u32 = 4;
@@ -53,9 +55,9 @@ impl<T> Vec<T> {
 */
     #[inline]
     #[stable]
-    pub fn with_capacity(capacity: uint) -> Vec<T> {
+    pub fn with_capacity(capacity: usize) -> Vec<T> {
         if mem::size_of::<T>() == 0 {
-            Vec { ptr: EMPTY as *mut T , len: 0, cap: uint::MAX }
+            Vec { ptr: EMPTY as *mut T , len: 0, cap: usize::MAX }
         } else if capacity == 0 {
             Vec { ptr: EMPTY as *mut T, len: 0, cap: 0 }
         } else {
@@ -74,14 +76,14 @@ impl<T> Vec<T> {
     }
 /* TODO(jtoman): these trigger infinite loops in the api discovery :(
     #[stable]
-    pub unsafe fn from_raw_parts(ptr: *mut T, length: uint,
-                                 capacity: uint) -> Vec<T> {
+    pub unsafe fn from_raw_parts(ptr: *mut T, length: usize,
+                                 capacity: usize) -> Vec<T> {
         Vec { ptr: ptr, len: length, cap: capacity }
     }
 
     #[inline]
     #[unstable = "may be better expressed via composition"]
-    pub unsafe fn from_raw_buf(ptr: *const T, elts: uint) -> Vec<T> {
+    pub unsafe fn from_raw_buf(ptr: *const T, elts: usize) -> Vec<T> {
         let mut dst = Vec::with_capacity(elts);
         dst.set_len(elts);
         ptr::copy_nonoverlapping_memory(dst.as_mut_ptr(), ptr, elts);
@@ -89,9 +91,9 @@ impl<T> Vec<T> {
     }
 */
     #[stable]
-    pub fn reserve(&mut self, additional: uint) {
+    pub fn reserve(&mut self, additional: usize) {
         if self.cap - self.len < additional {
-            //let err_msg = "Vec::reserve: `uint` overflow";
+            //let err_msg = "Vec::reserve: `usize` overflow";
             /*let new_cap = match self.len.checked_add(additional).expect(err_msg)
                 .checked_next_power_of_two().expect(err_msg);*/
             let new_cap = match self.len.checked_add(additional) {
@@ -104,11 +106,11 @@ impl<T> Vec<T> {
     }
 
     #[stable]
-    pub fn reserve_exact(&mut self, additional: uint) {
+    pub fn reserve_exact(&mut self, additional: usize) {
         if self.cap - self.len < additional {
             match self.len.checked_add(additional) {
                 Some(new_cap) => self.grow_capacity(new_cap),
-                None => panic!("Vec::reserve: `uint` overflow")
+                None => panic!("Vec::reserve: `usize` overflow")
             }
             let new_cap = self.len + additional;
             
@@ -154,7 +156,7 @@ impl<T> Vec<T> {
     // }
 
     #[stable]
-    pub fn truncate(&mut self, len: uint) {
+    pub fn truncate(&mut self, len: usize) {
         unsafe {
             // drop any extra elements
             while len < self.len {
@@ -175,9 +177,9 @@ impl<T> Vec<T> {
     //         let cap = self.cap;
     //         let begin = ptr as *const T;
     //         let end = if mem::size_of::<T>() == 0 {
-    //             (ptr as uint + self.len()) as *const T
+    //             (ptr as usize + self.len()) as *const T
     //         } else {
-    //             ptr.offset(self.len() as int) as *const T
+    //             ptr.offset(self.len() as isize) as *const T
     //         };
     //         mem::forget(self);
     //         IntoIter { allocation: ptr, cap: cap, ptr: begin, end: end }
@@ -186,12 +188,12 @@ impl<T> Vec<T> {
 
     #[inline]
     #[stable]
-    pub unsafe fn set_len(&mut self, len: uint) {
+    pub unsafe fn set_len(&mut self, len: usize) {
         self.len = len;
     }
 
     #[stable]
-    pub fn insert(&mut self, index: uint, element: T) {
+    pub fn insert(&mut self, index: usize, element: T) {
         let len = self.len();
         assert!(index <= len);
         // space for the new element
@@ -200,7 +202,7 @@ impl<T> Vec<T> {
         unsafe { // infallible
             // The spot to put the new value
             {
-                let p = self.as_mut_ptr().offset(index as int);
+                let p = self.as_mut_ptr().offset(index as isize);
                 // Shift everything over to make space. (Duplicating the
                 // `index`th element into two consecutive places.)
                 ptr::copy_memory(p.offset(1), &*p, len - index);
@@ -213,14 +215,14 @@ impl<T> Vec<T> {
     }
 
     #[stable]
-    pub fn remove(&mut self, index: uint) -> T {
+    pub fn remove(&mut self, index: usize) -> T {
         let len = self.len();
         assert!(index < len); // transform to panic
         unsafe { // infallible
             let ret;
             {
                 // the place we are taking from.
-                let ptr = self.as_mut_ptr().offset(index as int);
+                let ptr = self.as_mut_ptr().offset(index as isize);
                 // copy it out, unsafely having a copy of the value on
                 // the stack and in the vector at the same time.
                 ret = ptr::read(ptr);
@@ -260,7 +262,7 @@ impl<T> Vec<T> {
         }
 
         unsafe {
-            let end = (self.ptr).offset(self.len as int);
+            let end = (self.ptr).offset(self.len as isize);
             ptr::write(&mut *end, value);
             self.len += 1;
         }
@@ -313,9 +315,9 @@ impl<T> Vec<T> {
     //     unsafe {
     //         let begin = *self.ptr as *const T;
     //         let end = if mem::size_of::<T>() == 0 {
-    //             (*self.ptr as uint + self.len()) as *const T
+    //             (*self.ptr as usize + self.len()) as *const T
     //         } else {
-    //             (*self.ptr).offset(self.len() as int) as *const T
+    //             (*self.ptr).offset(self.len() as isize) as *const T
     //         };
     //         self.set_len(0);
     //         Drain {
@@ -334,7 +336,7 @@ impl<T> Vec<T> {
 
     #[inline]
     #[stable]
-    pub fn len(&self) -> uint { self.len }
+    pub fn len(&self) -> usize { self.len }
 
     #[stable]
     pub fn is_empty(&self) -> bool { self.len() == 0 }
@@ -358,10 +360,10 @@ impl<T> Vec<T> {
             // types are passed to the allocator by `Vec`.
             assert!(mem::min_align_of::<T>() == mem::min_align_of::<U>());
 
-            // This `as int` cast is safe, because the size of the elements of the
+            // This `as isize` cast is safe, because the size of the elements of the
             // vector is not 0, and:
             //
-            // 1) If the size of the elements in the vector is 1, the `int` may
+            // 1) If the size of the elements in the vector is 1, the `isize` may
             //    overflow, but it has the correct bit pattern so that the
             //    `.offset()` function will work.
             //
@@ -373,9 +375,9 @@ impl<T> Vec<T> {
             //        After `array.offset(offset)`: 0x9.
             //        (0x1 + 0x8 = 0x1 - 0x8)
             //
-            // 2) If the size of the elements in the vector is >1, the `uint` ->
-            //    `int` conversion can't overflow.
-            let offset = vec.len() as int;
+            // 2) If the size of the elements in the vector is >1, the `usize` ->
+            //    `isize` conversion can't overflow.
+            let offset = vec.len() as isize;
             let start = vec.as_mut_ptr();
 
             let mut pv = PartialVecNonZeroSized {
@@ -500,8 +502,8 @@ impl<T> Vec<T> {
                     let u = f(t);
 
                     // Forget the `U` and increment `num_u`. This increment
-                    // cannot overflow the `uint` as we only do this for a
-                    // number of times that fits into a `uint` (and start with
+                    // cannot overflow the `usize` as we only do this for a
+                    // number of times that fits into a `usize` (and start with
                     // `0`). Again, we should not panic between these steps.
                     mem::forget(u);
                     pv.num_u += 1;
@@ -553,7 +555,7 @@ impl<T: Clone> Vec<T> {
     /// assert_eq!(vec, vec![1, 2]);
     /// ```
     #[unstable = "matches collection reform specification; waiting for dust to settle"]
-    pub fn resize(&mut self, new_len: uint, value: T) {
+    pub fn resize(&mut self, new_len: usize, value: T) {
         let len = self.len();
 
         if new_len > len {
@@ -683,8 +685,8 @@ impl<T: PartialEq> Vec<T> {
             let mut w = 1;
 
             while r < ln {
-                let p_r = p.offset(r as int);
-                let p_wm1 = p.offset((w - 1) as int);
+                let p_r = p.offset(r as isize);
+                let p_wm1 = p.offset((w - 1) as isize);
                 if *p_r != *p_wm1 {
                     if r != w {
                         let p_w = p_wm1.offset(1);
@@ -709,7 +711,7 @@ impl<T> Vec<T> {
     ///
     /// If the capacity for `self` is already equal to or greater than the
     /// requested capacity, then no action is taken.
-    fn grow_capacity(&mut self, capacity: uint) {
+    fn grow_capacity(&mut self, capacity: usize) {
         if mem::size_of::<T>() == 0 { return }
 
         if capacity > self.cap {
@@ -727,7 +729,7 @@ impl<T> Vec<T> {
 
 // FIXME: #13996: need a way to mark the return value as `noalias`
 #[inline(never)]
-unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T {
+unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: usize, size: usize) -> *mut T {
     if old_size == 0 {
         allocate(size, mem::min_align_of::<T>()) as *mut T
     } else {
@@ -736,7 +738,7 @@ unsafe fn alloc_or_realloc<T>(ptr: *mut T, old_size: uint, size: uint) -> *mut T
 }
 
 #[inline]
-unsafe fn dealloc<T>(ptr: *mut T, len: uint) {
+unsafe fn dealloc<T>(ptr: *mut T, len: usize) {
     if mem::size_of::<T>() != 0 {
         deallocate(ptr as *mut u8,
                    len * mem::size_of::<T>(),
@@ -779,47 +781,47 @@ impl<S: hash::Writer + hash::Hasher, T: Hash<S>> Hash<S> for Vec<T> {
 }
 
 #[stable]
-impl<T> Index<uint> for Vec<T> {
+impl<T> Index<usize> for Vec<T> {
     type Output = T;
 
     #[inline]
-    fn index<'a>(&'a self, index: &uint) -> &'a T {
+    fn index<'a>(&'a self, index: &usize) -> &'a T {
         &self.as_slice()[*index]
     }
 }
 
 #[stable]
-impl<T> IndexMut<uint> for Vec<T> {
+impl<T> IndexMut<usize> for Vec<T> {
     type Output = T;
 
     #[inline]
-    fn index_mut<'a>(&'a mut self, index: &uint) -> &'a mut T {
+    fn index_mut<'a>(&'a mut self, index: &usize) -> &'a mut T {
         &mut self.as_mut_slice()[*index]
     }
 }
 
 
 #[stable]
-impl<T> ops::Index<ops::Range<uint>> for Vec<T> {
+impl<T> ops::Index<ops::Range<usize>> for Vec<T> {
     type Output = [T];
     #[inline]
-    fn index(&self, index: &ops::Range<uint>) -> &[T] {
+    fn index(&self, index: &ops::Range<usize>) -> &[T] {
         self.as_slice().index(index)
     }
 }
 #[stable]
-impl<T> ops::Index<ops::RangeTo<uint>> for Vec<T> {
+impl<T> ops::Index<ops::RangeTo<usize>> for Vec<T> {
     type Output = [T];
     #[inline]
-    fn index(&self, index: &ops::RangeTo<uint>) -> &[T] {
+    fn index(&self, index: &ops::RangeTo<usize>) -> &[T] {
         self.as_slice().index(index)
     }
 }
 #[stable]
-impl<T> ops::Index<ops::RangeFrom<uint>> for Vec<T> {
+impl<T> ops::Index<ops::RangeFrom<usize>> for Vec<T> {
     type Output = [T];
     #[inline]
-    fn index(&self, index: &ops::RangeFrom<uint>) -> &[T] {
+    fn index(&self, index: &ops::RangeFrom<usize>) -> &[T] {
         self.as_slice().index(index)
     }
 }
@@ -833,26 +835,26 @@ impl<T> ops::Index<ops::FullRange> for Vec<T> {
 }
 
 #[stable]
-impl<T> ops::IndexMut<ops::Range<uint>> for Vec<T> {
+impl<T> ops::IndexMut<ops::Range<usize>> for Vec<T> {
     type Output = [T];
     #[inline]
-    fn index_mut(&mut self, index: &ops::Range<uint>) -> &mut [T] {
+    fn index_mut(&mut self, index: &ops::Range<usize>) -> &mut [T] {
         self.as_mut_slice().index_mut(index)
     }
 }
 #[stable]
-impl<T> ops::IndexMut<ops::RangeTo<uint>> for Vec<T> {
+impl<T> ops::IndexMut<ops::RangeTo<usize>> for Vec<T> {
     type Output = [T];
     #[inline]
-    fn index_mut(&mut self, index: &ops::RangeTo<uint>) -> &mut [T] {
+    fn index_mut(&mut self, index: &ops::RangeTo<usize>) -> &mut [T] {
         self.as_mut_slice().index_mut(index)
     }
 }
 #[stable]
-impl<T> ops::IndexMut<ops::RangeFrom<uint>> for Vec<T> {
+impl<T> ops::IndexMut<ops::RangeFrom<usize>> for Vec<T> {
     type Output = [T];
     #[inline]
-    fn index_mut(&mut self, index: &ops::RangeFrom<uint>) -> &mut [T] {
+    fn index_mut(&mut self, index: &ops::RangeFrom<usize>) -> &mut [T] {
         self.as_mut_slice().index_mut(index)
     }
 }
@@ -1086,7 +1088,7 @@ impl<'a, T> IntoCow<'a, Vec<T>, [T]> for &'a [T] where T: Clone {
 #[stable]
 pub struct IntoIter<T> {
     allocation: *mut T, // the block of memory allocated for the vector
-    cap: uint, // the capacity of the vector
+    cap: usize, // the capacity of the vector
     ptr: *const T,
     end: *const T
 }
@@ -1122,7 +1124,7 @@ impl<T> Iterator for IntoIter<T> {
                     // purposefully don't use 'ptr.offset' because for
                     // vectors with 0-size elements this would return the
                     // same pointer.
-                    self.ptr = mem::transmute(self.ptr as uint + 1);
+                    self.ptr = mem::transmute(self.ptr as usize + 1);
 
                     // Use a non-null pointer value
                     Some(ptr::read(mem::transmute(1u)))
@@ -1137,8 +1139,8 @@ impl<T> Iterator for IntoIter<T> {
     }
 
     #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        let diff = (self.end as uint) - (self.ptr as uint);
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let diff = (self.end as usize) - (self.ptr as usize);
         let size = mem::size_of::<T>();
         let exact = diff / (if size == 0 {1} else {size});
         (exact, Some(exact))
@@ -1155,7 +1157,7 @@ impl<T> DoubleEndedIterator for IntoIter<T> {
             } else {
                 if mem::size_of::<T>() == 0 {
                     // See above for why 'ptr.offset' isn't used
-                    self.end = mem::transmute(self.end as uint - 1);
+                    self.end = mem::transmute(self.end as usize - 1);
 
                     // Use a non-null pointer value
                     Some(ptr::read(mem::transmute(1u)))
@@ -1209,7 +1211,7 @@ impl<'a, T> Iterator for Drain<'a, T> {
                     // purposefully don't use 'ptr.offset' because for
                     // vectors with 0-size elements this would return the
                     // same pointer.
-                    self.ptr = mem::transmute(self.ptr as uint + 1);
+                    self.ptr = mem::transmute(self.ptr as usize + 1);
 
                     // Use a non-null pointer value
                     Some(ptr::read(mem::transmute(1u)))
@@ -1224,8 +1226,8 @@ impl<'a, T> Iterator for Drain<'a, T> {
     }
 
     #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        let diff = (self.end as uint) - (self.ptr as uint);
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let diff = (self.end as usize) - (self.ptr as usize);
         let size = mem::size_of::<T>();
         let exact = diff / (if size == 0 {1} else {size});
         (exact, Some(exact))
@@ -1242,7 +1244,7 @@ impl<'a, T> DoubleEndedIterator for Drain<'a, T> {
             } else {
                 if mem::size_of::<T>() == 0 {
                     // See above for why 'ptr.offset' isn't used
-                    self.end = mem::transmute(self.end as uint - 1);
+                    self.end = mem::transmute(self.end as usize - 1);
 
                     // Use a non-null pointer value
                     Some(ptr::read(mem::transmute(1u)))

@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 #![feature(unsafe_destructor)]
@@ -14,12 +16,12 @@ use core::ptr::{PtrExt, MutPtrExt};
 /*
 mod alloc {
     pub mod heap {
-        pub unsafe fn allocate(size: uint, align: uint) -> *mut u8 {
+        pub unsafe fn allocate(size: usize, align: usize) -> *mut u8 {
             // Die horribly if the translation fails to replace this function.
             *(0 as *mut *mut u8)
         }
 
-        pub unsafe fn deallocate(ptr: *mut u8, size: uint, align: uint) {
+        pub unsafe fn deallocate(ptr: *mut u8, size: usize, align: usize) {
             *(0 as *mut ())
         }
     }
@@ -35,11 +37,11 @@ fn crust_abort() -> ! {
 
 struct Array<T> {
     ptr: *mut T,
-    len: uint,
+    len: usize,
 }
 
 impl<T: Copy> Array<T> {
-    fn new(len: uint) -> Array<T> {
+    fn new(len: usize) -> Array<T> {
         // BUG: forgetting to multiply by size_of::<T> allows out-of-bounds access
         let size = len * core::mem::size_of::<T>();
         let align = core::mem::align_of::<T>();
@@ -53,23 +55,23 @@ impl<T: Copy> Array<T> {
     }
 
     // BUG: removing 'a from self allows inappropriate aliasing (with get_mut)
-    fn get<'a>(&'a self, index: uint) -> &'a T {
+    fn get<'a>(&'a self, index: usize) -> &'a T {
         // BUG: forgetting check allows out-of-bounds access
-        // BUG: casting index to int before checking against len allows out-of-bounds access
+        // BUG: casting index to isize before checking against len allows out-of-bounds access
         if index >= self.len {
             unsafe { core::intrinsics::abort() };
         }
 
-        unsafe { &*self.ptr.offset(index as int) }
+        unsafe { &*self.ptr.offset(index as isize) }
     }
 
     // BUG: using &'a self instead of &'a mut self allows inappropriate aliasing
-    fn get_mut<'a>(&'a mut self, index: uint) -> &'a mut T {
+    fn get_mut<'a>(&'a mut self, index: usize) -> &'a mut T {
         if index >= self.len {
             unsafe { core::intrinsics::abort() };
         }
 
-        unsafe { &mut *self.ptr.offset(index as int) }
+        unsafe { &mut *self.ptr.offset(index as isize) }
     }
 }
 

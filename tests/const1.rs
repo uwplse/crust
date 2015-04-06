@@ -1,10 +1,12 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 
-const ONE: uint = 1;
+const ONE: usize = 1;
 
-fn foo(x: uint) -> uint {
+fn foo(x: usize) -> usize {
     x + ONE
 }
 

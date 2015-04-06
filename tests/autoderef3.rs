@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
@@ -8,7 +10,7 @@ struct S<T> {
 }
 
 struct S2 {
-    y: uint,
+    y: usize,
 }
 
 impl<T> Deref for S<T> {
@@ -18,6 +20,6 @@ impl<T> Deref for S<T> {
     }
 }
 
-fn get(s: S<S2>) -> uint {
+fn get(s: S<S2>) -> usize {
     s.y
 }

@@ -1,27 +1,29 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 
 extern crate core;
 
 struct Exclude {
-    contents: int
+    contents: isize
 }
 
 impl Exclude {
-    fn do_thing(&self) -> int {
+    fn do_thing(&self) -> isize {
         self.contents + 1
     }
-    fn do_other_thing(&self) -> int {
+    fn do_other_thing(&self) -> isize {
         self.contents
     }
 }
 
-fn global_fn(foo : &Exclude, b: int) -> int {
+fn global_fn(foo : &Exclude, b: isize) -> isize {
     foo.contents  + b
 }
 
 struct Include {
-    i_contents : int
+    i_contents : isize
 }
 
 impl Include {

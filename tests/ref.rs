@@ -1,19 +1,21 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 
 struct S {
-    x: int
+    x: isize
 }
 
 impl S {
-    fn do_thing(x: &int) -> int{
+    fn do_thing(x: &isize) -> isize{
         *x + 1
     }
     
 }
 
-fn whatever(y: int, x : (int,(uint,&int))) -> &int {
+fn whatever(y: isize, x : (isize,(usize,&isize))) -> &isize {
     match x {
         (_,(_,p)) => p
     }
@@ -32,6 +34,6 @@ impl<T> Cont<T> {
     }
 }
 
-fn crust_init () -> (S,Cont<int>) {
+fn crust_init () -> (S,Cont<isize>) {
     (S { x : 4 },Cont { contents: 4 })
 }

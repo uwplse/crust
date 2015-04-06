@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 
@@ -16,6 +18,6 @@ fn foo() -> bool {
     }
 }
 
-fn crust_init() -> (int,) {
+fn crust_init() -> (isize,) {
     (0,)
 }

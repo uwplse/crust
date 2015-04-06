@@ -1,13 +1,15 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 
 enum Foo {
-    Bar(uint),
+    Bar(usize),
     Baz
 }
 
-fn frob(x : uint) -> Foo {
+fn frob(x : usize) -> Foo {
     if x == 3 {
         Foo::Baz
     } else {
@@ -15,7 +17,7 @@ fn frob(x : uint) -> Foo {
     }
 }
 
-fn g(mut x: uint) -> uint {
+fn g(mut x: usize) -> usize {
     let mut y = 0;
     while match frob(x) {
         Foo::Baz => false,

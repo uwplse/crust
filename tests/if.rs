@@ -1,8 +1,10 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 
-fn f() -> uint {
+fn f() -> usize {
     let x = true;
     match x {
         true => { 1 },
@@ -10,9 +12,9 @@ fn f() -> uint {
     }
 }
 
-fn g() -> uint {
+fn g() -> usize {
     let x = true;
     if x { 1 } else { 2 }
 }
 
-fn crust_init() -> (uint,) { (0,) }
+fn crust_init() -> (usize,) { (0,) }

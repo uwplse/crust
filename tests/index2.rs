@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 #![feature(unsafe_destructor)]
@@ -8,9 +10,9 @@ struct S {
     x: u8,
 }
 
-impl Index<uint> for S {
+impl Index<usize> for S {
     type Output = u8;
-    fn index(&self, index: &uint) -> &u8 {
+    fn index(&self, index: &usize) -> &u8 {
         &self.x
     }
 }

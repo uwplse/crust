@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
@@ -12,4 +14,4 @@ impl<T> S<T> {
     }
 }
 
-fn crust_init() -> (S<uint>, bool) { (S { x: 0 }, true) }
+fn crust_init() -> (S<usize>, bool) { (S { x: 0 }, true) }

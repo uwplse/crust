@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 
@@ -7,11 +9,11 @@ fn foo() {
     let x = 4u;
     let mut y = 0u;
     unsafe {
-        core::intrinsics::copy_memory(&mut y as *mut uint, &x as *const uint, 1);
+        core::intrinsics::copy_memory(&mut y as *mut usize, &x as *const usize, 1);
     }
-    let z : int = unsafe { core::intrinsics::init() };
+    let z : isize = unsafe { core::intrinsics::init() };
 }
 
-fn crust_init() -> (int,) {
+fn crust_init() -> (isize,) {
     (4,)
 }

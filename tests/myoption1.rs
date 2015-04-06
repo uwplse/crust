@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;   // for lang items
@@ -17,6 +19,6 @@ impl<T> Option<T> {
     }
 }
 
-fn crust_init() -> (Option<int>,) {
+fn crust_init() -> (Option<isize>,) {
     (Option::new(3), )
 }

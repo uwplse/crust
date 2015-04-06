@@ -1,3 +1,5 @@
+#![feature(no_std)]
+#![feature(core)]
 // This code is mostly copied from rust/src/libcore/cell.rs, which is distributed under the
 // following license:
 //
@@ -54,7 +56,7 @@ impl<T> UnsafeCell<T> {
 
 
 pub struct Abstract {
-    x: uint,
+    x: usize,
 }
 
 
@@ -92,8 +94,8 @@ pub struct RefCell<T> {
 }
 
 // Values [1, MAX-1] represent the number of `Ref` active
-// (will not outgrow its range since `uint` is the size of the address space)
-type BorrowFlag = uint;
+// (will not outgrow its range since `usize` is the size of the address space)
+type BorrowFlag = usize;
 const UNUSED: BorrowFlag = 0;
 const WRITING: BorrowFlag = -1;
 

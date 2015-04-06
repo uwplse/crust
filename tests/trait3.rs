@@ -1,18 +1,20 @@
+#![feature(no_std)]
+#![feature(core)]
 #![crate_type = "lib"]
 #![no_std]
 extern crate core;
 use core::ops::Add;
 
 struct S {
-    x: uint,
+    x: usize,
 }
 
 trait T {
-    fn f(&self) -> uint;
+    fn f(&self) -> usize;
 }
 
 impl T for S {
-    fn f(&self) -> uint {
+    fn f(&self) -> usize {
         self.x
     }
 }
