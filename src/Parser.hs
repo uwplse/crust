@@ -258,6 +258,7 @@ visibility = tagged
 predicate = tagged
     [ ("ty_impl", PImpl <$> name <*> (counted lifetime >> counted ty))
     , ("ty_eq", PEq <$> ty <*> ty)
+    , ("ty_eq_proj", PEq <$> ty <*> ty)
     ]
 
 fnDef = do

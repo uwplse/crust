@@ -1,4 +1,4 @@
-RUSTC=rustc
+RUSTC=rustc -O
 RUST_FLAGS=-A warnings -C rpath
 GHC=ghc -O3
 ALEX=alex

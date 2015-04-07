@@ -2,9 +2,7 @@
 #![crate_type = "lib"]
 #![no_std]
 
-#![feature(lang_items)]
-
-#![allow(unstable)] // much of libcore is unstable as of Rust 1.0
+#![feature(lang_items, no_std, core)]
 
 #[macro_use] extern crate core;
 

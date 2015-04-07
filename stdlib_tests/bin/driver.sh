@@ -15,7 +15,7 @@ edo() {
     "$@"
 }
 
-rustc_args="-L lib --out-dir=lib --target=x86_64-custom-linux-gnu.json -A warnings"
+rustc_args="-L lib --out-dir=lib --target=x86_64-custom-linux-gnu.json"
 stdlibs="core libc alloc unicode collections"
 
 

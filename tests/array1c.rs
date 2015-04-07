@@ -7,7 +7,7 @@
 extern crate core;
 extern crate alloc;
 
-//use core::option::Option::{self, Some, None};
+use core::option::Option::{self, Some, None};
 use core::prelude::{Copy, Drop};
 //use core::ptr::{PtrExt, MutPtrExt};
 use core::ops::Index;
@@ -35,22 +35,6 @@ fn crust_abort() -> ! {
     unsafe { core::intrinsics::abort() };
 }
 */
-
-pub use self::Option::{Some, None};
-
-pub enum Option<T> {
-    Some(T),
-    None
-}
-
-impl<T> Option<T> {
-    pub fn unwrap(self) -> T {
-        match self {
-            Some(x) => x,
-            None => unsafe { core::intrinsics::abort() },
-        }
-    }
-}
 
 
 struct Array<T> {

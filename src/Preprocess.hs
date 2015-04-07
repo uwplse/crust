@@ -15,6 +15,8 @@ import Data.Maybe
 import Numeric
 import System.Environment
 import Text.Parsec hiding (label, State)
+import qualified Text.Regex.TDFA as RE
+import qualified Text.Regex.TDFA.String as RE
 
 import Lexer
 import Parser
@@ -108,8 +110,17 @@ main = do
                 putStrLn $ intercalate " " [name, pp tps, pp args, pp ret]
 
         MDriverGen -> do
-            let funcs = mapMaybe getFnDesc items
-            let drivers = genDrivers (mkIndex items) 3 funcs funcs
+            let libFileName = fromMaybe (error "need --library-filter") $
+                    c_library_filter_file config
+            let constrFileName = fromMaybe (error "need --construction-filter") $
+                    c_construction_filter_file config
+            libLines <- lines <$> readFile libFileName
+            constrLines <- lines <$> readFile constrFileName
+
+            let libFuncs = mapMaybe getFnDesc $ filterFnsByName libLines items
+            let constrFuncs = mapMaybe getFnDesc $ filterFnsByName constrLines items
+
+            let drivers = genDrivers (mkIndex items) 3 libFuncs constrFuncs
             forM_ items $ putStrLn . pp
             forM_ drivers $ putStrLn . ("driver " ++) . pp . expandDriver (mkIndex items)
 
@@ -199,9 +210,29 @@ fixClone = everywhere (mkT addDropCheckT)
 
     addTypeCheck :: Ty -> Expr -> Expr
     addTypeCheck ty expr@(Expr e_ty _) = mkMatch ty e_ty expr
-                        
-                        
-                        
+
+
+filterFnsByName filterLines items = traceShow regexStr $ filter check items
+  where
+    globCharToRegex c = case c of
+        '*' -> ".*"
+        '$' -> "\\$"
+        '.' -> "\\."
+        _ -> [c]
+    globToRegex = concatMap globCharToRegex
+    regexStrs = map globToRegex filterLines
+    regexStr = "^(" ++ (tail $ concatMap ('|':) regexStrs) ++ ")$"
+    regex =
+        case RE.compile RE.defaultCompOpt RE.defaultExecOpt regexStr of
+            Left e -> error e
+            Right r -> r
+    check (IFn (FnDef _ name _ _ _ _ _ _ _)) =
+        case RE.execute regex name of
+            Left e -> error e
+            Right (Just _) -> traceShow ("keep", name) True
+            Right Nothing -> traceShow ("drop", name) False
+    check _ = False
+
 
 cleanupDrops = everywhere (mkT cleanupDropT)
   where
