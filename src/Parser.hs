@@ -440,7 +440,7 @@ instance Pp VariantDef where
     pp' (VariantDef a b) = map pp [pp a, pp b]
 
 instance Pp Predicate where
-    pp' (PImpl a b) = ["ty_impl", pp a, pp b]
+    pp' (PImpl a b) = ["ty_impl", pp a, "0" {- lifetimes -}, pp b]
     pp' (PEq a b) = ["ty_eq", pp a, pp b]
 
 instance Pp FnDef where
@@ -449,7 +449,7 @@ instance Pp FnDef where
          "args", pp args,
          "return", pp retTy,
          pp implClause,
-         --"preds", pp preds,
+         "preds", pp preds,
          "body", pp body]
 
 instance Pp AbstractFnDef where

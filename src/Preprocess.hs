@@ -53,6 +53,7 @@ data Config = Config
     , c_mode :: Mode
     , c_library_filter_file :: Maybe String
     , c_construction_filter_file :: Maybe String
+    , c_merged_filter_file :: Maybe String
     , c_filter_file :: String
     , c_passes :: [String]
     }
@@ -62,6 +63,7 @@ defaultConfig = Config
     , c_mode = MDefault
     , c_library_filter_file = Nothing
     , c_construction_filter_file = Nothing
+    , c_merged_filter_file = Nothing
     , c_filter_file = ""
     , c_passes = []
     }
@@ -76,6 +78,7 @@ readArgs config args = go args config
     go ("--driver-gen" : args) config = go args $ config { c_mode = MDriverGen }
     go ("--library-filter" : path : args) config = go args $ config { c_library_filter_file = Just path }
     go ("--construction-filter" : path : args) config = go args $ config { c_construction_filter_file = Just path }
+    go ("--merged-filter" : path : args) config = go args $ config { c_merged_filter_file = Just path }
     go ("--filter" : path : args) config = go args $ config { c_filter_file = path, c_mode = MFilter }
     go ("--passes" : passes : args) config = go args $
         config { c_passes = words $ map (\c -> case c of ',' -> ' '; c -> c) passes
@@ -110,12 +113,19 @@ main = do
                 putStrLn $ intercalate " " [name, pp tps, pp args, pp ret]
 
         MDriverGen -> do
-            let libFileName = fromMaybe (error "need --library-filter") $
-                    c_library_filter_file config
-            let constrFileName = fromMaybe (error "need --construction-filter") $
-                    c_construction_filter_file config
-            libLines <- lines <$> readFile libFileName
-            constrLines <- lines <$> readFile constrFileName
+            (libLines, constrLines) <-
+                if isJust $ c_merged_filter_file config then do
+                    let fileName = fromJust $ c_merged_filter_file config
+                    filterLines <- lines <$> readFile fileName
+                    return $ splitFilter filterLines
+                else do
+                    let libFileName = fromMaybe (error "need --library-filter") $
+                            c_library_filter_file config
+                    let constrFileName = fromMaybe (error "need --construction-filter") $
+                            c_construction_filter_file config
+                    libLines <- lines <$> readFile libFileName
+                    constrLines <- lines <$> readFile constrFileName
+                    return (libLines, constrLines)
 
             let libFuncs = mapMaybe getFnDesc $ filterFnsByName libLines items
             let constrFuncs = mapMaybe getFnDesc $ filterFnsByName constrLines items
@@ -131,8 +141,8 @@ main = do
 
         MRunPasses -> do
             let items' = foldl (flip runPass) items $ c_passes config
-            evaluate (dumpIr "pprint" $ items')
-            return ()
+            --evaluate (dumpIr "pprint" $ items')
+            putStrLn $ concatMap pp items'
 
         MDefault -> do
             let passes = [
@@ -233,6 +243,13 @@ filterFnsByName filterLines items = traceShow regexStr $ filter check items
             Right Nothing -> traceShow ("drop", name) False
     check _ = False
 
+splitFilter filterLines =
+    (mapMaybe (go "library ") filterLines,
+     mapMaybe (go "construction ") filterLines)
+  where
+    go prefix ln
+      | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
+      | otherwise = Nothing
 
 cleanupDrops = everywhere (mkT cleanupDropT)
   where
