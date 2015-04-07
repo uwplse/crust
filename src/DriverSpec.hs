@@ -30,7 +30,7 @@ getFnDesc _ = Nothing
 
 data DriverExpr =
       DECall Name [Ty] [DriverExpr]
-    | DENondet
+    | DENondet Ty
     | DEDrop DriverExpr
     | DETupleIntro [DriverExpr]
     | DETupleElim DriverExpr Int
@@ -47,7 +47,7 @@ genDrivers ix limit lib constr = do
     argExprs <- mapM (go (limit - 1)) argTys'
     return $ DECall name tyArgs argExprs
   where
-    go limit ty | isPrimitive ty = [DENondet]
+    go limit ty | isPrimitive ty = [DENondet ty]
     go limit (TRef _ mutbl ty) = DERefIntro mutbl <$> go limit ty
     go limit (TTuple tys) = DETupleIntro <$> mapM (go limit) tys
     -- Remaining cases require fuel to operate.
@@ -98,7 +98,7 @@ expandDriver' ix de = Expr (typeOf expr) $ EBlock stmts expr
         let e = Expr retTy $ ECall name [] tyArgs argExprs
         tell [SLet (Pattern retTy $ PVar outVar) (Just e)]
         return $ Expr retTy $ EVar outVar
-    go DENondet = return $ Expr TBottom $ ECall "__crust$nondet" [] [TBottom] []
+    go (DENondet ty) = return $ Expr ty $ ECall "__crust$nondet" [] [ty] []
     go (DETupleIntro des) = do
         exprs <- mapM go des
         return $ Expr (TTuple $ map typeOf exprs) $ ETupleLiteral exprs
@@ -142,12 +142,11 @@ expandDriver ix de = block
 
 
 
-
 dumpDriver depth de = case de of
     DECall name tas args -> do
         putInd $ name ++ " " ++ show (map (runPp . ppTy) tas)
         mapM_ (dumpDriver (depth + 1)) args
-    DENondet -> putInd "nondet"
+    DENondet ty -> putInd ("nondet " ++ show ty)
     DETupleIntro args -> do
         putInd $ "mkTuple"
         mapM_ (dumpDriver (depth + 1)) args
