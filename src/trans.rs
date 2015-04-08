@@ -488,8 +488,12 @@ impl Trans for Expr {
         let mut add_ty = true;
 
         let variant = match self.node {
-            // ExprBox
-            // ExprVec
+            ExprBox(..) => panic!("unsupported ExprBox"),
+
+            ExprVec(ref expr_list) => {
+                format!("vec {}", expr_list.trans(trcx))
+            },
+
             ExprCall(ref func, ref args) => {
                 if let Some(struct_name) = find_tuple_struct_ctor(trcx, func.id) {
                     let mut fields = Vec::new();
@@ -524,6 +528,7 @@ impl Trans for Expr {
                             args.trans(trcx))
                 }
             },
+
             ExprMethodCall(name, ref tys, ref args) => {
                 let call = MethodCall::expr(self.id);
                 let map = trcx.tcx.method_map.borrow();
@@ -532,8 +537,10 @@ impl Trans for Expr {
                 assert!(tys.len() == 0); // no idea what `tys` does
                 trans_method_call(trcx, callee, arg_strs)
             },
+
             ExprTup(ref xs) if xs.len() == 0 => format!("simple_literal _"),
             ExprTup(ref xs) => format!("tuple_literal {}", xs.trans(trcx)),
+
             ExprBinary(op, ref a, ref b) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
@@ -554,6 +561,7 @@ impl Trans for Expr {
                     },
                 }
             },
+
             ExprUnary(op, ref a) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
@@ -576,10 +584,13 @@ impl Trans for Expr {
                     },
                 }
             },
+
             ExprLit(ref lit) =>
                 format!("simple_literal {}", lit.trans(trcx)),
+
             ExprCast(ref e, _) =>
                 format!("cast {}", e.trans(trcx)),
+
             ExprIf(ref cond, ref then, ref opt_else) => {
                 let ty = trcx.tcx.node_types()[&then.id];
 
@@ -593,52 +604,56 @@ impl Trans for Expr {
                         opt_else.as_ref().map_or(format!("[unit] simple_literal _ExprIf"),
                                                  |e| e.trans(trcx)))
             },
-                
-                        /*
-                format!("[[ExprIf {} {} {}]]",
-                        cond.trans(trcx),
-                        then.trans(trcx),
-                        opt_else.as_ref().map(|e| e.trans(trcx))),
-                        */
-            // ExprIfLet
-            // ExprWhile
+
+            ExprIfLet(..) => panic!("unsupported ExprIfLet"),
+
             ExprWhile(ref guard, ref body, _) =>
                 format!("while {} [unit] {}",
                         guard.trans(trcx),
                         body.trans(trcx)),
-            // ExprWhileLet
+
+            ExprWhileLet(..) => panic!("unsupported ExprWhileLet"),
+
             ExprForLoop(ref patt, ref expr, ref body, _ident) =>
                 format!("for {} {} {}",
                         patt.trans(trcx),
                         expr.trans(trcx),
                         body.trans(trcx)),
-            // ExprLoop
+
+            ExprLoop(ref body, _ident) =>
+                format!("while ([bool] simple_literal true) [unit] {}",
+                        body.trans(trcx)),
+
             ExprMatch(ref expr, ref arms, _src) =>
                 format!("match {} {}",
                         expr.trans(trcx),
                         arms.trans(trcx)),
-            // ExprFnBlock
-            // ExprProc
-            // ExprUnboxedFn
+
+            ExprClosure(..) => panic!("unsupported ExprClosure"),
+
             ExprBlock(ref b) => b.trans(trcx),
+
             ExprAssign(ref l, ref r) =>
                 format!("assign {} {}",
                         l.trans(trcx),
                         r.trans(trcx)),
+
             ExprAssignOp(ref op, ref rhs, ref operand) =>
                 format!("assign_op {:?} {} {}",
                         op.node,
                         rhs.trans(trcx),
-                        operand.trans(trcx)
-                        ),
+                        operand.trans(trcx)),
+
             ExprField(ref expr, field) =>
                 format!("field {} {}",
                         expr.trans(trcx),
                         field.node.as_str()),
+
             ExprTupField(ref expr, index) =>
                 format!("field {} field{}",
                         expr.trans(trcx),
                         index.node),
+
             ExprIndex(ref arr, ref idx) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
@@ -670,9 +685,11 @@ impl Trans for Expr {
                     },
                 }
             },
+
             ExprRange(ref opt_low, ref opt_high) => {
                 format!("range {} {}", opt_low.trans(trcx), opt_high.trans(trcx))
             },
+
             ExprPath(ref opt_qself, ref path) => {
                 assert!(opt_qself.is_none());
                 if let Some((var_name, var_idx)) = find_variant(trcx, self.id) {
@@ -695,29 +712,40 @@ impl Trans for Expr {
                     }
                 }
             },
+
             ExprAddrOf(_mutbl, ref expr) =>
                 format!("addr_of {}", expr.trans(trcx)),
-            // ExprBreak
-            // ExprAgain
+
+            ExprBreak(ref opt_ident) => {
+                assert!(opt_ident.is_none());
+                format!("break")
+            },
+
+            ExprAgain(ref opt_ident) => {
+                assert!(opt_ident.is_none());
+                format!("continue")
+            },
+
             ExprRet(ref opt_expr) =>
                 format!("return {}",
                         opt_expr.as_ref().map(|e| e.trans(trcx))
                                 .unwrap_or(format!("[unit] simple_literal _ExprRet"))),
-            // ExprInlineAsm
-            // ExprMac
+
+            ExprInlineAsm(..) => panic!("unsupported ExprInlineAsm"),
+
+            ExprMac(..) => panic!("unsupported ExprMac"),
+
             ExprStruct(ref name, ref fields, ref opt_base) => {
                 assert!(opt_base.is_none());
                 format!("struct_literal {}", fields.trans(trcx))
             },
-            // ExprRepeat
+
+            ExprRepeat(..) => panic!("unsupported ExprRepeat"),
+
             ExprParen(ref expr) => {
                 add_ty = false;
                 expr.trans(trcx)
             },
-            ExprVec(ref expr_list) => {
-                format!("vec {}", expr_list.trans(trcx))
-            },
-            _ => panic!("unrecognized Expr_ variant"/* {:?}", self.node*/),
         };
 
         let expr_ty = trcx.tcx.node_types()[&self.id];

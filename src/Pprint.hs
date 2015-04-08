@@ -192,7 +192,7 @@ ppExpr (Expr ty e) = case e of
     EAssign lhs rhs -> ppExpr lhs >> tell " = " >> ppExpr rhs
     EAssignOp op lhs rhs -> ppExpr lhs >> tell (" `" ++ op ++ "`= ") >> ppExpr rhs
     EWhile cond body ->
-        inline (tell "while " >> ppExpr cond >> tell " {") (tell "}") $ ppExpr body
+        tell "while " >> ppExpr cond >> tell " " >> ppExpr body
     EReturn expr -> tell "return " >> ppExpr expr
     EVec exprs -> do
       tell "vec["
@@ -202,6 +202,8 @@ ppExpr (Expr ty e) = case e of
         inline (tell "for " >> ppPat patt >> tell " in " >> ppExpr expr >> tell " {") (tell "}") $ ppExpr (Expr TUnit body)
     EUnsizeLen len expr ->
         tell "unsize(" >> tell (show len) >> tell ", " >> ppExpr expr >> tell ")"
+    EBreak -> tell "break"
+    EContinue -> tell "continue"
 
 ppPat (Pattern ty p) = case p of
     PVar name -> tell name

@@ -144,6 +144,8 @@ data Expr_ =
     | EVec [Expr]
     | EFor Pattern Expr Expr_
     | EUnsizeLen Int Expr
+    | EBreak
+    | EContinue
   deriving (Eq, Show, Data, Typeable)
 
 data Field = Field Name Expr
@@ -322,6 +324,8 @@ expr_ = tagged
     , ("vec", EVec <$> counted expr)
     , ("for", EFor <$> pattern <*> expr <*> expr_)
     , ("unsize_len", EUnsizeLen <$> int <*> expr)
+    , ("break", return EBreak)
+    , ("continue", return EContinue)
     ]
 field = Field <$> name <*> expr
 
@@ -501,6 +505,8 @@ instance Pp Expr_ where
         EVec e ->               ppGo "vec"              [pp e]
         EFor a b c ->           ppGo "for"              [pp a, pp b, pp c]
         EUnsizeLen a b ->       ppGo "unsize_len"       [pp a, pp b]
+        EBreak ->               ppGo "break"            []
+        EContinue ->            ppGo "continue"         []
 
 instance Pp Field where
     pp' (Field a b) = map pp [pp a, pp b]
