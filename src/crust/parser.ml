@@ -286,6 +286,8 @@ let rec parse_expr_var tokens cb = match tokens with
     (parse_n parse_expr) t (fun e_list ->
         cb (`Vec e_list)
       )
+  | "break"::t -> cb `Break t
+  | "continue"::t -> cb `Continue t
   | _ -> raise (Parse_failure ("parse_expr_var",tokens))
 and parse_stmt tokens cb = match tokens with
   | "expr"::t -> parse_expr t (fun expr rest -> cb (`Expr expr) rest)

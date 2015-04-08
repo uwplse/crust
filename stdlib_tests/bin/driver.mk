@@ -33,7 +33,7 @@ ir/stdlibs_lib%.ir: ir/lib%.ir ir/stdlibs.ir
 	mv -v $@.tmp $@
 
 ir/%.scrubbed.ir: ir/%.ir
-	$(PREPROCESS) --passes scrub <$< >$@.tmp
+	$(PREPROCESS) --passes move-break,scrub <$< >$@.tmp
 	mv -v $@.tmp $@
 
 .SECONDEXPANSION:

@@ -45,6 +45,8 @@ type expr_variant = [
   | `While of expr * expr
   | `Assign_Op of bin_op * expr * expr
   | `Vec of expr list
+  | `Break
+  | `Continue
   ]
 and expr = r_type * expr_variant
 and struct_fields = struct_field list

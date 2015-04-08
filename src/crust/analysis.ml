@@ -253,6 +253,8 @@ and walk_expr t_bindings w_state (expr : Ir.expr) =
     List.fold_left (walk_expr t_bindings) w_state [e1;e2]
   | `Vec e_list ->
     List.fold_left (walk_expr t_bindings) w_state e_list
+  | `Break -> w_state
+  | `Continue -> w_state
 and walk_statement t_bindings w_state stmt = 
   match stmt with
   | `Expr e -> walk_expr t_bindings w_state e

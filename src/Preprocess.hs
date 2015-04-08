@@ -146,6 +146,10 @@ main = do
 
         MDefault -> do
             let passes = [
+                    -- Move some EBreak/EContinue into statement positions
+                    -- first, since `scrub` will kill functions for having them
+                    -- in non-Stmt positions.
+                    "move-break",
                     if c_scrub config then "scrub" else "id",
                     "generate-default-methods",
                     "lift-strings",
@@ -200,6 +204,7 @@ runPass "cleanup-temps" = cleanupTemps
 runPass "scrub" = scrub
 runPass "dump" = dumpIr "dump"
 runPass "fix-clone" = fixClone
+runPass "move-break" = moveBreak
 runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runPass "id" = id
 
@@ -681,23 +686,54 @@ scrub items = scrubbed'
       && (everything (&&) (True `mkQ` goExpr (itemName item)) item)
       && adtHasValidDrop item
       && hasAbstractFn item
+      && stmtOnly (itemName item) item
 
-    goTy loc (TAdt name _ _) = name `M.member` i_types ix || traceShow ("discard", loc, "missing type", name) False
+    discardFor loc reason = traceShow ("discard", loc, "for", reason) False
+
+    goTy loc (TAdt name _ _) = name `M.member` i_types ix || discardFor loc ("missing type", name)
     --goTy loc (TFixedVec _ _) = traceShow ("discard", loc, "used fixedvec") False
     goTy loc e = True
 
-    goExpr loc (ECall name _ _ _) = name `M.member` i_fns ix || traceShow ("discard", loc, "missing", name) False
-    goExpr loc (EConst name) = name `M.member` i_consts ix || traceShow ("discard", loc, "missing", name) False
+    goExpr loc (ECall name _ _ _) = name `M.member` i_fns ix || discardFor loc ("missing", name)
+    goExpr loc (EConst name) = name `M.member` i_consts ix || discardFor loc ("missing", name)
     goExpr _ _ = True
 
     adtHasValidDrop (IStruct (StructDef loc _ _ _ (Just name))) =
-        name `M.member` i_fns ix || traceShow ("discard", loc, "missing drop", name) False
+        name `M.member` i_fns ix || discardFor loc ("missing drop", name)
     adtHasValidDrop (IEnum (EnumDef loc _ _ _ (Just name))) =
-        name `M.member` i_fns ix || traceShow ("discard", loc, "missing drop", name) False
+        name `M.member` i_fns ix || discardFor loc ("missing drop", name)
     adtHasValidDrop _ = True
 
-    hasAbstractFn d@(IUseDefault (UseDefault _ _ (ImplClause name _ _))) = name `M.member` i_fns ix || traceShow ("discard", (itemName d), "missing abstract fn") False
+    hasAbstractFn d@(IUseDefault (UseDefault _ _ (ImplClause name _ _))) =
+        name `M.member` i_fns ix || discardFor (itemName d) ("missing abstract fn")
     hasAbstractFn _ = True
+
+    -- Check for EBreak/EContinue in non-statement positions.
+    stmtOnly :: Data d => String -> d -> Bool
+    stmtOnly loc = (and . gmapQ (stmtOnly loc)) `extQ` stmtOnly_Stmt loc `extQ` stmtOnly_Expr_ loc
+
+    stmtOnly_Stmt :: String -> Stmt -> Bool
+    stmtOnly_Stmt loc (SExpr (Expr _ EBreak)) = True
+    stmtOnly_Stmt loc (SExpr (Expr _ EContinue)) = True
+    stmtOnly_Stmt loc s = and $ gmapQ (stmtOnly loc) s
+
+    stmtOnly_Expr_ :: String -> Expr_ -> Bool
+    stmtOnly_Expr_ loc EBreak = discardFor loc "non-Stmt EBreak"
+    stmtOnly_Expr_ loc EContinue = discardFor loc "non-Stmt EContinue"
+    stmtOnly_Expr_ loc e = and $ gmapQ (stmtOnly loc) e
+
+
+moveBreak items = everywhere (mkT goMatchArm) items
+  where
+    goMatchArm (MatchArm pat (Expr ty EBreak)) =
+        let ss = [SExpr $ Expr ty EBreak] 
+            e = Expr ty $ ECall "__crust$unreachable" [] [] []
+        in MatchArm pat (Expr ty $ EBlock ss e)
+    goMatchArm (MatchArm pat (Expr ty EContinue)) =
+        let ss = [SExpr $ Expr ty EContinue] 
+            e = Expr ty $ ECall "__crust$unreachable" [] [] []
+        in MatchArm pat (Expr ty $ EBlock ss e)
+    goMatchArm ma = ma
 
 
 unsafeItemNames filter items = mapMaybe go items
