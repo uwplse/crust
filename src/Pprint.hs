@@ -237,6 +237,9 @@ ppUseDefault (UseDefault lps tps impl) = line $
     tell " " >>
     ppImplClause impl
 
+ppDriver (Driver expr) = line $
+    tell "driver " >> ppExpr expr
+
 ppItem (IStruct s) = ppStructDef s
 ppItem (IEnum e) = ppEnumDef e
 ppItem (IConst c) = ppConstDef c
@@ -247,6 +250,7 @@ ppItem (IAbstractType t) = ppAbstractTypeDef t
 ppItem (IAssociatedType t) = ppAssociatedTypeDef t
 ppItem (IStatic t) = ppStaticDef t
 ppItem (IUseDefault u) = ppUseDefault u
+ppItem (IDriver d) = ppDriver d
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m
 
 runPp :: (ReaderT Int (Writer String) ()) -> String

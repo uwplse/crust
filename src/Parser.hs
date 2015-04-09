@@ -180,6 +180,9 @@ data StaticDef = StaticDef Name Ty Expr
 data UseDefault = UseDefault [LifetimeParam] [TyParam] ImplClause
   deriving (Eq, Show, Data, Typeable)
 
+data Driver = Driver Expr
+  deriving (Eq, Show, Data, Typeable)
+
 data Item =
       IStruct StructDef
     | IEnum EnumDef
@@ -191,6 +194,7 @@ data Item =
     | IAssociatedType AssociatedTypeDef
     | IStatic StaticDef
     | IUseDefault UseDefault
+    | IDriver Driver
     | IMeta String
   deriving (Eq, Show, Data, Typeable)
 
@@ -357,6 +361,8 @@ staticDef = exactWord "static" >>
 useDefault = exactWord "use_default" >>
     UseDefault <$> counted lifetimeParam <*> counted tyParam <*> implClause
 
+driver = exactWord "driver" >> Driver <$> expr
+
 item = choice
     [ IStruct <$> structDef
     , IEnum <$> enumDef
@@ -367,6 +373,7 @@ item = choice
     , IAbstractType <$> abstractTypeDef
     , IAssociatedType <$> associatedTypeDef
     , IUseDefault <$> useDefault
+    , IDriver <$> driver
     , IStatic <$> staticDef
     ]
 
@@ -543,6 +550,9 @@ instance Pp StaticDef where
 instance Pp UseDefault where
     pp' (UseDefault a b c) = ppGo "use_default" [pp a, pp b, pp c]
 
+instance Pp Driver where
+    pp' (Driver a) = ppGo "driver" [pp a]
+
 instance Pp Item where
     pp' i =
         let a = case i of
@@ -555,6 +565,7 @@ instance Pp Item where
                     IAbstractType a -> pp a
                     IAssociatedType a -> pp a
                     IUseDefault a -> pp a
+                    IDriver a -> pp a
                     IStatic a -> pp a
                     IMeta s -> s
         in [pp a, "\n"]
