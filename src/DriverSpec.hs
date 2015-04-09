@@ -8,9 +8,14 @@ import Control.Monad
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Generics hiding (typeOf)
+import Data.List (isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
+import qualified Text.Regex.TDFA as RE
+import qualified Text.Regex.TDFA.String as RE
+
+import Debug.Trace
 
 import Builder (typeOf)
 import Index
@@ -139,6 +144,48 @@ expandDriver ix de = block
         (Expr TUnit $ ESimpleLiteral "unit")
 
     mkBody es = Expr TBottom $ ETupleLiteral es
+
+
+
+addDrivers :: Index -> Int -> ([String], [String]) -> [Item] -> [Item]
+addDrivers ix depth (libLines, constrLines) items = items ++ drivers
+  where
+    libFuncs = mapMaybe getFnDesc $ filterFnsByName libLines items
+    constrFuncs = mapMaybe getFnDesc $ filterFnsByName constrLines items
+    driverExprs = genDrivers ix depth libFuncs constrFuncs
+    drivers = map (IDriver . Driver . expandDriver ix) driverExprs
+
+
+
+filterFnsByName filterLines items = traceShow regexStr $ filter check items
+  where
+    globCharToRegex c = case c of
+        '*' -> ".*"
+        '$' -> "\\$"
+        '.' -> "\\."
+        _ -> [c]
+    globToRegex = concatMap globCharToRegex
+    regexStrs = map globToRegex filterLines
+    regexStr = "^(" ++ (tail $ concatMap ('|':) regexStrs) ++ ")$"
+    regex =
+        case RE.compile RE.defaultCompOpt RE.defaultExecOpt regexStr of
+            Left e -> error e
+            Right r -> r
+    check (IFn (FnDef _ name _ _ _ _ _ _ _)) =
+        case RE.execute regex name of
+            Left e -> error e
+            Right (Just _) -> traceShow ("keep", name) True
+            Right Nothing -> traceShow ("drop", name) False
+    check _ = False
+
+
+splitFilter filterLines =
+    (mapMaybe (go "library ") filterLines,
+     mapMaybe (go "construction ") filterLines)
+  where
+    go prefix ln
+      | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
+      | otherwise = Nothing
 
 
 

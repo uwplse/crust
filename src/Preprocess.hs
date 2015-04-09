@@ -15,8 +15,6 @@ import Data.Maybe
 import Numeric
 import System.Environment
 import Text.Parsec hiding (label, State)
-import qualified Text.Regex.TDFA as RE
-import qualified Text.Regex.TDFA.String as RE
 
 import Lexer
 import Parser
@@ -29,6 +27,7 @@ import Builder
 import Unify
 import DriverSpec
 import RefSeek
+import TreeShake
 
 import Debug.Trace
 
@@ -127,12 +126,12 @@ main = do
                     constrLines <- lines <$> readFile constrFileName
                     return (libLines, constrLines)
 
-            let libFuncs = mapMaybe getFnDesc $ filterFnsByName libLines items
-            let constrFuncs = mapMaybe getFnDesc $ filterFnsByName constrLines items
-
-            let drivers = genDrivers (mkIndex items) 3 libFuncs constrFuncs
-            forM_ items $ putStrLn . pp
-            forM_ drivers $ putStrLn . ("driver " ++) . pp . expandDriver (mkIndex items)
+            let ix = mkIndex items
+            let items' = addDrivers ix 3 (libLines, constrLines) $ items
+            let items'' = scrub $ shakeTree ix $ items'
+            when (length (collectDrivers items') /= length (collectDrivers items'')) $
+                error "lost some drivers to scrub after tree shaking (this is a bug)"
+            putStrLn $ concatMap pp items''
 
         MFilter -> do
             content <- readFile $ c_filter_file config
@@ -205,6 +204,7 @@ runPass "scrub" = scrub
 runPass "dump" = dumpIr "dump"
 runPass "fix-clone" = fixClone
 runPass "move-break" = moveBreak
+runPass "shake-tree" = \is -> shakeTree (mkIndex is) is
 runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runPass "id" = id
 
@@ -226,35 +226,6 @@ fixClone = everywhere (mkT addDropCheckT)
     addTypeCheck :: Ty -> Expr -> Expr
     addTypeCheck ty expr@(Expr e_ty _) = mkMatch ty e_ty expr
 
-
-filterFnsByName filterLines items = traceShow regexStr $ filter check items
-  where
-    globCharToRegex c = case c of
-        '*' -> ".*"
-        '$' -> "\\$"
-        '.' -> "\\."
-        _ -> [c]
-    globToRegex = concatMap globCharToRegex
-    regexStrs = map globToRegex filterLines
-    regexStr = "^(" ++ (tail $ concatMap ('|':) regexStrs) ++ ")$"
-    regex =
-        case RE.compile RE.defaultCompOpt RE.defaultExecOpt regexStr of
-            Left e -> error e
-            Right r -> r
-    check (IFn (FnDef _ name _ _ _ _ _ _ _)) =
-        case RE.execute regex name of
-            Left e -> error e
-            Right (Just _) -> traceShow ("keep", name) True
-            Right Nothing -> traceShow ("drop", name) False
-    check _ = False
-
-splitFilter filterLines =
-    (mapMaybe (go "library ") filterLines,
-     mapMaybe (go "construction ") filterLines)
-  where
-    go prefix ln
-      | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
-      | otherwise = Nothing
 
 cleanupDrops = everywhere (mkT cleanupDropT)
   where
