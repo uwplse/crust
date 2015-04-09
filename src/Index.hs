@@ -53,6 +53,9 @@ ty_tyParams (TEnum (EnumDef _ _ ps _ _)) = ps
 ty_dtor (TStruct (StructDef _ _ _ _ d)) = d
 ty_dtor (TEnum (EnumDef _ _ _ _ d)) = d
 
+fn_name (FConcrete (FnDef _ name _ _ _ _ _ _ _)) = name
+fn_name (FAbstract (AbstractFnDef name _ _ _ _)) = name
+fn_name (FExtern (ExternFnDef _ name _ _ _ _)) = name
 fn_lifetimeParams (FConcrete (FnDef _ _ ps _ _ _ _ _ _)) = ps
 fn_lifetimeParams (FAbstract (AbstractFnDef _ ps _ _ _)) = ps
 fn_lifetimeParams (FExtern (ExternFnDef _ _ ps _ _ _)) = ps
@@ -76,7 +79,7 @@ data Index = Index
 
 mkIndex items = Index fns types consts statics
   where
-    fns = M.fromList $ dropGlue : mapMaybe onFn items
+    fns = M.fromList $ intrinsicFns ++ mapMaybe onFn items
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
     statics = M.fromList $ mapMaybe onStatic items
@@ -96,9 +99,22 @@ mkIndex items = Index fns types consts statics
     onStatic (IStatic x@(StaticDef name _ _)) = Just (name, x)
     onStatic _ = Nothing
 
-dropGlue = ("drop_glue", FAbstract def)
-  where def = AbstractFnDef "drop_glue" [] ["T"]
-                [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
+intrinsicFns = map go [nondet, assume, assert, unreachable, dropGlue]
+  where
+    go fn = (fn_name fn, fn)
+
+    externFn name lps tps argTys retTy = FExtern $ ExternFnDef "intrinsic"
+            name lps tps (map (\ty -> ArgDecl $ Pattern ty PWild) argTys) retTy
+
+    nondet = externFn "__crust$nondet" [] ["T"] [] (TVar "T")
+    assume = externFn "__crust$assume" [] [] [TBool] TUnit
+    assert = externFn "__crust$assert" [] [] [TBool] TUnit
+    unreachable = externFn "__crust$unreachable" [] [] [] TUnit
+
+    dropGlue = FAbstract $ AbstractFnDef "drop_glue" [] ["T"]
+                    [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
+
+
 
 
 type CtxM a = Reader Index a
