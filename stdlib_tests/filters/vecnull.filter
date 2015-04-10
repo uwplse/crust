@@ -1,5 +1,5 @@
 # ir: stdlibs
 
-library collections$vec*index
+library collections$vec$*index
 
-construction collections$vec*new
+construction collections$vec$*new

@@ -113,26 +113,9 @@ main = do
                 putStrLn $ intercalate " " [name, pp tps, pp args, pp ret]
 
         MDriverGen -> do
-            (libLines, constrLines) <-
-                if isJust $ c_merged_filter_file config then do
-                    let fileName = fromJust $ c_merged_filter_file config
-                    filterLines <- lines <$> readFile fileName
-                    return $ splitFilter filterLines
-                else do
-                    let libFileName = fromMaybe (error "need --library-filter") $
-                            c_library_filter_file config
-                    let constrFileName = fromMaybe (error "need --construction-filter") $
-                            c_construction_filter_file config
-                    libLines <- lines <$> readFile libFileName
-                    constrLines <- lines <$> readFile constrFileName
-                    return (libLines, constrLines)
-
-            let ix = mkIndex items
-            let items' = addDrivers ix 3 (libLines, constrLines) $ items
-            let items'' = scrub $ shakeTree ix $ items'
-            when (length (collectDrivers items') /= length (collectDrivers items'')) $
-                error "lost some drivers to scrub after tree shaking (this is a bug)"
-            putStrLn $ concatMap pp items''
+            let passes = ["generate-drivers", "shake-tree"]
+            items' <- runPasses config passes items
+            putStrLn $ concatMap pp items'
 
         MFilter -> do
             content <- readFile $ c_filter_file config
@@ -140,12 +123,12 @@ main = do
             putStrLn $ concatMap pp $ filterItems items filt
 
         MRunPasses -> do
-            let items' = foldl (flip runPass) items $ c_passes config
-            --evaluate (dumpIr "pprint" $ items')
+            items' <- runPasses config (c_passes config) items
             putStrLn $ concatMap pp items'
 
         MDefault -> do
             let passes = [
+                    "inject-intrinsics",
                     -- Move some EBreak/EContinue into statement positions
                     -- first, since `scrub` will kill functions for having them
                     -- in non-Stmt positions.
@@ -162,7 +145,7 @@ main = do
                     "desugar-unsize",
                     "fix-clone",
                     "fix-address",
-                    --"fix-special-fn",
+                    -- "fix-special-fn",
                     "fix-bottom",
                     "fix-bool",
                     "fix-if",
@@ -171,43 +154,72 @@ main = do
                     "rename-locals",
                     "add-cleanup",
                     "rename-locals",
-                    "filter-extern-fns",
+                    -- "filter-extern-fns",
                     "generate-drop-glues",
                     "cleanup-drops",
                     "cleanup-temps"
                     ]
-            let items' = foldl (\a b -> whnfList a `seq` runPass (trace b b) (whnfList a)) items passes
+            items' <- runPasses config passes items
             putStrLn $ concatMap pp items'
 
-runPass "desugar-index" = \is -> desugarIndex (mkIndex is) is
-runPass "desugar-range" = desugarRange
-runPass "desugar-arg-patterns" = desugarArgPatterns
-runPass "desugar-pattern-lets" = desugarPatternLets
-runPass "desugar-for" = desugarFor
-runPass "desugar-unsize" = desugarUnsize
-runPass "fix-address" = fixAddress
-runPass "fix-special-fn" = fixSpecialFn
-runPass "fix-bottom" = fixBottom
-runPass "fix-bool" = fixBool
-runPass "fix-if" = ifFix
-runPass "fix-block-ret" = fixBlockReturn
-runPass "const-expand" = constExpand
-runPass "lift-temps" = \is -> liftTemps (mkIndex is) is
-runPass "rename-locals" = \is -> renameLocals (mkIndex is) is
-runPass "add-cleanup" = \is -> addCleanup (mkIndex is) is
-runPass "filter-extern-fns" = filter (not . isExternFn)
-runPass "generate-drop-glues" = generateDropGlues
-runPass "lift-strings" = liftStrings
-runPass "generate-default-methods" = \is -> generateDefaultMethods (mkIndex is) is
-runPass "cleanup-drops" = cleanupDrops
-runPass "cleanup-temps" = cleanupTemps
-runPass "scrub" = scrub
-runPass "dump" = dumpIr "dump"
-runPass "fix-clone" = fixClone
-runPass "move-break" = moveBreak
-runPass "shake-tree" = \is -> shakeTree (mkIndex is) is
-runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
-runPass "id" = id
+
+runPasses config passes items =
+    fst <$> runPasses' config passes (items, mkIndex items)
+
+runPasses' config passes (items, ix) =
+    foldM (\a b -> whnfList (fst a) `seq` runPass config (trace b b) a) (items, ix) passes
+
+runPass _ "reindex" (items, _) = return (items, mkIndex items)
+runPass config "generate-drivers" (items, ix) = do
+    (libLines, constrLines) <-
+        if isJust $ c_merged_filter_file config then do
+            let fileName = fromJust $ c_merged_filter_file config
+            filterLines <- lines <$> readFile fileName
+            return $ splitFilter filterLines
+        else do
+            let libFileName = fromMaybe (error "need --library-filter") $
+                    c_library_filter_file config
+            let constrFileName = fromMaybe (error "need --construction-filter") $
+                    c_construction_filter_file config
+            libLines <- lines <$> readFile libFileName
+            constrLines <- lines <$> readFile constrFileName
+            return (libLines, constrLines)
+
+    return (addDrivers ix 3 (libLines, constrLines) items, ix)
+runPass _ pass (items, ix) = return (runBasicPass ix pass items, ix)
+
+
+runBasicPass ix "desugar-index" = desugarIndex ix
+runBasicPass _ "desugar-range" = desugarRange
+runBasicPass _ "desugar-arg-patterns" = desugarArgPatterns
+runBasicPass _ "desugar-pattern-lets" = desugarPatternLets
+runBasicPass _ "desugar-for" = desugarFor
+runBasicPass _ "desugar-unsize" = desugarUnsize
+runBasicPass _ "fix-address" = fixAddress
+runBasicPass _ "fix-special-fn" = fixSpecialFn
+runBasicPass _ "fix-bottom" = fixBottom
+runBasicPass _ "fix-bool" = fixBool
+runBasicPass _ "fix-if" = ifFix
+runBasicPass _ "fix-block-ret" = fixBlockReturn
+runBasicPass _ "const-expand" = constExpand
+runBasicPass ix "lift-temps" = liftTemps ix
+runBasicPass ix "rename-locals" = renameLocals ix
+runBasicPass ix "add-cleanup" = addCleanup ix
+runBasicPass _ "filter-extern-fns" = filter (not . isExternFn)
+runBasicPass _ "generate-drop-glues" = generateDropGlues
+runBasicPass _ "lift-strings" = liftStrings
+runBasicPass ix "generate-default-methods" = generateDefaultMethods ix
+runBasicPass _ "cleanup-drops" = cleanupDrops
+runBasicPass _ "cleanup-temps" = cleanupTemps
+runBasicPass _ "scrub" = scrub
+runBasicPass _ "fix-clone" = fixClone
+runBasicPass _ "move-break" = moveBreak
+runBasicPass ix "shake-tree" = shakeTree ix
+runBasicPass _ "inject-intrinsics" = (intrinsicFns ++)
+runBasicPass _ "id" = id
+runBasicPass _ "dump" = dumpIr "dump"
+runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
+runBasicPass _ p = error $ "unknown pass: " ++ show p
 
 whnf x = seq x x
 crush :: Data d => d -> d
@@ -216,6 +228,21 @@ crush x = runIdentity $ gfoldl
     (\c -> c `seq` Identity c)
     x
 whnfList xs = foldl (\a b -> crush b `seq` a) xs xs
+
+
+intrinsicFns = [nondet, assume, assert, unreachable, dropGlue]
+  where
+    externFn name lps tps argTys retTy = IExternFn $ ExternFnDef "intrinsic"
+            name lps tps (map (\ty -> ArgDecl $ Pattern ty PWild) argTys) retTy
+
+    nondet = externFn "__crust$nondet" [] ["T"] [] (TVar "T")
+    assume = externFn "__crust$assume" [] [] [TBool] TUnit
+    assert = externFn "__crust$assert" [] [] [TBool] TUnit
+    unreachable = externFn "__crust$unreachable" [] [] [] TUnit
+
+    dropGlue = IAbstractFn $ AbstractFnDef "drop_glue" [] ["T"]
+                    [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
+
 
 fixClone = everywhere (mkT addDropCheckT)
   where

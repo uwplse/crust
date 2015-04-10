@@ -79,7 +79,7 @@ data Index = Index
 
 mkIndex items = Index fns types consts statics
   where
-    fns = M.fromList $ intrinsicFns ++ mapMaybe onFn items
+    fns = M.fromList $ mapMaybe onFn items
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
     statics = M.fromList $ mapMaybe onStatic items
@@ -98,21 +98,6 @@ mkIndex items = Index fns types consts statics
 
     onStatic (IStatic x@(StaticDef name _ _)) = Just (name, x)
     onStatic _ = Nothing
-
-intrinsicFns = map go [nondet, assume, assert, unreachable, dropGlue]
-  where
-    go fn = (fn_name fn, fn)
-
-    externFn name lps tps argTys retTy = FExtern $ ExternFnDef "intrinsic"
-            name lps tps (map (\ty -> ArgDecl $ Pattern ty PWild) argTys) retTy
-
-    nondet = externFn "__crust$nondet" [] ["T"] [] (TVar "T")
-    assume = externFn "__crust$assume" [] [] [TBool] TUnit
-    assert = externFn "__crust$assert" [] [] [TBool] TUnit
-    unreachable = externFn "__crust$unreachable" [] [] [] TUnit
-
-    dropGlue = FAbstract $ AbstractFnDef "drop_glue" [] ["T"]
-                    [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
 
 
 
