@@ -477,13 +477,76 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         self#put name;
         self#put " = ";
         self#emit_expr expr;
-        self#put ";";
+        self#put ";\n";
+      end
+    | `Expr expr -> begin
+        self#emit_expr expr;
+        self#put ";\n";
       end
     | _ -> raise (Unexpected "stmt variant")
+
+  method emit_arm (a : Ir.match_arm) =
+    let (pat, body) = a in
+    self#emit_pattern pat;
+    self#put " => ";
+    self#emit_expr body;
+    self#put ",";
+
+  method emit_pattern (p : Ir.pattern) =
+    match snd p with
+    | `Bind name -> self#put name
+    | `Enum (variant, _, []) -> self#put variant
+    | `Enum (variant, _, pats) -> begin
+        self#put variant;
+        self#put "(";
+        self#put_many ", " self#emit_pattern pats;
+        self#put ")";
+      end
+    | `Wild -> self#put "_"
+    (* `Literal *)
+    (* `Const *)
+    | `Tuple pats -> begin
+        self#put "(";
+        self#put_many ", " self#emit_pattern pats;
+        self#put ")";
+      end
+    (* `Addr_of *)
+    | `Addr_of pat -> begin
+        self#put "&";
+        self#emit_pattern pat;
+      end
+    | `Ref name -> begin
+        self#put "ref ";
+        self#put name;
+      end
+    | _ -> raise (Unexpected "pat variant")
 
   method emit_expr (e : Ir.expr) =
     match snd e with
     | `Var name -> self#put name
+    | `Literal lit ->
+        (match fst e with
+        | `Unit -> self#put "()";
+        | _ -> raise (Unexpected "lit type variant"))
+    (* `Struct_Literal *)
+    (* `Enum_Literal *)
+    | `Match (expr, arms) -> begin
+        self#put "match ";
+        self#emit_expr expr;
+        self#put "{\n";
+        self#put_many "\n" self#emit_arm arms;
+        self#put "}"
+      end
+    | `Block (stmts, expr) -> begin
+        self#put_many "\n" self#emit_stmt stmts;
+        self#put "\n";
+        self#emit_expr expr;
+      end
+    | `Struct_Field (expr, field) -> begin
+        self#emit_expr expr;
+        self#put ".";
+        self#put field;
+      end
     | `Deref e' -> begin
         self#put "*";
         self#emit_expr e';
@@ -501,21 +564,22 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         self#put_many ", " self#emit_expr args;
         self#put ")";
       end
+    (* `Unsafe *)
+    (* `Return *)
+    (* `Assignment *)
+    (* `Cast *)
+    (* `BinOp *)
+    (* `UnOp *)
     | `Tuple exprs -> begin
         self#put "(";
         self#put_many ", " self#emit_expr exprs;
         self#put ")";
       end
-    | `Struct_Field (expr, field) -> begin
-        self#emit_expr expr;
-        self#put ".";
-        self#put field;
-      end
-    | `Block (stmts, expr) -> begin
-        self#put_many "\n" self#emit_stmt stmts;
-        self#put "\n";
-        self#emit_expr expr;
-      end
+    (* `While *)
+    (* `Assign_Op *)
+    (* `Vec *)
+    (* `Break *)
+    (* `Continue *)
     | _ -> raise (Unexpected "expr variant")
 
   method emit_ty (t : Types.r_type) =
@@ -565,52 +629,60 @@ class rust_pp buf output_file_prefix num_tests = object(self)
 
   method emit_call_path fn_name ty_args =
     if String.compare fn_name "__crust$nondet" == 0
-      then self#put "__crust::nondet"
-      else begin
-        let fn_def = Env.EnvMap.find Env.fn_env fn_name in
-        match fn_def.Ir.fn_impl with
-        | None -> begin
-          let (ty_space, fn_space, self_space) = args_by_param_space fn_def.Ir.fn_tparams ty_args in
-          (if List.length ty_space == 0
-            then self#put (unmangle_name fn_name)
-            else begin
-              let (ty_name, fn_basename) = split_last_segment (unmangle_name fn_name) in
-              self#put ty_name;
-              self#put "::<";
-              self#put_many ", " self#emit_ty ty_space;
-              self#put ">";
-              self#put "::";
-              self#put fn_basename;
-            end);
-          (if List.length fn_space != 0
-            then begin
-              self#put "::<";
-              self#put_many ", " self#emit_ty fn_space;
-              self#put ">";
-            end else ());
-        end
-        | Some i -> begin
-          let afn_def = Env.EnvMap.find Env.abstract_fn_env i.Ir.abstract_name in
-          let afn_ty_args = TypeUtil.subst_tys fn_def.Ir.fn_tparams ty_args
-                (i.Ir.i_types @ [i.Ir.i_self]) in
-          let (ty_space, fn_space, self_space) = 
-            args_by_param_space afn_def.Ir.afn_tparams afn_ty_args in
-          let (ty_name, fn_basename) = split_last_segment (unmangle_name afn_def.Ir.afn_name) in
-          Printf.printf "name %s -> %s :: %s\n" afn_def.Ir.afn_name ty_name fn_basename;
-          self#put "<";
-          self#put_many ", " self#emit_ty self_space;
-          self#put " as ";
-          self#put ty_name;
-          (if List.length ty_space > 0
-            then begin
-              self#put "<";
-              self#put_many ", " self#emit_ty ty_space;
-              self#put ">";
-            end else ());
-          self#put ">::";
-          self#put fn_basename;
-        end
+    then self#put "__crust::nondet"
+    else if String.compare fn_name "__crust$assert" == 0
+    then self#put "__crust::assert"
+    else if String.compare fn_name "__crust$assume" == 0
+    then self#put "__crust::assume"
+    else if String.compare fn_name "__crust$unreachable" == 0
+    then self#put "__crust::unreachable"
+    else if String.compare fn_name "drop_glue" == 0
+    then self#put "__crust::drop_glue"
+    else begin
+      let fn_def = Env.EnvMap.find Env.fn_env fn_name in
+      match fn_def.Ir.fn_impl with
+      | None -> begin
+        let (ty_space, fn_space, self_space) = args_by_param_space fn_def.Ir.fn_tparams ty_args in
+        (if List.length ty_space == 0
+          then self#put (unmangle_name fn_name)
+          else begin
+            let (ty_name, fn_basename) = split_last_segment (unmangle_name fn_name) in
+            self#put ty_name;
+            self#put "::<";
+            self#put_many ", " self#emit_ty ty_space;
+            self#put ">";
+            self#put "::";
+            self#put fn_basename;
+          end);
+        (if List.length fn_space != 0
+          then begin
+            self#put "::<";
+            self#put_many ", " self#emit_ty fn_space;
+            self#put ">";
+          end else ());
       end
+      | Some i -> begin
+        let afn_def = Env.EnvMap.find Env.abstract_fn_env i.Ir.abstract_name in
+        let afn_ty_args = TypeUtil.subst_tys fn_def.Ir.fn_tparams ty_args
+              (i.Ir.i_types @ [i.Ir.i_self]) in
+        let (ty_space, fn_space, self_space) = 
+          args_by_param_space afn_def.Ir.afn_tparams afn_ty_args in
+        let (ty_name, fn_basename) = split_last_segment (unmangle_name afn_def.Ir.afn_name) in
+        Printf.printf "name %s -> %s :: %s\n" afn_def.Ir.afn_name ty_name fn_basename;
+        self#put "<";
+        self#put_many ", " self#emit_ty self_space;
+        self#put " as ";
+        self#put ty_name;
+        (if List.length ty_space > 0
+          then begin
+            self#put "<";
+            self#put_many ", " self#emit_ty ty_space;
+            self#put ">";
+          end else ());
+        self#put ">::";
+        self#put fn_basename;
+      end
+    end
 
   method private emit_arg arg = 
     match arg with

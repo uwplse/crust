@@ -7,6 +7,7 @@ import Control.Monad.Identity
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Char (toLower)
+import Data.Functor
 import Data.Generics hiding (typeOf)
 import Data.List (intercalate, isPrefixOf, isSuffixOf)
 import qualified Data.Map as M
@@ -161,7 +162,7 @@ main = do
                     "desugar-unsize",
                     "fix-clone",
                     "fix-address",
-                    "fix-special-fn",
+                    --"fix-special-fn",
                     "fix-bottom",
                     "fix-bool",
                     "fix-if",
@@ -175,7 +176,7 @@ main = do
                     "cleanup-drops",
                     "cleanup-temps"
                     ]
-            let items' = foldl (flip runPass) items passes
+            let items' = foldl (\a b -> whnfList a `seq` runPass (trace b b) (whnfList a)) items passes
             putStrLn $ concatMap pp items'
 
 runPass "desugar-index" = \is -> desugarIndex (mkIndex is) is
@@ -207,6 +208,14 @@ runPass "move-break" = moveBreak
 runPass "shake-tree" = \is -> shakeTree (mkIndex is) is
 runPass p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runPass "id" = id
+
+whnf x = seq x x
+crush :: Data d => d -> d
+crush x = runIdentity $ gfoldl
+    (\c h -> crush h `seq` (c >>= \c' -> return (c' h)))
+    (\c -> c `seq` Identity c)
+    x
+whnfList xs = foldl (\a b -> crush b `seq` a) xs xs
 
 fixClone = everywhere (mkT addDropCheckT)
   where

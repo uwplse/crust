@@ -329,6 +329,23 @@ let parse_fn =
 	| "return"::rest -> parse_type rest cb
 	| _ -> (raise (Parse_failure ("parse_return",tokens)))
   in
+  let parse_pred tokens cb =
+    match tokens with
+    | "ty_impl"::_::rest ->
+            parse_lifetimes rest (fun _ rest ->
+                parse_n parse_type rest (fun _ rest ->
+                    cb () rest))
+    | "ty_eq"::rest ->
+            parse_type rest (fun _ rest ->
+                parse_type rest (fun _ rest ->
+                    cb () rest))
+	| _ -> (raise (Parse_failure ("parse_pred",tokens)))
+  in
+  let parse_preds tokens cb =
+    match tokens with
+    | "preds"::rest -> parse_n parse_pred rest (fun _ rest -> cb () rest)
+    | _ -> (raise (Parse_failure ("parse_preds",tokens)))
+  in
   let parse_body tokens cb = 
 	match tokens with
 	| "body"::rest -> parse_expr rest cb 
@@ -360,8 +377,9 @@ let parse_fn =
     arg_counter := 0;
     match tokens with
     | "fn"::vis::fn_name::t ->
-	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >> parse_return >> (maybe_parse parse_impl) >> parse_body in
-	 parse_function t (fun (((((lifetime,t_params),args),ret_type),impl_info),body) ->
+	 let parse_function = parse_lifetimes >> parse_type_params >> parse_args >>
+             parse_return >> (maybe_parse parse_impl) >> parse_preds >> parse_body in
+	 parse_function t (fun ((((((lifetime,t_params),args),ret_type),impl_info),_preds),body) ->
 	  cb (`Fn {
 						 Ir.fn_name = fn_name;
 						 Ir.fn_lifetime_params = lifetime;

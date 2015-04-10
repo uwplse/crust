@@ -1338,6 +1338,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                             let name = mangled_def_name(trcx, did);
                             trcx.observed_abstract_fns.insert(name.clone(), did);
                             if let Some(block) = opt_block.as_ref() {
+                                println!("# method {} has default impl", name);
                                 try_str(|| trans_method(trcx,
                                                         self,
                                                         (item.id, &item.ident, None),
@@ -1567,7 +1568,7 @@ fn trans_method(trcx: &mut TransCtxt,
 
     let (lifetimes, mut ty_params) = combine_generics(trcx, impl_generics, generics, is_default);
     let vis_str =
-        if trait_ref.is_none() {
+        if trait_ref.is_none() && !is_default {
             opt_vis.unwrap().trans(trcx)
         } else {
             format!("pub")
