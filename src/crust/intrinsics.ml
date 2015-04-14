@@ -184,7 +184,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$ptr$read";
     i_params = [ "t1" ];
-    i_body = Template ("{t1} {mname}({t1} *ptr) { {t1} to_ret; if(sizeof({t1}) == 0) { return to_ret;} to_ret = *ptr; return to_ret; }")
+    i_body = Template ("{t1} {mname}({t1} const *ptr) { {t1} to_ret; if(sizeof({t1}) == 0) { return to_ret;} to_ret = *ptr; return to_ret; }")
   };
   {
     i_name = "core$intrinsics$copy_nonoverlapping_memory";

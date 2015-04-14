@@ -68,7 +68,7 @@ let rec type_to_string : c_types -> string = function
   | `Unit -> "rs_unit"
   | `Float i -> "rs_f" ^ (string_of_int i)
   | `Char -> "rs_char"
-  | `Ptr t -> "const " ^ (type_to_string t) ^"*"
+  | `Ptr t -> (type_to_string t) ^" const *"
   | `Ptr_Mut t -> (type_to_string t) ^ "*"
   | `Bottom -> "rs_bottom"
   | `Tuple l -> mangle_tuple_name l
