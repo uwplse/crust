@@ -109,10 +109,12 @@ and type_list_size (ts : mono_type list) =
 
 let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
-  let match_types m_args p_args = 
-    match TypeUtil.is_inst m_args p_args with
-    | `Mismatch -> None
-    | `Inst [l] -> Some l
+  let match_types fuzzy m_args p_args = 
+    match TypeUtil.is_inst' fuzzy m_args p_args with
+    | `Mismatch ->
+        None
+    | `Inst [l] ->
+        Some l
     | _ -> assert false
   in
   let mk_targs tb1 tb2 t_param = 
@@ -133,7 +135,7 @@ let resolve_abstract_fn =
           in
           let fn_typarams = impl_def.Ir.fn_tparams in
           let arg_types = List.map snd impl_def.Ir.fn_args in
-          match (match_types param_args arg_types),(match_types type_args impl_types) with
+          match (match_types true param_args arg_types),(match_types false type_args impl_types) with
           | (Some tb1),(Some tb2) ->
             let type_args = List.map (mk_targs tb1 tb2) fn_typarams in
             (type_args,fn_name)::accum

@@ -24,6 +24,7 @@ exception TyResolutionFailed
 val to_monomorph: (string * Types.mono_type) list -> Types.r_type -> Types.mono_type
 val get_inst : MTSet.t -> Types.type_param list -> Types.r_type list -> inst_result
 val is_inst : Types.mono_type list -> Types.r_type list -> inst_result
+val is_inst' : bool -> Types.mono_type list -> Types.r_type list -> inst_result
 
 val handle_dst : 
   (bool ->'a -> 'b) -> (bool -> 'b) -> ('a -> 'b) ->

@@ -379,6 +379,7 @@ let rec subst_tys (params : string list) (args : Types.r_type list) (tys : Types
 let matcher = new type_matcher false;;
 
 let resolution_matcher = new type_matcher false;;
+let resolution_matcher_fuzzy = new type_matcher true;;
 
 let rec has_abstract (t : Types.r_type) = 
   match t with
@@ -432,7 +433,13 @@ let get_inst type_univ free_vars (to_match : Types.r_type list) =
     matcher#get_inst type_univ to_match
 
 let to_monomorph = matcher#to_monomorph
-let is_inst = resolution_matcher#is_inst
+let is_inst' fuzzy = (new type_matcher fuzzy)#is_inst
+    (*
+    if fuzzy
+    then resolution_matcher_fuzzy#is_inst
+    else resolution_matcher#is_inst
+    *)
+let is_inst = is_inst' true
 
 type inst_flag = [
   | `Adt of string

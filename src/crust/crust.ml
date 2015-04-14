@@ -108,7 +108,6 @@ let do_it f =
         close_in := true
       with Sys_error _ -> raise @@ Arg.Bad ("Failed to open input file: " ^ s)
     ) "Compile Rust IR to C";
-  Printf.printf "before\n";
   let ast =
     try
       Parser.parse_channel ~close:!close_in !input_channel
@@ -116,7 +115,6 @@ let do_it f =
       failwith @@ "Parse failure in " ^ f_name ^ " on input " ^ (String.concat " " tokens)
   in
   Env.set_env ast;
-  Printf.printf "after\n";
   Analysis.sequence_len := (!RustGen.mut_action_len + !RustGen.immut_action_len);
   match !command with
   | None -> code_gen !output_channel
