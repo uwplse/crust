@@ -637,11 +637,12 @@ desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
             skip (SLet (Pattern ty $ PVar n) (Just rhs)) ss e
         PTuple pats -> do
             n <- fresh "__tuple"
-            let topLet = SLet (Pattern ty $ PVar n) (Just rhs)
-                topExpr = Expr ty $ EVar n
+            let needLift = not $ hasStableLocation rhs
+                topLet = SLet (Pattern ty $ PVar n) (Just rhs)
+                topExpr = if needLift then Expr ty $ EVar n else rhs
                 fieldLets = zipWith (\i (Pattern ty' p') -> SLet (Pattern ty' p')
                     (Just $ Expr ty' $ EField topExpr $ "field" ++ show i)) [0..] pats
-            go ([topLet] ++ fieldLets ++ ss) e
+            go ((if needLift then [topLet] else []) ++ fieldLets ++ ss) e
         PRefVar name -> do
             let TRef life mutbl ty' = ty
             skip (SLet (Pattern ty $ PVar name) (Just $ Expr ty $ EAddrOf rhs)) ss e

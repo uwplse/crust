@@ -87,6 +87,7 @@ def do_run(test_file, test_case_name, unwinding, solve_z3):
               [ "-I", include_dir, "--ILP32", "--slice-formula" ] + \
               (["--z3"] if solve_z3 else []) + \
               ["--function", test_case_name, test_file]
+    print(command)
     if solve_z3:
         out = tempfile.NamedTemporaryFile(mode="rw", delete = True)
     else:

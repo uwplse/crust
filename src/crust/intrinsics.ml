@@ -79,7 +79,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "__crust$assert";
     i_params = [];
-    i_body = Inline ("(__CPROVER_assert({arg1})," ^ CRep.literal_unit_name ^ ")")
+    i_body = Inline ("(__CPROVER_assert({arg1}, \"{arg1}\")," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "__crust$nondet";
@@ -134,8 +134,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$assume";
     i_params = [];
-    (* TODO: may want to change this to _assert to check each unsafe assumption *)
-    i_body = Inline ("(__CPROVER_assume({arg1})," ^ CRep.literal_unit_name ^ ")")
+    i_body = Inline ("(__CPROVER_assert({arg1}, \"bad assumption: {arg1}\")," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "core$intrinsics$abort";

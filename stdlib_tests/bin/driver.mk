@@ -71,7 +71,7 @@ test/%_0.drv-pp.ir: test/%_0.drv.ir driver/%.drv0
 	mv -v $@.tmp $@
 
 test/%_0.c: test/%_0.drv-pp.ir
-	$(CRUST_NATIVE) -gcc $< >$@.tmp
+	$(CRUST_NATIVE) $< >$@.tmp
 	mv -v $@.tmp $@
 
 .SECONDARY:
