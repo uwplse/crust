@@ -20,6 +20,9 @@ TARGET = x86_64-custom-linux-gnu.json
 lib/lib%.rlib: $(SRC)/lib%/lib.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
+lib/lib__crust.rlib: ../src/crust-stubs.rs
+	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
+
 ir/lib%.ir: $(SRC)/lib%/lib.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
@@ -38,12 +41,37 @@ ir/%.scrubbed.ir: ir/%.ir
 
 .SECONDEXPANSION:
 
-driver/%.drv: $(FILTERS)/%.filter \
-		ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).scrubbed.ir
-	cat ir/$(shell bin/filter_helper.sh $<).scrubbed.ir | \
-		$(PREPROCESS) --driver-gen --merged-filter $< >$@.tmp
+driver/%.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
+		$(FILTERS)/%.filter
+	cp -v $< $@
+
+driver/%.drv0: driver/%.ir
+	cat $< | $(PREPROCESS) \
+		--passes hl-generate-drivers \
+		--merged-filter $(FILTERS)/$*.filter \
+		>$@.tmp
 	mv -v $@.tmp $@
 
-misc/drivers.d: $(wildcard filters/*.filter)
+driver/%.drv: driver/%.drv0
+	cat $< | $(PREPROCESS) \
+		--passes hl-clean-drivers \
+		>$@.tmp
+	mv -v $@.tmp $@
+
+test/%_0.rs: driver/%.drv
+	cat $< | $(CRUST_NATIVE) -driver-gen -test-case-prefix test/$*
+
+test/%_0.drv.ir: test/%_0.rs
+	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
+	mv -v $@.tmp $@
+
+test/%_0.drv-pp.ir: test/%_0.drv.ir driver/%.drv0
+	cat $^ | $(PREPROCESS) \
+		--passes hl-compile-drivers >$@.tmp
+	mv -v $@.tmp $@
+
+test/%_0.c: test/%_0.drv-pp.ir
+	$(CRUST_NATIVE) -gcc $< >$@.tmp
+	mv -v $@.tmp $@
 
 .SECONDARY:
