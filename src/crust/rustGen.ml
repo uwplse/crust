@@ -167,12 +167,7 @@ let prelude = [
   "extern crate core;";
   "extern crate alloc;";
   "extern crate collections;";
-  "";
-  "mod __crust {";
-  "    pub fn nondet<T>() -> T {";
-  "        unsafe { ::core::intrinsics::abort() }";
-  "    }";
-  "}";
+  "extern crate __crust;";
   "";
 ]
 
@@ -526,6 +521,8 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     | `Literal lit ->
         (match fst e with
         | `Unit -> self#put "()";
+        | `UInt _ -> self#put lit;
+        | `Int _ -> self#put lit;
         | _ -> raise (Unexpected "lit type variant"))
     (* `Struct_Literal *)
     (* `Enum_Literal *)
@@ -568,8 +565,24 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     (* `Unsafe *)
     (* `Return *)
     (* `Assignment *)
-    (* `Cast *)
-    (* `BinOp *)
+    | `Cast e' -> begin
+        self#emit_expr e';
+        self#put " as ";
+        self#emit_ty (fst e);
+      end
+    | `BinOp (op, lhs, rhs) -> begin
+        let op_str =
+            match op with
+            | `BiEq -> "=="
+            | `BiNe -> "!="
+            | _ -> raise (Unexpected "bin_op variant")
+        in
+        self#put "(";
+        self#emit_expr lhs;
+        self#put (" " ^ op_str ^ " ");
+        self#emit_expr rhs;
+        self#put ")";
+      end
     (* `UnOp *)
     | `Tuple exprs -> begin
         self#put "(";

@@ -143,7 +143,12 @@ expandDriver ix de = block
          ])
         (Expr TUnit $ ESimpleLiteral "unit")
 
-    mkBody es = Expr TBottom $ ETupleLiteral es
+    mkBody es = Expr TUnit $ EBlock (map go es) (Expr TUnit $ ESimpleLiteral "unit")
+      where
+        castRef e@(Expr (TRef _ mutbl ty) _) = Expr (TPtr mutbl ty) $ ECast e
+        uint = TUint PtrSize
+        go e = SExpr $ Expr TUnit $ ECall "__crust$assert" [] [] [Expr TBool $
+            EBinOp "BiNe" (Expr uint $ ECast $ castRef e) (Expr uint $ ESimpleLiteral "0")]
 
 
 

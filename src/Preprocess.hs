@@ -309,7 +309,7 @@ addDriverCrustInit ix items = fn : items
   where
     driverNames = filter ("$__crust_test_" `isInfixOf`) $ M.keys $ i_fns ix
     calls = map (\n -> Expr TUnit $ ECall n [] [] []) driverNames
-    block = Expr TUnit $ EBlock (map SExpr calls) (Expr TUnit $ ESimpleLiteral "unit")
+    block = Expr (TTuple []) $ EBlock (map SExpr calls) (Expr (TTuple []) $ ETupleLiteral [])
     fn = IFn $ FnDef Public "_$crust_init" [] [] [] (TTuple []) Nothing [] block
 
 

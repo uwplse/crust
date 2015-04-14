@@ -11,5 +11,5 @@ edo ../bin/Preprocess --passes hl-generate-drivers --merged-filter filters/vecnu
 edo ../bin/Preprocess --passes hl-clean-drivers <vecnull.drv0 >vecnull.drv 2>log-clean.txt
 edo ../bin/crust.native -driver-gen <vecnull.drv
 edo ../bin/rbmc -L lib _0.rs --target=x86_64-custom-linux-gnu.json >_0.ir
-edo cat _0.ir vecnull.drv0 | command time ../bin/Preprocess --passes hl-compile-drivers >vecnull_tests.ir 2>log-compile.txt
-edo ../bin/crust.native -gcc vecnull_tests.ir
+cat _0.ir vecnull.drv0 | edo ../bin/Preprocess --passes hl-compile-drivers >vecnull_tests.ir 2>log-compile.txt
+edo ../bin/crust.native -gcc vecnull_tests.ir >vecnull_tests.c
