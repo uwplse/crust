@@ -9,7 +9,7 @@ import Control.Monad.Writer
 import Data.Char (toLower)
 import Data.Functor
 import Data.Generics hiding (typeOf)
-import Data.List (intercalate, isPrefixOf, isSuffixOf)
+import Data.List (intercalate, isPrefixOf, isSuffixOf, isInfixOf)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe
@@ -133,6 +133,7 @@ main = do
                     -- first, since `scrub` will kill functions for having them
                     -- in non-Stmt positions.
                     "move-break",
+                    "reindex",
                     if c_scrub config then "scrub" else "id",
                     "generate-default-methods",
                     "lift-strings",
@@ -154,7 +155,7 @@ main = do
                     "rename-locals",
                     "add-cleanup",
                     "rename-locals",
-                    -- "filter-extern-fns",
+                    "filter-extern-fns",
                     "generate-drop-glues",
                     "cleanup-drops",
                     "cleanup-temps"
@@ -186,6 +187,65 @@ runPass config "generate-drivers" (items, ix) = do
             return (libLines, constrLines)
 
     return (addDrivers ix 3 (libLines, constrLines) items, ix)
+
+runPass config "hl-generate-drivers" (items, ix) = runPasses' config passes (items, ix)
+  where passes =
+            [ "inject-intrinsics"
+            , "move-break"
+            , "reindex"
+            , "scrub"
+            , "generate-default-methods"
+            , "reindex"
+            , "scrub"
+            , "generate-drivers"
+            , "shake-tree"
+            ]
+
+runPass config "hl-clean-drivers" (items, ix) = runPasses' config passes (items, ix)
+  where passes =
+            [ "filter-extern-fns"
+            , "desugar-pattern-lets"
+            , "const-expand"
+            , "desugar-unsize"
+            , "desugar-range"
+            , "desugar-index"
+            ]
+
+runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (items, ix)
+  where passes =
+            [ "inject-intrinsics"
+            , "add-driver-crust-init"
+            -- Move some EBreak/EContinue into statement positions
+            -- first, since `scrub` will kill functions for having them
+            -- in non-Stmt positions.
+            , "move-break"
+            , "lift-strings"
+            , "reindex"
+            , "scrub"
+            , "generate-default-methods"
+            , "fix-block-ret"
+            , "desugar-index"
+            , "desugar-range"
+            , "desugar-arg-patterns"
+            , "desugar-pattern-lets"
+            , "desugar-for"
+            , "desugar-unsize"
+            , "fix-clone"
+            , "fix-address"
+            , "fix-bottom"
+            , "fix-bool"
+            , "fix-if"
+            , "const-expand"
+            , "lift-temps"
+            , "rename-locals"
+            , "add-cleanup"
+            , "rename-locals"
+            , "filter-extern-fns"
+            , "generate-drop-glues"
+            , "cleanup-drops"
+            , "cleanup-temps"
+            ]
+
 runPass _ pass (items, ix) = return (runBasicPass ix pass items, ix)
 
 
@@ -216,6 +276,7 @@ runBasicPass _ "fix-clone" = fixClone
 runBasicPass _ "move-break" = moveBreak
 runBasicPass ix "shake-tree" = shakeTree ix
 runBasicPass _ "inject-intrinsics" = (intrinsicFns ++)
+runBasicPass ix "add-driver-crust-init" = addDriverCrustInit ix
 runBasicPass _ "id" = id
 runBasicPass _ "dump" = dumpIr "dump"
 runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
@@ -242,6 +303,14 @@ intrinsicFns = [nondet, assume, assert, unreachable, dropGlue]
 
     dropGlue = IAbstractFn $ AbstractFnDef "drop_glue" [] ["T"]
                     [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
+
+
+addDriverCrustInit ix items = fn : items
+  where
+    driverNames = filter ("$__crust_test_" `isInfixOf`) $ M.keys $ i_fns ix
+    calls = map (\n -> Expr TUnit $ ECall n [] [] []) driverNames
+    block = Expr TUnit $ EBlock (map SExpr calls) (Expr TUnit $ ESimpleLiteral "unit")
+    fn = IFn $ FnDef Public "_$crust_init" [] [] [] (TTuple []) Nothing [] block
 
 
 fixClone = everywhere (mkT addDropCheckT)
@@ -470,8 +539,7 @@ desugarIndex ix = everywhereWithLocation (\loc -> mkT $ go loc)
   where
     go loc (Expr _ (EIndex arr idx)) = mkE ix $ do
         let arrRef = addrOf' mutbl (return arr)
-        let idxRef = addrOf' MImm (return idx)
-        deref (call methodName [] [typeOf idx, typeOf arr] [arrRef, idxRef])
+        deref (call methodName [] [typeOf idx, typeOf arr] [arrRef, return idx])
       where
         (mutbl, methodName) = case loc of
             LvalueMut -> (MMut, "core$ops$IndexMut$index_mut")

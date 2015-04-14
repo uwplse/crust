@@ -46,6 +46,8 @@ type simple_expr = [
    | `Declare of string * Types.r_type
    | `Vec_Init of string * Types.r_type * (t_simple_expr list)
    | `Vec_Assign of int * simple_expr * t_simple_expr
+   | `Break
+   | `Continue
    ]
 (* this is a t_simple_expr but the type will always be `Bool actually *)
  and 'a match_arm = (t_simple_expr * 'a)

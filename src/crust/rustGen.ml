@@ -167,11 +167,10 @@ let prelude = [
   "extern crate core;";
   "extern crate alloc;";
   "extern crate collections;";
-  "extern crate array1b;";
   "";
   "mod __crust {";
   "    pub fn nondet<T>() -> T {";
-  "        ::core::intrinsics::abort()";
+  "        unsafe { ::core::intrinsics::abort() }";
   "    }";
   "}";
   "";
@@ -538,9 +537,11 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         self#put "}"
       end
     | `Block (stmts, expr) -> begin
+        self#put "{\n";
         self#put_many "\n" self#emit_stmt stmts;
         self#put "\n";
         self#emit_expr expr;
+        self#put "\n}";
       end
     | `Struct_Field (expr, field) -> begin
         self#emit_expr expr;

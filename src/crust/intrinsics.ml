@@ -67,6 +67,26 @@ let arith_intrinsics = List.flatten
 
 let i_list = arith_intrinsics @ [
   {
+    i_name = "__crust$unreachable";
+    i_params = [];
+    i_body = Inline ("(__CPROVER_assume(0)," ^ CRep.literal_unit_name ^ ")")
+  };
+  {
+    i_name = "__crust$assume";
+    i_params = [];
+    i_body = Inline ("(__CPROVER_assume({arg1})," ^ CRep.literal_unit_name ^ ")")
+  };
+  {
+    i_name = "__crust$assert";
+    i_params = [];
+    i_body = Inline ("(__CPROVER_assert({arg1})," ^ CRep.literal_unit_name ^ ")")
+  };
+  {
+    i_name = "__crust$nondet";
+    i_params = [ "t1" ];
+    i_body = Template ("{t1} {mname}();")
+  };
+  {
     i_name = "core$intrinsics$set_memory";
     i_params = [ "t1" ];
     i_body = Inline "memset({arg1}, {arg2}, sizeof({t1}) * {arg3})"
@@ -110,6 +130,12 @@ let i_list = arith_intrinsics @ [
     i_name = "core$intrinsics$offset";
     i_params = ["t1"];
     i_body = Inline "({arg1} + {arg2})"
+  };
+  {
+    i_name = "core$intrinsics$assume";
+    i_params = [];
+    (* TODO: may want to change this to _assert to check each unsafe assumption *)
+    i_body = Inline ("(__CPROVER_assume({arg1})," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "core$intrinsics$abort";

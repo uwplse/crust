@@ -404,6 +404,12 @@ class expr_emitter buf (t_bindings : (string * Types.mono_type) list) =
           end
         in
         assign_aux 0
+      | `Break ->
+        self#put "break";
+        self#newline ~post:";" ()
+      | `Continue ->
+        self#put "continue";
+        self#newline ~post:";" ()
     method dump_args (_,e) = self#dump_simple_expr e
   end
 

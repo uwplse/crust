@@ -134,13 +134,13 @@ expandDriver' ix de = Expr (typeOf expr) $ EBlock stmts expr
 expandDriver :: Index -> DriverExpr -> Expr
 expandDriver ix de = block
   where
-    driverExpr = expandDriver' ix de
-    driverTy = typeOf driverExpr
+    Expr driverTy (EBlock driverStmts driverExpr) = expandDriver' ix de
 
     block = Expr TUnit $ EBlock
-        [ SLet (Pattern driverTy $ PVar "driver_out") (Just $ driverExpr)
-        , SExpr $ withCollectedRefs ix mkBody $ Expr driverTy $ EVar "driver_out"
-        ]
+        (driverStmts ++
+         [ SLet (Pattern driverTy $ PVar "driver_out") (Just driverExpr)
+         , SExpr $ withCollectedRefs ix mkBody $ Expr driverTy $ EVar "driver_out"
+         ])
         (Expr TUnit $ ESimpleLiteral "unit")
 
     mkBody es = Expr TBottom $ ETupleLiteral es

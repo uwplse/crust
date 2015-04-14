@@ -93,6 +93,20 @@ module TySet = Set.Make(struct
         | _,_ -> Pervasives.compare a b
 end)
 
+let rec type_size (t : mono_type) =
+    match t with
+    | `Adt_type a -> 1 + type_list_size a.Types.type_param
+    | `Ref (_, t) -> 1 + type_size t
+    | `Ref_Mut (_, t) -> 1 + type_size t
+    | `Ptr t -> 1 + type_size t
+    | `Ptr_Mut t -> 1 + type_size t
+    | `Tuple ts -> 1 + type_list_size ts
+    | `Fixed_Vec (_, t) -> 1 + type_size t
+    | `Vec t -> 1 + type_size t
+    | _ -> 1
+and type_list_size (ts : mono_type list) =
+    List.fold_left (+) 0 (List.map type_size ts)
+
 let resolve_abstract_fn =
   let arg_str s = "(" ^ (String.concat ", " @@ List.map Types.pp_t (s : Types.mono_type list :> Types.r_type list)) ^ ")" in
   let match_types m_args p_args = 
@@ -131,9 +145,20 @@ let resolve_abstract_fn =
     | [] -> 
       raise @@ ResolutionFailed ("Failed to discover instantiation for the abstract function " ^ abstract_name ^ " with arguments " ^ (arg_str param_args))
     | l -> 
-      let inst_dump = String.concat "/" @@ List.map snd possible_insts in
-      let fail_args = arg_str param_args in
-      raise @@ ResolutionFailed ("Ambiguous instantiations for abstract function " ^ abstract_name ^ " for arguments " ^ fail_args ^ ". Found instantiations: " ^ inst_dump)
+      let sorted = List.sort (fun a b -> type_list_size (fst a) - type_list_size (fst b)) l in
+      if type_list_size (fst (List.nth sorted 0)) == type_list_size (fst (List.nth sorted 1))
+        then begin
+          let inst_dump = String.concat "/" @@ List.map (fun (a,b) -> b ^ "("
+                    ^ arg_str a ^ " = "
+                    ^ string_of_int (type_list_size a) ^ ")") possible_insts in
+          Printf.printf "failed on %s: %s\n" abstract_name inst_dump;
+          raise @@ ResolutionFailed ("no good")
+        end
+        (*
+        then raise @@ ResolutionFailed ("Duplicate instantiations for " ^
+                abstract_name ^ " with equal specificity")
+                *)
+        else List.hd sorted
 
 
 let rec walk_type : walk_state -> Types.mono_type -> walk_state = 

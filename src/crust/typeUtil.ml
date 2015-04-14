@@ -378,7 +378,7 @@ let rec subst_tys (params : string list) (args : Types.r_type list) (tys : Types
 
 let matcher = new type_matcher false;;
 
-let resolution_matcher = new type_matcher true;;
+let resolution_matcher = new type_matcher false;;
 
 let rec has_abstract (t : Types.r_type) = 
   match t with

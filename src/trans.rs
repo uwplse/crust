@@ -657,12 +657,14 @@ impl Trans for Expr {
             ExprIndex(ref arr, ref idx) => {
                 match trcx.tcx.method_map.borrow().get(&MethodCall::expr(self.id)) {
                     Some(callee) => {
+                        /*
                         let idx_ty = trcx.tcx.node_types()[&idx.id];
                         let idx_str = format!("({} addr_of {})",
                                               auto_ref_ty(trcx, &**idx, None, idx_ty)
                                                   .trans(trcx),
                                               idx.trans(trcx));
-                        let arg_strs = vec![arr.trans(trcx), idx_str];
+                                              */
+                        let arg_strs = vec![arr.trans(trcx), idx.trans(trcx)];
                         let call_str = trans_method_call(trcx, callee, arg_strs);
 
                         let mutbl = match ty::ty_fn_ret(callee.ty).0 {

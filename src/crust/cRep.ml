@@ -66,6 +66,8 @@ type simple_expr = [
    | `Declare of string * Types.r_type
    | `Vec_Init of string * Types.r_type * (t_simple_expr list)
    | `Vec_Assign of int * simple_expr * t_simple_expr
+   | `Break
+   | `Continue
    ]
  (* this is a t_simple_expr but the type will always be `Bool actually *)
  and 'a match_arm = (t_simple_expr * 'a)
@@ -369,6 +371,8 @@ and simplify_stmt : Ir.stmt -> all_expr stmt list = function
         end
       | None -> [`Declare (v_name,v_type)]
     end
+  | `Expr (_, `Break) -> [`Break]
+  | `Expr (_, `Continue) -> [`Continue]
   | `Expr e ->
 	let e' = simplify_ir e in
 	[`Expr e']
