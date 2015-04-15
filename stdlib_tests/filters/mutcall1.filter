@@ -1,0 +1,5 @@
+# ir: core_libmutcall1
+
+library mutcall1$*$operate
+
+construction mutcall1$*

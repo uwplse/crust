@@ -35,10 +35,11 @@ getFnDesc _ = Nothing
 
 data DriverExpr =
       DECall Name [Ty] [DriverExpr]
+    | DEMutCall Int Name [Ty] [DriverExpr]
     | DENondet Ty
     | DEDrop DriverExpr
     | DETupleIntro [DriverExpr]
-    | DETupleElim DriverExpr Int
+    | DETupleElim Int DriverExpr
     | DERefIntro Mutbl DriverExpr
     | DERefElim DriverExpr
   deriving (Eq, Show, Data, Typeable)
@@ -46,11 +47,8 @@ data DriverExpr =
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
 genDrivers ix limit lib constr = do
     (name, argTys, retTy) <- lib
-    let tyParams = fn_tyParams $ runCtxM ix $ getFn name
-    tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) tyParams
-    let argTys' = map (subst ([], tyParams) ([], tyArgs)) argTys
-    argExprs <- mapM (go (limit - 1)) argTys'
-    return $ DECall name tyArgs argExprs
+    tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) (getTyParams name)
+    genCall (limit + 1) name argTys tyArgs DECall
   where
     go limit ty | isPrimitive ty = [DENondet ty]
     go limit (TRef _ mutbl ty) = DERefIntro mutbl <$> go limit ty
@@ -59,12 +57,26 @@ genDrivers ix limit lib constr = do
     go 0 ty = []
     go limit ty = do
         (name, argTys, retTy) <- constr
-        (retPart, destructOp) <- destructure retTy
-        let tyParams = fn_tyParams $ runCtxM ix $ getFn name
-        tyArgs <- chooseTyArgs tyParams retTy ty
+        (optArgIdx, chosenTy) <- zip (Nothing : map Just [0..length argTys - 1]) (retTy : argTys)
+        (chosenPart, destructOp) <- destructure chosenTy
+        traceShow ("consider", name, optArgIdx, chosenTy, chosenPart) $ do
+        when (isJust optArgIdx) $ 
+            guard $ case chosenPart of TRef _ MMut _ -> True; _ -> False
+        let ty' = if isJust optArgIdx then TRef "r_dummy" MMut ty else ty
+        tyArgs <- chooseTyArgs (getTyParams name) chosenPart ty'
+        let buildCall name tys args = case optArgIdx of
+                Nothing -> destructOp $ DECall name tys args
+                Just i -> destructOp $ DERefElim $ DEMutCall i name tys args
+        genCall limit name argTys tyArgs buildCall
+
+    getFn name = runCtxM ix $ Index.getFn name
+    getTyParams = fn_tyParams . getFn
+
+    genCall limit name argTys tyArgs buildCall = do
+        let tyParams = fn_tyParams $ getFn name
         let argTys' = map (subst ([], tyParams) ([], tyArgs)) argTys
         argExprs <- mapM (go (limit - 1)) argTys'
-        return $ destructOp $ DECall name tyArgs argExprs
+        return $ buildCall name tyArgs argExprs
 
 isPrimitive ty = case ty of
     TStr -> True
@@ -77,10 +89,12 @@ isPrimitive ty = case ty of
     _ -> False
 
 destructure :: Ty -> [(Ty, DriverExpr -> DriverExpr)]
-destructure ty = (ty, id) : case ty of
-    TRef _ _ ty' -> destructure ty'
-    TTuple tys' -> concatMap destructure tys'
-    _ -> []
+destructure ty = go id ty
+  where
+    go f ty = (ty, f) : case ty of
+        TRef _ _ ty' -> go (DERefElim . f) ty'
+        TTuple tys' -> concat $ zipWith (\i ty' -> go (DETupleElim i . f) ty') [0..] tys'
+        _ -> []
 
 chooseTyArgs params retTy targetTy = do
     let (uty, intern) = toUTy retTy
@@ -103,11 +117,16 @@ expandDriver' ix de = Expr (typeOf expr) $ EBlock stmts expr
         let e = Expr retTy $ ECall name [] tyArgs argExprs
         tell [SLet (Pattern retTy $ PVar outVar) (Just e)]
         return $ Expr retTy $ EVar outVar
+    go (DEMutCall idx name tyArgs argDes) = do
+        argExprs <- mapM go argDes
+        let retTy = fnRetTy name tyArgs
+        tell [SExpr $ Expr retTy $ ECall name [] tyArgs argExprs]
+        return $ argExprs !! idx
     go (DENondet ty) = return $ Expr ty $ ECall "__crust$nondet" [] [ty] []
     go (DETupleIntro des) = do
         exprs <- mapM go des
         return $ Expr (TTuple $ map typeOf exprs) $ ETupleLiteral exprs
-    go (DETupleElim de idx) = do
+    go (DETupleElim idx de) = do
         expr <- go de
         return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr ("field" ++ show idx)
     go (DERefIntro mutbl de) = do
@@ -191,25 +210,3 @@ splitFilter filterLines =
     go prefix ln
       | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
       | otherwise = Nothing
-
-
-
-dumpDriver depth de = case de of
-    DECall name tas args -> do
-        putInd $ name ++ " " ++ show (map (runPp . ppTy) tas)
-        mapM_ (dumpDriver (depth + 1)) args
-    DENondet ty -> putInd ("nondet " ++ show ty)
-    DETupleIntro args -> do
-        putInd $ "mkTuple"
-        mapM_ (dumpDriver (depth + 1)) args
-    DETupleElim de' i -> do
-        putInd $ "tupleProj " ++ show i
-        dumpDriver (depth + 1) de'
-    DERefIntro mutbl de' -> do
-        putInd $ "addrOf " ++ show mutbl
-        dumpDriver (depth + 1) de'
-    DERefElim de' -> do
-        putInd $ "deref"
-        dumpDriver (depth + 1) de'
-  where
-    putInd msg = putStrLn $ replicate (4 * depth) ' ' ++ msg
