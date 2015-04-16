@@ -1,5 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable,
-             FlexibleInstances, OverlappingInstances #-}
+             FlexibleInstances, OverlappingInstances,
+             DeriveGeneric #-}
 module Parser
 where
 
@@ -8,9 +9,11 @@ import Control.Arrow ((***))
 import Control.Monad
 import Control.Monad.State
 import Data.Data
-import Data.Generics
+import Data.Generics hiding (Generic)
+import Data.Hashable
 import Data.List (isSuffixOf, intercalate)
 import Data.Maybe
+import GHC.Generics (Generic)
 import Text.Parsec hiding (label, State, string, space, optional)
 import Text.Parsec.Pos (newPos)
 
@@ -39,7 +42,8 @@ exactWord s = match $ \t -> case t of WORD s' | s == s' -> True; _ -> False
 
 
 data Mutbl = MMut | MImm
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
+instance Hashable Mutbl
 
 data Ty =
       TVar Name
@@ -59,64 +63,66 @@ data Ty =
     | TUnit
     | TBottom
     | TAbstract Name [Lifetime] [Ty]
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
+instance Hashable Ty
 
 type Lifetime = Name
 
 type Name = String
 
 data IntSize = BitSize Int | PtrSize
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
+instance Hashable IntSize
 
 data Visibility =
     Public
   | Private
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 type Abi = Name
 type LifetimeParam = Name
 type TyParam = Name
 
 data AbstractTypeDef = AbstractTypeDef Name [LifetimeParam] [TyParam]
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data AssociatedTypeDef = AssociatedTypeDef [LifetimeParam] [TyParam] ImplClause Ty
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data StructDef = StructDef Name [LifetimeParam] [TyParam] [FieldDef] (Maybe Name)
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data FieldDef = FieldDef Name Ty
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data EnumDef = EnumDef Name [LifetimeParam] [TyParam] [VariantDef] (Maybe Name)
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data VariantDef = VariantDef Name [Ty]
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Predicate =
       PImpl Name [Ty]
     | PEq Ty Ty
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data FnDef = FnDef Visibility Name [LifetimeParam] [TyParam] [ArgDecl] Ty (Maybe ImplClause) [Predicate] Expr
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data AbstractFnDef = AbstractFnDef Name [LifetimeParam] [TyParam] [ArgDecl] Ty
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data ExternFnDef = ExternFnDef Abi Name [LifetimeParam] [TyParam] [ArgDecl] Ty
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data ArgDecl = ArgDecl Pattern
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data ImplClause = ImplClause Name [Lifetime] [Ty]
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Expr = Expr Ty Expr_
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Expr_ =
       EVar Name
@@ -146,16 +152,16 @@ data Expr_ =
     | EUnsizeLen Int Expr
     | EBreak
     | EContinue
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Field = Field Name Expr
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data MatchArm = MatchArm Pattern Expr
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Pattern = Pattern Ty Pattern_
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Pattern_ =
       PVar Name
@@ -166,22 +172,22 @@ data Pattern_ =
     | PTuple [Pattern]
     | PRefVar Name
     | PAddrOf Pattern
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Stmt = SExpr Expr | SLet Pattern (Maybe Expr)
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data ConstDef = ConstDef Name Ty Expr
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data StaticDef = StaticDef Name Ty Expr
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data UseDefault = UseDefault [LifetimeParam] [TyParam] ImplClause
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Driver = Driver Expr
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 data Item =
       IStruct StructDef
@@ -196,7 +202,7 @@ data Item =
     | IUseDefault UseDefault
     | IDriver Driver
     | IMeta String
-  deriving (Eq, Show, Data, Typeable)
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 tagged = choice . map (\(x, y) -> exactWord x >> y)
 

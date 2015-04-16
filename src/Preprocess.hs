@@ -186,7 +186,7 @@ runPass config "generate-drivers" (items, ix) = do
             constrLines <- lines <$> readFile constrFileName
             return (libLines, constrLines)
 
-    return (addDrivers ix 3 (libLines, constrLines) items, ix)
+    return (addDrivers ix 2 (libLines, constrLines) items, ix)
 
 runPass config "hl-generate-drivers" (items, ix) = runPasses' config passes (items, ix)
   where passes =

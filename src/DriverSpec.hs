@@ -1,5 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable,
-             FlexibleInstances, OverlappingInstances #-}
+             FlexibleInstances, OverlappingInstances,
+             DeriveGeneric #-}
 module DriverSpec
 where
 
@@ -7,11 +8,14 @@ import Control.Applicative ((<$>))
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Generics hiding (typeOf)
+import qualified Data.Array as A
+import Data.Generics hiding (typeOf, Generic)
+import Data.Hashable
 import Data.List (isPrefixOf)
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
+import GHC.Generics (Generic)
 import qualified Text.Regex.TDFA as RE
 import qualified Text.Regex.TDFA.String as RE
 
@@ -33,19 +37,32 @@ getFnDesc (IFn (FnDef _ name _ _ args retTy _ _ _)) =
 getFnDesc _ = Nothing
 
 
-data DriverExpr =
-      DECall Name [Ty] [DriverExpr]
-    | DEMutCall Int Name [Ty] [DriverExpr]
+data DriverTree =
+      DECall Name [Ty] [DriverTree]
+    | DEMutCall Int Name [Ty] [DriverTree]
     | DENondet Ty
-    | DEDrop DriverExpr
-    | DETupleIntro [DriverExpr]
-    | DETupleElim Int DriverExpr
-    | DERefIntro Mutbl DriverExpr
-    | DERefElim DriverExpr
-  deriving (Eq, Show, Data, Typeable)
+    | DETupleIntro [DriverTree]
+    | DETupleElim Int DriverTree
+    | DERefIntro Mutbl DriverTree
+    | DERefElim DriverTree
+    | DECopy Int
+  deriving (Eq, Show, Data, Typeable, Generic)
+instance Hashable DriverTree
+
+data DriverExpr = DE
+    { d_tree :: DriverTree
+    , d_copies :: A.Array Int DriverTree
+    }
+  deriving (Eq, Show, Data, Typeable, Generic)
 
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
-genDrivers ix limit lib constr = do
+genDrivers ix limit lib constr =
+    let trees = mkDriverTrees ix limit lib constr
+        exprs = concatMap addCopies trees
+    in exprs
+
+mkDriverTrees :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
+mkDriverTrees ix limit lib constr = do
     (name, argTys, retTy) <- lib
     tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) (getTyParams name)
     genCall (limit + 1) name argTys tyArgs DECall
@@ -57,17 +74,9 @@ genDrivers ix limit lib constr = do
     go 0 ty = []
     go limit ty = do
         (name, argTys, retTy) <- constr
-        (optArgIdx, chosenTy) <- zip (Nothing : map Just [0..length argTys - 1]) (retTy : argTys)
-        (chosenPart, destructOp) <- destructure chosenTy
-        traceShow ("consider", name, optArgIdx, chosenTy, chosenPart) $ do
-        when (isJust optArgIdx) $ 
-            guard $ case chosenPart of TRef _ MMut _ -> True; _ -> False
-        let ty' = if isJust optArgIdx then TRef "r_dummy" MMut ty else ty
-        tyArgs <- chooseTyArgs (getTyParams name) chosenPart ty'
-        let buildCall name tys args = case optArgIdx of
-                Nothing -> destructOp $ DECall name tys args
-                Just i -> destructOp $ DERefElim $ DEMutCall i name tys args
-        genCall limit name argTys tyArgs buildCall
+        (retPart, destructOp) <- destructure retTy
+        tyArgs <- chooseTyArgs (getTyParams name) retPart ty
+        genCall limit name argTys tyArgs (\n ts as -> destructOp $ DECall n ts as)
 
     getFn name = runCtxM ix $ Index.getFn name
     getTyParams = fn_tyParams . getFn
@@ -88,7 +97,7 @@ isPrimitive ty = case ty of
     TUnit -> True
     _ -> False
 
-destructure :: Ty -> [(Ty, DriverExpr -> DriverExpr)]
+destructure :: Ty -> [(Ty, DriverTree -> DriverTree)]
 destructure ty = go id ty
   where
     go f ty = (ty, f) : case ty of
@@ -105,41 +114,141 @@ chooseTyArgs params retTy targetTy = do
             Nothing -> [TUnit, TInt (BitSize 8)]
 
 
-expandDriver' :: Index -> DriverExpr -> Expr
-expandDriver' ix de = Expr (typeOf expr) $ EBlock stmts expr
+addCopies :: DriverTree -> [DriverExpr]
+addCopies dt = results
   where
-    (expr, stmts) = evalState (runWriterT (go de)) 0
+    walk a dt = do
+        dt' <- a dt
+        case dt' of
+            DECall x y dts' -> DECall x y <$> mapM (walk a) dts'
+            DEMutCall x y z dts' -> DEMutCall x y z <$> mapM (walk a) dts'
+            DENondet x -> return $ DENondet x
+            DETupleIntro dts' -> DETupleIntro <$> mapM (walk a) dts'
+            DETupleElim x dt' -> DETupleElim x <$> walk a dt'
+            DERefIntro x dt' -> DERefIntro x <$> walk a dt'
+            DERefElim dt' -> DERefElim <$> walk a dt'
+            DECopy x -> return $ DECopy x
 
-    go (DECall name tyArgs argDes) = do
-        argExprs <- mapM go argDes
+    (nodeCount, hashList) = execState (walk goHash dt) (0, [])
+      where goHash dt = do
+                (idx, hs) <- get
+                put (idx + 1, (idx, dt, hash dt) : hs)
+                return (dt :: DriverTree) 
+    hashMap = M.fromListWith (++) $ map (\(i,d,h) -> (h,[(i,d)])) hashList
+
+    mergeChoices :: [[[(Int, DriverTree)]]]
+    mergeChoices = do
+        let mergeable = filter ((>= 2) . length) $ map snd $ M.toList hashMap
+        concat <$> mapM (\x -> fst <$> partition x) mergeable
+
+    results = do
+        merges <- mergeChoices
+        let rewriteMap = M.fromList $
+                concatMap (\(ids, c) -> zip (map fst ids) (repeat c)) $ zip merges [0..]
+        let doRewrite (i, d) = rewrite rewriteMap i d
+        let copyList = zipWith (\ids c -> (c, doRewrite $ head ids)) merges [0..]
+        let dt' = doRewrite (0, dt)
+
+        guard (allCopiesUsedTwice (length copyList) (dt' : map snd copyList))
+
+        let copies = A.array (0, length copyList - 1) copyList
+        return $ DE dt' copies
+
+    rewrite m base dt = evalState (walk go dt) base
+      where go dt = do
+                idx <- get
+                modify (+1)
+                if idx == base then return dt else do
+                case M.lookup idx m of
+                    Just copyIdx -> do
+                        modify (+ (treeSize dt - 1))
+                        return $ DECopy copyIdx
+                    Nothing -> return dt
+
+    treeSize dt = execState (walk  go dt) 0
+      where go dt = do
+                modify (+1)
+                return (dt :: DriverTree)
+
+    allCopiesUsedTwice count dts = all ((>= 2) . snd) $ M.toList copyCounts
+      where copyCounts = execState (everywhereM (mkM go) dts) $ M.fromList $ zip [0 .. count - 1] (repeat 0)
+            go dt@(DECopy i) = modify (M.adjust (+1) i) >> return dt
+            go dt = return dt
+
+
+-- Partition every subsequence into groups of two or more.  Returns the list of
+-- partitions and the list of elements not in the subsequence.
+partition :: [a] -> [([[a]], [a])]
+partition [] = [([], [])]
+partition (x:xs) = mkPart x xs ++ mkLone x xs
+  where
+    mkPart x xs = do
+        (part, xs') <- choose [] xs
+        guard (length part >= 1)
+        (parts, loners) <- partition xs'
+        return ((x:part):parts, loners)
+
+    mkLone x xs = do
+        (parts, loners) <- partition xs
+        return (parts, x:loners)
+
+    choose rest [] = [([], rest)]
+    choose rest (x:xs) = use ++ lose
+      where use = map (\(p, r) -> (x:p, r)) $ choose rest xs
+            lose = map (\(p, r) -> (p, x:r)) $ choose rest xs
+    
+
+
+
+expandDriver' :: Index -> DriverExpr -> Expr
+expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
+  where
+    dt = d_tree de
+    (expr, stmts) = evalState (runWriterT (go dt)) (0, M.empty)
+
+    go (DECall name tyArgs argDts) = do
+        argExprs <- mapM go argDts
         outVar <- fresh
         let retTy = fnRetTy name tyArgs
         let e = Expr retTy $ ECall name [] tyArgs argExprs
         tell [SLet (Pattern retTy $ PVar outVar) (Just e)]
         return $ Expr retTy $ EVar outVar
-    go (DEMutCall idx name tyArgs argDes) = do
-        argExprs <- mapM go argDes
+    go (DEMutCall idx name tyArgs argDts) = do
+        argExprs <- mapM go argDts
         let retTy = fnRetTy name tyArgs
         tell [SExpr $ Expr retTy $ ECall name [] tyArgs argExprs]
         return $ argExprs !! idx
     go (DENondet ty) = return $ Expr ty $ ECall "__crust$nondet" [] [ty] []
-    go (DETupleIntro des) = do
-        exprs <- mapM go des
+    go (DETupleIntro dts) = do
+        exprs <- mapM go dts
         return $ Expr (TTuple $ map typeOf exprs) $ ETupleLiteral exprs
-    go (DETupleElim idx de) = do
-        expr <- go de
+    go (DETupleElim idx dt) = do
+        expr <- go dt
         return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr ("field" ++ show idx)
-    go (DERefIntro mutbl de) = do
-        expr <- go de
+    go (DERefIntro mutbl dt) = do
+        expr <- go dt
         return $ Expr (TRef "_" mutbl $ typeOf expr) $ EAddrOf expr
-    go (DERefElim de) = do
-        expr <- go de
+    go (DERefElim dt) = do
+        expr <- go dt
         return $ Expr (derefTy $ typeOf expr) $ EDeref expr
+    go (DECopy i) = goCopy i
 
     fresh = do
-        idx <- get
-        modify (+1)
+        idx <- gets $ \(x, _) -> x
+        modify (\(x, y) -> (x + 1, y))
         return $ "v" ++ show idx
+
+    goCopy i = do
+        seen <- gets $ \(_, x) -> x
+        ty <- case M.lookup i seen of
+            Just ty -> return ty
+            _ -> do
+                expr <- go $ d_copies de A.! i
+                let ty = typeOf expr
+                tell [SLet (Pattern ty $ PVar $ "copy" ++ show i) (Just expr)]
+                modify $ \(x, y) -> (x, M.insert i ty y)
+                return ty
+        return $ Expr TBottom $ EVar $ "copy" ++ show i
 
     fnRetTy name tas =
         let fn = fromMaybe (error $ "no fn " ++ show name) $ M.lookup name $ i_fns ix
@@ -151,7 +260,7 @@ expandDriver' ix de = Expr (typeOf expr) $ EBlock stmts expr
 
 
 expandDriver :: Index -> DriverExpr -> Expr
-expandDriver ix de = block
+expandDriver ix de = trace "expandDriver'" block
   where
     Expr driverTy (EBlock driverStmts driverExpr) = expandDriver' ix de
 
@@ -198,8 +307,8 @@ filterFnsByName filterLines items = traceShow regexStr $ filter check items
     check (IFn (FnDef _ name _ _ _ _ _ _ _)) =
         case RE.execute regex name of
             Left e -> error e
-            Right (Just _) -> traceShow ("keep", name) True
-            Right Nothing -> traceShow ("drop", name) False
+            Right (Just _) -> True --traceShow ("keep", name) True
+            Right Nothing -> False --traceShow ("drop", name) False
     check _ = False
 
 
