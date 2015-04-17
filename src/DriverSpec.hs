@@ -57,9 +57,7 @@ data DriverExpr = DE
 
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
 genDrivers ix limit lib constr =
-    let trees = mkDriverTrees ix limit lib constr
-        exprs = concatMap addCopies trees
-    in exprs
+    mkDriverTrees ix limit lib constr >>= addMutCalls limit constr >>= addCopies
 
 mkDriverTrees :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
 mkDriverTrees ix limit lib constr = do
@@ -117,18 +115,6 @@ chooseTyArgs params retTy targetTy = do
 addCopies :: DriverTree -> [DriverExpr]
 addCopies dt = results
   where
-    walk a dt = do
-        dt' <- a dt
-        case dt' of
-            DECall x y dts' -> DECall x y <$> mapM (walk a) dts'
-            DEMutCall x y z dts' -> DEMutCall x y z <$> mapM (walk a) dts'
-            DENondet x -> return $ DENondet x
-            DETupleIntro dts' -> DETupleIntro <$> mapM (walk a) dts'
-            DETupleElim x dt' -> DETupleElim x <$> walk a dt'
-            DERefIntro x dt' -> DERefIntro x <$> walk a dt'
-            DERefElim dt' -> DERefElim <$> walk a dt'
-            DECopy x -> return $ DECopy x
-
     (nodeCount, hashList) = execState (walk goHash dt) (0, [])
       where goHash dt = do
                 (idx, hs) <- get
@@ -165,15 +151,67 @@ addCopies dt = results
                         return $ DECopy copyIdx
                     Nothing -> return dt
 
-    treeSize dt = execState (walk  go dt) 0
-      where go dt = do
-                modify (+1)
-                return (dt :: DriverTree)
-
     allCopiesUsedTwice count dts = all ((>= 2) . snd) $ M.toList copyCounts
       where copyCounts = execState (everywhereM (mkM go) dts) $ M.fromList $ zip [0 .. count - 1] (repeat 0)
             go dt@(DECopy i) = modify (M.adjust (+1) i) >> return dt
             go dt = return dt
+
+
+walk a dt = do
+    dt' <- a dt
+    case dt' of
+        DECall x y dts' -> DECall x y <$> mapM (walk a) dts'
+        DEMutCall x y z dts' -> DEMutCall x y z <$> mapM (walk a) dts'
+        DENondet x -> return $ DENondet x
+        DETupleIntro dts' -> DETupleIntro <$> mapM (walk a) dts'
+        DETupleElim x dt' -> DETupleElim x <$> walk a dt'
+        DERefIntro x dt' -> DERefIntro x <$> walk a dt'
+        DERefElim dt' -> DERefElim <$> walk a dt'
+        DECopy x -> return $ DECopy x
+
+treeSize dt = execState (walk  go dt) 0
+  where go dt = do
+            modify (+1)
+            return (dt :: DriverTree)
+
+
+addMutCalls :: Int -> [FnDesc] -> DriverTree -> [DriverTree]
+addMutCalls limit constr origDt = go (-1) origDt
+  where
+    tyMap = M.fromList $ map (\(name, _, retTy) -> (name, retTy)) constr
+
+    callsBelow dt = case dt of
+        DECall _ _ dts' -> 1 + (maximum $ 0 : map callsBelow dts')
+        DEMutCall _ _ _ dts' -> error $ "unexpected DEMutCall"
+        DENondet _ -> 0
+        DETupleIntro dts' -> maximum $ 0 : map callsBelow dts'
+        DETupleElim _ dt' -> callsBelow dt'
+        DERefIntro _ dt' -> callsBelow dt'
+        DERefElim dt' -> callsBelow dt'
+        DECopy idx -> error $ "unexpected DECopy"
+
+    go callsAbove dt = case dt of
+        DECall name tas dts' -> do
+            let ty = tyMap M.! name
+            let maxInserts = limit - (callsAbove + callsBelow dt)
+            insertCount <- [0 .. maxInserts]
+
+            dts'' <- mapM (go (callsAbove + insertCount)) dts'
+
+            dt' <- foldM (\dt idx -> addMutCall idx ty dt)
+                (DECall name tas dts'') [0 .. insertCount - 1]
+            return dt'
+
+        DEMutCall _ _ _ _ -> error "unexpected DEMutCall"
+        DENondet ty -> return $ DENondet ty
+        DETupleIntro dts' -> DETupleIntro <$> map (go callsAbove) dts'
+        DETupleElim idx dt' -> DETupleElim idx <$> go callsAbove dt'
+        DERefIntro mutbl dt' -> DERefIntro mutbl <$> go callsAbove dt'
+        DERefElim dt' -> DERefElim <$> go callsAbove dt'
+        DECopy _ -> error "unexpected DECopy"
+
+    addMutCall i ty dt = return $ DETupleElim i $
+        DETupleIntro ((replicate i $ DENondet TUnit) ++ [dt])
 
 
 -- Partition every subsequence into groups of two or more.  Returns the list of
