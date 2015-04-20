@@ -42,7 +42,7 @@ exactWord s = match $ \t -> case t of WORD s' | s == s' -> True; _ -> False
 
 
 data Mutbl = MMut | MImm
-  deriving (Eq, Show, Data, Typeable, Generic)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic)
 instance Hashable Mutbl
 
 data Ty =
@@ -63,7 +63,7 @@ data Ty =
     | TUnit
     | TBottom
     | TAbstract Name [Lifetime] [Ty]
-  deriving (Eq, Show, Data, Typeable, Generic)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic)
 instance Hashable Ty
 
 type Lifetime = Name
@@ -71,7 +71,7 @@ type Lifetime = Name
 type Name = String
 
 data IntSize = BitSize Int | PtrSize
-  deriving (Eq, Show, Data, Typeable, Generic)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic)
 instance Hashable IntSize
 
 data Visibility =

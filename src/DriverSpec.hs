@@ -22,7 +22,8 @@ import qualified Text.Regex.TDFA.String as RE
 import Debug.Trace
 
 import Builder (typeOf)
-import Index
+import qualified Index
+import Index hiding (getFn)
 import Parser
 import Pprint (ppTy, runPp)
 import RefSeek
@@ -46,7 +47,7 @@ data DriverTree =
     | DERefIntro Mutbl DriverTree
     | DERefElim DriverTree
     | DECopy Int
-  deriving (Eq, Show, Data, Typeable, Generic)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic)
 instance Hashable DriverTree
 
 data DriverExpr = DE
@@ -57,13 +58,22 @@ data DriverExpr = DE
 
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
 genDrivers ix limit lib constr =
-    mkDriverTrees ix limit lib constr >>= addMutCalls limit constr >>= addCopies
+    mkDriverTrees ix limit lib constr >>= addMutCalls ix limit constr >>= addCopies
 
 mkDriverTrees :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
 mkDriverTrees ix limit lib constr = do
     (name, argTys, retTy) <- lib
-    tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) (getTyParams name)
-    genCall (limit + 1) name argTys tyArgs DECall
+    tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) (getTyParams ix name)
+    genCall ix (limit + 1) constr name argTys tyArgs DECall
+
+genCall :: Index -> Int -> [FnDesc] -> Name -> [Ty] -> [Ty] ->
+    (Name -> [Ty] -> [DriverTree] -> DriverTree) -> [DriverTree]
+genCall ix limit constr name argTys tyArgs buildCall = do
+    let argTys' = map (subst ([], getTyParams ix name) ([], tyArgs)) argTys
+    argExprs <- mapM (genTree ix (limit - 1) constr) argTys'
+    return $ buildCall name tyArgs argExprs
+
+genTree ix limit constr ty = go limit ty
   where
     go limit ty | isPrimitive ty = [DENondet ty]
     go limit (TRef _ mutbl ty) = DERefIntro mutbl <$> go limit ty
@@ -73,17 +83,30 @@ mkDriverTrees ix limit lib constr = do
     go limit ty = do
         (name, argTys, retTy) <- constr
         (retPart, destructOp) <- destructure retTy
-        tyArgs <- chooseTyArgs (getTyParams name) retPart ty
-        genCall limit name argTys tyArgs (\n ts as -> destructOp $ DECall n ts as)
+        tyArgs <- chooseTyArgs (getTyParams ix name) retPart ty
+        genCall ix limit constr name argTys tyArgs
+            (\n ts as -> destructOp $ DECall n ts as)
 
-    getFn name = runCtxM ix $ Index.getFn name
-    getTyParams = fn_tyParams . getFn
+getFn ix name = runCtxM ix $ Index.getFn name
+getTyParams ix = fn_tyParams . getFn ix
 
-    genCall limit name argTys tyArgs buildCall = do
-        let tyParams = fn_tyParams $ getFn name
-        let argTys' = map (subst ([], tyParams) ([], tyArgs)) argTys
-        argExprs <- mapM (go (limit - 1)) argTys'
-        return $ buildCall name tyArgs argExprs
+genMutCall ix limit constr ty dt = do
+    (name, argTys, retTy) <- constr
+    (argIdx, chosenTy) <- zip [0..] argTys
+    (chosenPart, destructOp) <- destructure chosenTy
+    guard $ case chosenPart of TRef _ MMut _ -> True; _ -> False
+    tyArgs <- chooseTyArgs (getTyParams ix name) chosenPart (TRef "r_dummy" MMut ty)
+
+    let argTys' = map (subst ([], getTyParams ix name) ([], tyArgs)) argTys
+    argExprs <- forM (zip [0..] argTys') $ \(idx, argTy) ->
+        if idx == argIdx then do
+            -- TODO: properly generate code to build the argument
+            --return $ destructOp $ DERefElim $ dt
+            return $ DERefIntro MMut dt
+        else
+            genTree ix (limit - 1) constr argTy
+
+    return $ DEMutCall argIdx name tyArgs argExprs
 
 isPrimitive ty = case ty of
     TStr -> True
@@ -120,7 +143,7 @@ addCopies dt = results
                 (idx, hs) <- get
                 put (idx + 1, (idx, dt, hash dt) : hs)
                 return (dt :: DriverTree) 
-    hashMap = M.fromListWith (++) $ map (\(i,d,h) -> (h,[(i,d)])) hashList
+    hashMap = M.fromListWith (++) $ map (\(i,d,h) -> ((h,d), [(i,d)])) hashList
 
     mergeChoices :: [[[(Int, DriverTree)]]]
     mergeChoices = do
@@ -138,6 +161,7 @@ addCopies dt = results
         guard (allCopiesUsedTwice (length copyList) (dt' : map snd copyList))
 
         let copies = A.array (0, length copyList - 1) copyList
+        traceShow ("old", dt) $ traceShow ("new", dt', copies) $ do
         return $ DE dt' copies
 
     rewrite m base dt = evalState (walk go dt) base
@@ -175,8 +199,8 @@ treeSize dt = execState (walk  go dt) 0
             return (dt :: DriverTree)
 
 
-addMutCalls :: Int -> [FnDesc] -> DriverTree -> [DriverTree]
-addMutCalls limit constr origDt = go (-1) origDt
+addMutCalls :: Index -> Int -> [FnDesc] -> DriverTree -> [DriverTree]
+addMutCalls ix limit constr origDt = go (-1) origDt
   where
     tyMap = M.fromList $ map (\(name, _, retTy) -> (name, retTy)) constr
 
@@ -210,8 +234,8 @@ addMutCalls limit constr origDt = go (-1) origDt
         DERefElim dt' -> DERefElim <$> go callsAbove dt'
         DECopy _ -> error "unexpected DECopy"
 
-    addMutCall i ty dt = return $ DETupleElim i $
-        DETupleIntro ((replicate i $ DENondet TUnit) ++ [dt])
+    -- TODO: properly compute limit instead of hardcoding 1
+    addMutCall i ty dt = genMutCall ix 1 constr ty dt
 
 
 -- Partition every subsequence into groups of two or more.  Returns the list of
@@ -255,7 +279,9 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
         argExprs <- mapM go argDts
         let retTy = fnRetTy name tyArgs
         tell [SExpr $ Expr retTy $ ECall name [] tyArgs argExprs]
-        return $ argExprs !! idx
+
+        let mutatedExpr = argExprs !! idx
+        return $ Expr (derefTy $ typeOf mutatedExpr) $ EDeref mutatedExpr
     go (DENondet ty) = return $ Expr ty $ ECall "__crust$nondet" [] [ty] []
     go (DETupleIntro dts) = do
         exprs <- mapM go dts
