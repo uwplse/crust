@@ -93,15 +93,14 @@ getTyParams ix = fn_tyParams . getFn ix
 genMutCall ix limit constr ty dt = do
     (name, argTys, retTy) <- constr
     (argIdx, chosenTy) <- zip [0..] argTys
-    (chosenPart, destructOp) <- destructure chosenTy
-    guard $ case chosenPart of TRef _ MMut _ -> True; _ -> False
-    tyArgs <- chooseTyArgs (getTyParams ix name) chosenPart (TRef "r_dummy" MMut ty)
+    -- TODO: support constructing (&mut T, _), &mut &mut T, etc, instead of
+    -- just &mut T
+    guard $ case chosenTy of TRef _ MMut _ -> True; _ -> False
+    tyArgs <- chooseTyArgs (getTyParams ix name) chosenTy (TRef "r_dummy" MMut ty)
 
     let argTys' = map (subst ([], getTyParams ix name) ([], tyArgs)) argTys
     argExprs <- forM (zip [0..] argTys') $ \(idx, argTy) ->
         if idx == argIdx then do
-            -- TODO: properly generate code to build the argument
-            --return $ destructOp $ DERefElim $ dt
             return $ DERefIntro MMut dt
         else
             genTree ix (limit - 1) constr argTy
@@ -222,7 +221,7 @@ addMutCalls ix limit constr origDt = go (-1) origDt
 
             dts'' <- mapM (go (callsAbove + insertCount)) dts'
 
-            dt' <- foldM (\dt idx -> addMutCall idx ty dt)
+            dt' <- foldM (\dt idx -> addMutCall (limit - (callsAbove + idx + 1)) ty dt)
                 (DECall name tas dts'') [0 .. insertCount - 1]
             return dt'
 
@@ -234,8 +233,8 @@ addMutCalls ix limit constr origDt = go (-1) origDt
         DERefElim dt' -> DERefElim <$> go callsAbove dt'
         DECopy _ -> error "unexpected DECopy"
 
-    -- TODO: properly compute limit instead of hardcoding 1
-    addMutCall i ty dt = genMutCall ix 1 constr ty dt
+    -- TODO: add mut calls to arguments of the mut call
+    addMutCall i ty dt = genMutCall ix i constr ty dt
 
 
 -- Partition every subsequence into groups of two or more.  Returns the list of
