@@ -2,4 +2,5 @@
 
 library collections$vec$*index
 
-construction collections$vec$*new
+construction collections$vec$Vec$*new
+construction collections$vec$Vec$*push

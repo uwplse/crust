@@ -126,6 +126,7 @@ destructure ty = go id ty
         _ -> []
 
 chooseTyArgs params retTy targetTy = do
+    traceShow ("try unify", retTy, targetTy) $ do
     let (uty, intern) = toUTy retTy
     result <- unify uty targetTy
     forM params $ \param ->
@@ -201,8 +202,6 @@ treeSize dt = execState (walk  go dt) 0
 addMutCalls :: Index -> Int -> [FnDesc] -> DriverTree -> [DriverTree]
 addMutCalls ix limit constr origDt = go (-1) origDt
   where
-    tyMap = M.fromList $ map (\(name, _, retTy) -> (name, retTy)) constr
-
     callsBelow dt = case dt of
         DECall _ _ dts' -> 1 + (maximum $ 0 : map callsBelow dts')
         DEMutCall _ _ _ dts' -> error $ "unexpected DEMutCall"
@@ -215,7 +214,7 @@ addMutCalls ix limit constr origDt = go (-1) origDt
 
     go callsAbove dt = case dt of
         DECall name tas dts' -> do
-            let ty = tyMap M.! name
+            let ty = getFnRetTy ix name tas
             let maxInserts = limit - (callsAbove + callsBelow dt)
             insertCount <- [0 .. maxInserts]
 
@@ -313,13 +312,15 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
                 return ty
         return $ Expr TBottom $ EVar $ "copy" ++ show i
 
-    fnRetTy name tas =
-        let fn = fromMaybe (error $ "no fn " ++ show name) $ M.lookup name $ i_fns ix
-        in subst ([], fn_tyParams fn) ([], tas) $ fn_retTy fn
 
     tupleFieldTy idx (TTuple tys) = tys !! idx
     derefTy (TRef _ _ ty) = ty
 
+    fnRetTy = getFnRetTy ix
+
+getFnRetTy ix name tas =
+    let fn = fromMaybe (error $ "no fn " ++ show name) $ M.lookup name $ i_fns ix
+    in subst ([], fn_tyParams fn) ([], tas) $ fn_retTy fn
 
 
 expandDriver :: Index -> DriverExpr -> Expr

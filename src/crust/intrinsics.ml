@@ -134,7 +134,9 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$assume";
     i_params = [];
-    i_body = Inline ("(__CPROVER_assert({arg1}, \"bad assumption: {arg1}\")," ^ CRep.literal_unit_name ^ ")")
+    i_body = if false
+        then Inline ("(__CPROVER_assert({arg1}, \"bad assumption: * {arg1}\")," ^ CRep.literal_unit_name ^ ")")
+        else Inline ("(" ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "core$intrinsics$abort";
@@ -176,7 +178,7 @@ let i_list = arith_intrinsics @ [
     i_body = Inline CRep.literal_unit_name (* change this to be in line with the unit repr *)
   };
   {
-    i_name = "core$intrinsics$copy_memory";
+    i_name = "core$intrinsics$copy";
     i_params = [ "t1" ];
     i_body = Inline ("(memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))," ^ CRep.literal_unit_name ^ ")")
   };
@@ -186,7 +188,7 @@ let i_list = arith_intrinsics @ [
     i_body = Template ("{t1} {mname}({t1} const *ptr) { {t1} to_ret; if(sizeof({t1}) == 0) { return to_ret;} to_ret = *ptr; return to_ret; }")
   };
   {
-    i_name = "core$intrinsics$copy_nonoverlapping_memory";
+    i_name = "core$intrinsics$copy_nonoverlapping";
     i_params = [ "t1" ];
     i_body = Template ("rs_unit {mname}({t1}* dst_r, const {t1}* src_r, size_t n_elem) {\n" ^
                        "\t size_t n = 0;\n" ^
@@ -234,22 +236,16 @@ let i_list = arith_intrinsics @ [
     i_name = "libc$funcs$c95$stdlib$realloc";
     i_params = [];
     i_body = Template (
-        "rs_u8* {mname}(libc$types$common$c95$c_void* ptr, size_t old_size, size_t new_size, size_t unused) {\n" ^
-        "\t if(ptr == NULL) {\n"^
-        "\t\t __CPROVER_assume(new_size < CRUST_MAX_MEM);\n" ^
-        "\t\t return malloc(new_size);\n" ^
-        "\t} else if(old_size < new_size) {\n" ^
-        "\t\t __CPROVER_assume(new_size < CRUST_MAX_MEM);\n" ^
-        "\t\t rs_u8 *to_ret = malloc(new_size);\n" ^
-        "\t\t memmove(to_ret, ptr, old_size);\n" ^
-        "\t\t free(ptr);\n" ^
-        "\t\t return to_ret;\n" ^
-        "\t} else {\n" ^
-        "\t\t rs_u8* to_ret = malloc(new_size);\n" ^
-        "\t\t memmove(to_ret, ptr, new_size);\n" ^
-        "\t\t free(ptr);\n" ^
-        "\t\t return to_ret;\n" ^
-        "\t}\n" ^
+        "rs_u8* {mname}(libc$types$common$c95$c_void* ptr, size_t new_size) {\n" ^
+        "    __CPROVER_assume(new_size < CRUST_MAX_MEM);\n" ^
+        "    if(ptr == NULL) {\n" ^
+        "        return malloc(new_size);\n" ^
+        "    } else {\n" ^
+        "        rs_u8 *to_ret = malloc(new_size);\n" ^
+        "        memmove(to_ret, ptr, new_size);\n" ^
+        "        free(ptr);\n" ^
+        "        return to_ret;\n" ^
+        "    }\n" ^
         "}")
   };
   (* should this be 1? maybe... I don't think cbmc can really support this anyway,
