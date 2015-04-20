@@ -209,6 +209,7 @@ runPass config "hl-clean-drivers" (items, ix) = runPasses' config passes (items,
             , "desugar-unsize"
             , "desugar-range"
             , "desugar-index"
+            , "fix-address"
             ]
 
 runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (items, ix)

@@ -174,7 +174,8 @@ ppExpr (Expr ty e) = case e of
         inline (tell "{") (tell "}") $ mapM ppStmt stmts >> line (ppExpr expr)
     EField expr name -> ppExpr expr >> tell "." >> tell name
     EDeref expr -> tell "*" >> ppExpr expr
-    EAddrOf expr -> tell "&" >> ppExpr expr
+    EAddrOf expr ->
+        tell "&" >> (case ty of TRef _ MMut _ -> tell "mut "; _ -> return ()) >> ppExpr expr
     EIndex arr idx -> ppExpr arr >> brackets (ppExpr idx)
     ERange low high ->
         maybe (return ()) ppExpr low >>

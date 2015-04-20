@@ -467,7 +467,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
   method emit_stmt (s : Ir.stmt) =
     match s with
     | `Let (name, _ty, Some expr) -> begin
-        self#put "let ";
+        self#put "let mut ";
         self#put name;
         self#put " = ";
         self#emit_expr expr;
@@ -552,6 +552,7 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     | `Address_of e' -> begin
         self#put "&";
         (match fst e with
+        | `Ref_Mut _ -> self#put "mut "
         | `Ptr_Mut _ -> self#put "mut "
         | _ -> ());
         self#emit_expr e';
