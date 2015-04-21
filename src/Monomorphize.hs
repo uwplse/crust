@@ -93,34 +93,49 @@ data MonoCtx = MonoCtx
 
 type MonoM a = StateT MonoState (Reader MonoCtx) a
 
-monoFn :: AnyFnDef -> [Ty] -> MonoM AnyFnDef
-monoFn fd tys = populateFn (fn_name fd) $ do
+monoFn :: AnyFnDef -> [Ty] -> MonoM Name
+monoFn fd tys = populateFn mangledName $ do
     let fd' = case fd of
             FConcrete f -> FConcrete $ substFn f tys
             FAbstract _ -> error "unexpected FAbstract in monoFn'"
             FExtern f -> FExtern $ substExternFn f tys
+    when (mangledName /= fn_name fd') $
+        error $ "mangled name mismatch: " ++ mangledName ++ " /= " ++ fn_name fd'
     monoRefs fd'
+  where mangledName = mangle "f" (fn_name fd) tys
 
 monoFnName :: Name -> [Ty] -> MonoM Name
 monoFnName name tys = do
     fd <- asks $ fromMaybe (error $ "mono: no such fn: " ++ name) .
         M.lookup name . i_fns . mc_ix
-    fd' <- monoFn fd tys
-    return $ fn_name fd'
+    monoFn fd tys
 
-monoType :: TypeDef -> [Ty] -> MonoM TypeDef
-monoType td tys = populateType (ty_name td) $ do
+monoType :: TypeDef -> [Ty] -> MonoM Name
+monoType td tys = populateType mangledName $ do
     let td' = case td of
             TStruct s -> TStruct $ substStruct s tys
             TEnum e -> TEnum $ substEnum e tys
-    monoRefs td'
+    when (mangledName /= ty_name td') $
+        error $ "mangled name mismatch: " ++ mangledName ++ " /= " ++ ty_name td'
+    monoRefs =<< fixDtor td'
+  where
+    mangledName = mangle "t" (ty_name td) tys
+
+    -- Take advantage of the fact that generateDropGlues makes every drop glue
+    -- take exactly the same parameters as the type itself.
+    fixDtor (TStruct (StructDef name [] [] fs (Just dtorName))) = do
+        dtorName' <- monoFnName dtorName tys
+        return $ TStruct $ StructDef name [] [] fs (Just dtorName')
+    fixDtor (TEnum (EnumDef name [] [] vs (Just dtorName))) = do
+        dtorName' <- monoFnName dtorName tys
+        return $ TEnum $ EnumDef name [] [] vs (Just dtorName')
+    fixDtor x = return x
 
 monoTypeName :: Name -> [Ty] -> MonoM Name
 monoTypeName name tys = do
     td <- asks $ fromMaybe (error $ "mono: no such type: " ++ name) .
         M.lookup name . i_types . mc_ix
-    td' <- monoType td tys
-    return $ ty_name td'
+    monoType td tys
 
 
 -- Abstract resolution
@@ -214,18 +229,25 @@ monoRefs x = resolveTypes x >>= walk
     resolveTypes = everywhereM (mkM resolveAbstractType)
 
 
-populate getter updater name act = do
-    fns <- gets getter
-    case M.lookup name fns of
-        Just f -> return f
-        Nothing -> do
-            f <- act
-            modify (updater name f)
-            return f
+dummy name = error $ "recursive dependency on " ++ name
 
-populateFn = populate ms_fns $ \k v s -> s { ms_fns = M.insert k v $ ms_fns s }
+populateFn :: Name -> MonoM AnyFnDef -> MonoM Name
+populateFn name mk = do
+    fns <- gets ms_fns
+    when (not $ M.member name fns) $ do
+        modify $ \s -> s { ms_fns = M.insert name (dummy name) $ ms_fns s }
+        f <- mk
+        modify $ \s -> s { ms_fns = M.insert name f $ ms_fns s }
+    return name
 
-populateType = populate ms_types $ \k v s -> s { ms_types = M.insert k v $ ms_types s }
+populateType :: Name -> MonoM TypeDef -> MonoM Name
+populateType name mk = do
+    types <- gets ms_types
+    when (not $ M.member name types) $ do
+        modify $ \s -> s { ms_types = M.insert name (dummy name) $ ms_types s }
+        t <- mk
+        modify $ \s -> s { ms_types = M.insert name t $ ms_types s }
+    return name
 
 
 
@@ -260,6 +282,6 @@ runMono ix items act = items'
         goTy (TStruct s) = IStruct s
         goTy (TEnum e) = IEnum e
 
-monoTest ix is = runMono ix is $ monoFnName "trait3$g" [TUint $ BitSize 32]
+monoTest ix is = runMono ix is $ monoFnName "drop6$f" []
 --monoTest ix is = runMono ix is $ monoFnName "trait3$g" [TAdt "trait3$S" [] []]
 
