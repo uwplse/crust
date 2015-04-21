@@ -29,6 +29,7 @@ import Unify
 import DriverSpec
 import RefSeek
 import TreeShake
+import Monomorphize
 
 import Debug.Trace
 
@@ -294,6 +295,7 @@ runBasicPass ix "add-driver-crust-init" = addDriverCrustInit ix
 runBasicPass _ "id" = id
 runBasicPass _ "dump" = dumpIr "dump"
 runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
+runBasicPass ix "test" = monoTest ix
 runBasicPass _ p = error $ "unknown pass: " ++ show p
 
 whnf x = seq x x
