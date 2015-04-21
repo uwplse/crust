@@ -18,6 +18,8 @@ import Unify
 
 values = map snd . M.toList
 
+dummyRegions = map $ const "r_mono"
+
 
 -- Name mangling
 
@@ -53,7 +55,7 @@ mangle mode name tys = name ++ "__$m" ++ mode ++ show (length tys) ++ goMulti ty
 -- Basic substitution
 
 mkSubstGo lps tps tys = everywhere (mkT doSubst)
-  where doSubst = subst (lps, tps) (replicate (length lps) "r_mono", tys)
+  where doSubst = subst (lps, tps) (dummyRegions lps, tys)
 
 substFn :: FnDef -> [Ty] -> FnDef
 substFn (FnDef vis name lps tps args retTy impl preds body) tys =
@@ -86,6 +88,7 @@ data MonoState = MonoState
 data MonoCtx = MonoCtx
     { mc_ix :: Index
     , mc_fns_by_impl :: M.Map Name [FnDef]
+    , mc_types_by_impl :: M.Map Name [AssociatedTypeDef]
     }
 
 type MonoM a = StateT MonoState (Reader MonoCtx) a
@@ -131,31 +134,67 @@ buildFnsByImpl ix = M.fromListWith (++) $ mapMaybe go $ values $ i_fns ix
 resolveCall :: Name -> [Ty] -> MonoM Name
 resolveCall absName tys = do
     allImpls <- asks $ fromMaybe [] . M.lookup absName . mc_fns_by_impl
-    let goodImpls = mapMaybe (unifyImpl tys) allImpls
+    let goodImpls = mapMaybe (unifyImplFn tys) allImpls
     case goodImpls of
         [(name, tys)] -> monoFnName name tys
         [] -> error $ "no instance for " ++ absName ++ show (map (runPp . ppTy) tys)
-        _ -> error $ "multiple instances for " ++ absName ++ show (map (runPp . ppTy) tys) ++ ":" ++
+        _ -> error $
+            "multiple instances for " ++ absName ++ show (map (runPp . ppTy) tys) ++ ":" ++
             concatMap (\(name, ty) -> "\n" ++ name ++ show (map (runPp . ppTy) tys)) goodImpls
 
-unifyImpl :: [Ty] -> FnDef -> Maybe (Name, [Ty])
-unifyImpl tys (FnDef _ name _ tps _ _ (Just (ImplClause _ _ implTas)) _ _) = do
+
+buildTypesByImpl :: [Item] -> M.Map Name [AssociatedTypeDef]
+buildTypesByImpl items = M.fromListWith (++) $ mapMaybe go items
+  where
+    go (IAssociatedType td@(AssociatedTypeDef _ _ (ImplClause name _ _) _)) = Just (name, [td])
+    go _ = Nothing
+
+resolveAbstractType :: Ty -> MonoM Ty
+resolveAbstractType (TAbstract absName _ tys) = do
+    allImpls <- asks $ fromMaybe [] . M.lookup absName . mc_types_by_impl
+    let goodImpls = mapMaybe (unifyImplType tys) allImpls
+    case goodImpls of
+        -- Abstract type impl may itself include abstract types, so operate
+        -- recursively.
+        [ty] -> everywhereM (mkM resolveAbstractType) ty
+        [] -> error $ "no instance for " ++ absName ++ show (map (runPp . ppTy) tys)
+        _ -> error $
+            "multiple instances for " ++ absName ++ show (map (runPp . ppTy) tys) ++ ":" ++
+            concatMap (\ty -> "\n" ++ runPp (ppTy ty)) goodImpls
+resolveAbstractType ty = return ty
+
+
+unifyImplFn :: [Ty] -> FnDef -> Maybe (Name, [Ty])
+unifyImplFn tys (FnDef _ name _ tps _ _ (Just impl) _ _) = do
+    tyArgs <- unifyImpl tps impl tys
+    return (name, tyArgs)
+
+unifyImplType :: [Ty] -> AssociatedTypeDef -> Maybe Ty
+unifyImplType tys (AssociatedTypeDef lps tps impl concreteTy) = do
+    tyArgs <- unifyImpl tps impl tys
+    return $ subst (lps, tps) (dummyRegions lps, tyArgs) concreteTy
+
+unifyImpl :: [TyParam] -> ImplClause -> [Ty] -> Maybe [Ty]
+unifyImpl tps (ImplClause _ _ implTas) tys = do
     let (uty, intern) = toUTy (TTuple implTas)
     result <- case unify uty (TTuple tys) of
         [x] -> Just x
         [] -> Nothing
         xs -> error "unexpected: multiple unify results"
-    let tyArgs = flip map tps $ \param ->
+    return $ flip map tps $ \param ->
             case M.lookup param intern of
                 Just i -> getUnifiedArg result i
                 Nothing -> TUnit
-    return (name, tyArgs)
+
+
+
 
 
 -- Full recursive monomorphization
 
 -- TODO: struct/enum dtors
-monoRefs x = walk x
+monoRefs :: Data d => d -> MonoM d
+monoRefs x = resolveTypes x >>= walk
   where
     walk :: Data d => d -> MonoM d
     walk = gmapM walk `extM` goExpr `extM` goTy
@@ -170,6 +209,9 @@ monoRefs x = walk x
         name' <- monoTypeName name tys
         return $ TAdt name' [] []
     goTy t = gmapM walk t
+
+
+    resolveTypes = everywhereM (mkM resolveAbstractType)
 
 
 populate getter updater name act = do
@@ -187,11 +229,12 @@ populateType = populate ms_types $ \k v s -> s { ms_types = M.insert k v $ ms_ty
 
 
 
-runMono :: Index -> MonoM a -> [Item]
-runMono ix act = items
+runMono :: Index -> [Item] -> MonoM a -> [Item]
+runMono ix items act = items'
   where
     fnsByImpl = buildFnsByImpl ix
-    ctx = MonoCtx ix fnsByImpl
+    typesByImpl = buildTypesByImpl items
+    ctx = MonoCtx ix fnsByImpl typesByImpl
 
     consts = i_consts ix
     statics = i_statics ix
@@ -205,7 +248,7 @@ runMono ix act = items
     act'' = runStateT act' $ MonoState M.empty M.empty
     ((consts', statics'), ms) = runReader act'' ctx
 
-    items = reconstruct (values $ ms_fns ms) (values $ ms_types ms) consts' statics'
+    items' = reconstruct (values $ ms_fns ms) (values $ ms_types ms) consts' statics'
 
     reconstruct fns tys consts statics =
         map goFn fns ++ map goTy tys ++ map IConst consts ++ map IStatic statics
@@ -217,6 +260,6 @@ runMono ix act = items
         goTy (TStruct s) = IStruct s
         goTy (TEnum e) = IEnum e
 
---monoTest ix is = runMono ix $ monoFnName "trait3$g" [TUint $ BitSize 32]
-monoTest ix is = runMono ix $ monoFnName "trait3$g" [TAdt "trait3$S" [] []]
+monoTest ix is = runMono ix is $ monoFnName "trait3$g" [TUint $ BitSize 32]
+--monoTest ix is = runMono ix is $ monoFnName "trait3$g" [TAdt "trait3$S" [] []]
 
