@@ -56,6 +56,7 @@ data Config = Config
     , c_merged_filter_file :: Maybe String
     , c_filter_file :: String
     , c_passes :: [String]
+    , c_trace_passes :: Bool
     }
 
 defaultConfig = Config
@@ -66,6 +67,7 @@ defaultConfig = Config
     , c_merged_filter_file = Nothing
     , c_filter_file = ""
     , c_passes = []
+    , c_trace_passes = False
     }
 
 readArgs config args = go args config
@@ -83,6 +85,7 @@ readArgs config args = go args config
     go ("--passes" : passes : args) config = go args $
         config { c_passes = words $ map (\c -> case c of ',' -> ' '; c -> c) passes
                , c_mode = MRunPasses }
+    go ("--trace-passes" : args) config = go args $ config { c_trace_passes = True }
     go [] config = config
 
 main = do
@@ -167,8 +170,16 @@ main = do
 runPasses config passes items =
     fst <$> runPasses' config passes (items, mkIndex items)
 
-runPasses' config passes (items, ix) =
-    foldM (\a b -> whnfList (fst a) `seq` runPass config (trace b b) a) (items, ix) passes
+runPasses' config passes (items, ix) = do
+    tracePass config 0 "init" (items, ix)
+    foldM (\(is,ix) (i,p) -> whnfList is `seq`
+        runPass config (trace p p) (is, ix) >>= tracePass config i p)
+        (items, ix) (zip [1..] passes)
+
+tracePass (Config { c_trace_passes = shouldTrace }) idx pass (items, ix) = do
+    when shouldTrace $
+        writeFile ("pptrace-" ++ show idx ++ "-" ++ pass ++ ".ir") $ concatMap pp items
+    return (items, ix)
 
 runPass _ "reindex" (items, _) = return (items, mkIndex items)
 runPass config "generate-drivers" (items, ix) = do
@@ -198,12 +209,13 @@ runPass config "hl-generate-drivers" (items, ix) = runPasses' config passes (ite
             , "reindex"
             , "scrub"
             , "generate-drivers"
-            , "shake-tree"
+            -- TODO: fix this: , "shake-tree"
             ]
 
 runPass config "hl-clean-drivers" (items, ix) = runPasses' config passes (items, ix)
   where passes =
             [ "filter-extern-fns"
+            , "desugar-arg-patterns"
             , "desugar-pattern-lets"
             , "const-expand"
             , "desugar-unsize"
@@ -238,6 +250,7 @@ runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (item
             , "fix-if"
             , "const-expand"
             , "lift-temps"
+            , "reindex"
             , "rename-locals"
             , "add-cleanup"
             , "rename-locals"

@@ -64,4 +64,6 @@ withCollectedRefs ix mkBody input = evalState (go [] [input]) 0
     fresh base = do
         idx <- get
         modify (+1)
-        return $ "vr_" ++ base ++ "_" ++ show idx
+        return $ "vr_" ++ clean base ++ "_" ++ show idx
+
+    clean name = map (\c -> case c of '$' -> '_'; _ -> c) name

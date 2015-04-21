@@ -50,7 +50,7 @@ type instrinsic = {
 (* 0th element: intrinsic name, 1st element: macro suffix *)
 let a_ops = [ ("sub", "SUB"); ("mul", "MUL"); ("add", "ADD") ];;
 (* yeeeeep... *)
-let arith_intrinsics = List.flatten
+let arith_intrinsics0 = List.flatten
   @@ List.flatten
   @@ List.map (fun size ->
       List.map (fun (i_name, macro_name) ->
@@ -64,6 +64,21 @@ let arith_intrinsics = List.flatten
             ) [ ("u", "UNSIGNED"); ("i", "SIGNED") ]
         ) a_ops
     ) [ 8; 16; 32; 64 ]
+
+let arith_intrinsics1 =
+  List.flatten
+  @@ List.map (fun (i_name, macro_name) ->
+      List.map (fun (i_pref, macro_prefix) ->
+          let f_name = Printf.sprintf "core$intrinsics$overflowing_%s" i_name in
+          {
+            i_name = f_name;
+            i_params = ["t1" ];
+            i_body = Macro (Printf.sprintf "{t1}_%s_with_overflow" i_name)
+          }
+        ) [ ("u", "UNSIGNED"); ("i", "SIGNED") ]
+    ) a_ops
+
+let arith_intrinsics = arith_intrinsics0 @ arith_intrinsics1
 
 let i_list = arith_intrinsics @ [
   {

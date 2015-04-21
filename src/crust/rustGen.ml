@@ -487,11 +487,18 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     self#put ",";
 
   method emit_pattern (p : Ir.pattern) =
+    let variant_name ty variant_name =
+        match ty with
+        | (`Adt_type { Types.type_name = enum_name; _ }) ->
+            unmangle_name enum_name ^ "::" ^
+                Str.string_after variant_name (1 + String.rindex variant_name '$')
+        | _ -> raise (Unexpected "ty for enum variant")
+    in
     match snd p with
     | `Bind name -> self#put name
-    | `Enum (variant, _, []) -> self#put variant
+    | `Enum (variant, _, []) -> self#put (variant_name (fst p) variant)
     | `Enum (variant, _, pats) -> begin
-        self#put variant;
+        self#put (variant_name (fst p) variant);
         self#put "(";
         self#put_many ", " self#emit_pattern pats;
         self#put ")";

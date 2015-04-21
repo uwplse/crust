@@ -310,7 +310,7 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
                 tell [SLet (Pattern ty $ PVar $ "copy" ++ show i) (Just expr)]
                 modify $ \(x, y) -> (x, M.insert i ty y)
                 return ty
-        return $ Expr TBottom $ EVar $ "copy" ++ show i
+        return $ Expr ty $ EVar $ "copy" ++ show i
 
 
     tupleFieldTy idx (TTuple tys) = tys !! idx

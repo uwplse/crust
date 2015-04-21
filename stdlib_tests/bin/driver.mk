@@ -9,6 +9,7 @@ CRUST_NATIVE ?= $(CRUST_HOME)/bin/crust.native
 TEST_HOME ?= .
 SRC ?= $(TEST_HOME)/src
 FILTERS ?= $(TEST_HOME)/filters
+ZEALOT ?= python $(TEST_HOME)/bin/zealot.py
 
 
 STDLIBS = core libc alloc unicode collections
@@ -87,7 +88,7 @@ test/%_0.rs: driver/%.drv
 	cat $< | $(CRUST_NATIVE) -driver-gen -test-case-prefix test/$*
 
 test/%_0.drv.ir: test/%_0.rs lib/lib__crust.rlib
-	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
+	$(ZEALOT) $(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
 test/%_0.drv-pp.ir: test/%_0.drv.ir driver/%.drv0
