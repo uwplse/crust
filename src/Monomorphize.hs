@@ -13,7 +13,13 @@ import qualified Data.Set as S
 
 import Index
 import Parser
+import Pprint
+import Unify
 
+values = map snd . M.toList
+
+
+-- Name mangling
 
 mangle mode name tys = name ++ "__$m" ++ mode ++ show (length tys) ++ goMulti tys
   where goMulti tys = concatMap (\t -> '_' : go t) tys
@@ -43,6 +49,9 @@ mangle mode name tys = name ++ "__$m" ++ mode ++ show (length tys) ++ goMulti ty
         goSize PtrSize = "ptr"
 
 
+
+-- Basic substitution
+
 mkSubstGo lps tps tys = everywhere (mkT doSubst)
   where doSubst = subst (lps, tps) (replicate (length lps) "r_mono", tys)
 
@@ -67,6 +76,8 @@ substEnum (EnumDef name lps tps variants dtor) tys =
   where go = mkSubstGo lps tps tys
 
 
+-- Single-item monomorphization
+
 data MonoState = MonoState
     { ms_fns :: M.Map Name AnyFnDef
     , ms_types :: M.Map Name TypeDef
@@ -74,6 +85,7 @@ data MonoState = MonoState
 
 data MonoCtx = MonoCtx
     { mc_ix :: Index
+    , mc_fns_by_impl :: M.Map Name [FnDef]
     }
 
 type MonoM a = StateT MonoState (Reader MonoCtx) a
@@ -107,18 +119,57 @@ monoTypeName name tys = do
     td' <- monoType td tys
     return $ ty_name td'
 
--- TODO: struct/enum dtors
-monoRefs x = everywhereM (mkM goExpr `extM` goTy) x
+
+-- Abstract resolution
+
+buildFnsByImpl :: Index -> M.Map Name [FnDef]
+buildFnsByImpl ix = M.fromListWith (++) $ mapMaybe go $ values $ i_fns ix
   where
+    go (FConcrete fd@(FnDef _ _ _ _ _ _ (Just (ImplClause name _ _)) _ _)) = Just (name, [fd])
+    go _ = Nothing
+
+resolveCall :: Name -> [Ty] -> MonoM Name
+resolveCall absName tys = do
+    allImpls <- asks $ fromMaybe [] . M.lookup absName . mc_fns_by_impl
+    let goodImpls = mapMaybe (unifyImpl tys) allImpls
+    case goodImpls of
+        [(name, tys)] -> monoFnName name tys
+        [] -> error $ "no instance for " ++ absName ++ show (map (runPp . ppTy) tys)
+        _ -> error $ "multiple instances for " ++ absName ++ show (map (runPp . ppTy) tys) ++ ":" ++
+            concatMap (\(name, ty) -> "\n" ++ name ++ show (map (runPp . ppTy) tys)) goodImpls
+
+unifyImpl :: [Ty] -> FnDef -> Maybe (Name, [Ty])
+unifyImpl tys (FnDef _ name _ tps _ _ (Just (ImplClause _ _ implTas)) _ _) = do
+    let (uty, intern) = toUTy (TTuple implTas)
+    result <- case unify uty (TTuple tys) of
+        [x] -> Just x
+        [] -> Nothing
+        xs -> error "unexpected: multiple unify results"
+    let tyArgs = flip map tps $ \param ->
+            case M.lookup param intern of
+                Just i -> getUnifiedArg result i
+                Nothing -> TUnit
+    return (name, tyArgs)
+
+
+-- Full recursive monomorphization
+
+-- TODO: struct/enum dtors
+monoRefs x = walk x
+  where
+    walk :: Data d => d -> MonoM d
+    walk = gmapM walk `extM` goExpr `extM` goTy
+
     goExpr (ECall name _ tys args) = do
-        name' <- monoFnName name tys
-        return $ ECall name' [] [] args
-    goExpr e = return e
+        name' <- resolveCall name tys
+        args' <- mapM walk args
+        return $ ECall name' [] [] args'
+    goExpr e = gmapM walk e
 
     goTy (TAdt name _ tys) = do
         name' <- monoTypeName name tys
         return $ TAdt name' [] []
-    goTy t = return t
+    goTy t = gmapM walk t
 
 
 populate getter updater name act = do
@@ -139,10 +190,11 @@ populateType = populate ms_types $ \k v s -> s { ms_types = M.insert k v $ ms_ty
 runMono :: Index -> MonoM a -> [Item]
 runMono ix act = items
   where
+    fnsByImpl = buildFnsByImpl ix
+    ctx = MonoCtx ix fnsByImpl
+
     consts = i_consts ix
     statics = i_statics ix
-
-    values = map snd . M.toList
 
     act' = do
         act
@@ -151,7 +203,7 @@ runMono ix act = items
         return (consts', statics')
 
     act'' = runStateT act' $ MonoState M.empty M.empty
-    ((consts', statics'), ms) = runReader act'' $ MonoCtx ix
+    ((consts', statics'), ms) = runReader act'' ctx
 
     items = reconstruct (values $ ms_fns ms) (values $ ms_types ms) consts' statics'
 
@@ -165,4 +217,6 @@ runMono ix act = items
         goTy (TStruct s) = IStruct s
         goTy (TEnum e) = IEnum e
 
-monoTest ix is = runMono ix $ monoFnName "generics2$crust_init" []
+--monoTest ix is = runMono ix $ monoFnName "trait3$g" [TUint $ BitSize 32]
+monoTest ix is = runMono ix $ monoFnName "trait3$g" [TAdt "trait3$S" [] []]
+
