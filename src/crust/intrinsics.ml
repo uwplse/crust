@@ -73,7 +73,7 @@ let arith_intrinsics1 =
           {
             i_name = f_name;
             i_params = ["t1" ];
-            i_body = Macro (Printf.sprintf "{t1}_%s_with_overflow" i_name)
+            i_body = Inline (Printf.sprintf "{t1}_%s_with_overflow({arg1}, {arg2})" i_name)
           }
         ) [ ("u", "UNSIGNED"); ("i", "SIGNED") ]
     ) a_ops
@@ -195,7 +195,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$copy";
     i_params = [ "t1" ];
-    i_body = Inline ("(memmove({arg1}, {arg2}, {arg3} * sizeof({t1}))," ^ CRep.literal_unit_name ^ ")")
+    i_body = Inline ("(memmove({arg2}, {arg1}, {arg3} * sizeof({t1}))," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "core$ptr$read";
@@ -205,7 +205,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$copy_nonoverlapping";
     i_params = [ "t1" ];
-    i_body = Template ("rs_unit {mname}({t1}* dst_r, const {t1}* src_r, size_t n_elem) {\n" ^
+    i_body = Template ("rs_unit {mname}(const {t1}* src_r, {t1}* dst_r, size_t n_elem) {\n" ^
                        "\t size_t n = 0;\n" ^
                        "\t rs_u8 *dst = (rs_u8* )dst_r;\n" ^
                        "\t rs_u8 *src = (rs_u8* )src_r;\n" ^

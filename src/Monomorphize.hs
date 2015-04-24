@@ -7,14 +7,18 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Generics
+import Data.List (sortBy)
 import qualified Data.Map as M
 import Data.Maybe
+import Data.Ord (comparing)
 import qualified Data.Set as S
 
 import Index
 import Parser
 import Pprint
 import Unify
+
+import Debug.Trace
 
 values = map snd . M.toList
 
@@ -97,7 +101,7 @@ monoFn :: AnyFnDef -> [Ty] -> MonoM Name
 monoFn fd tys = populateFn mangledName $ do
     let fd' = case fd of
             FConcrete f -> FConcrete $ substFn f tys
-            FAbstract _ -> error "unexpected FAbstract in monoFn'"
+            FAbstract _ -> error $ "unexpected FAbstract in monoFn:" ++ mangledName
             FExtern f -> FExtern $ substExternFn f tys
     when (mangledName /= fn_name fd') $
         error $ "mangled name mismatch: " ++ mangledName ++ " /= " ++ fn_name fd'
@@ -148,14 +152,39 @@ buildFnsByImpl ix = M.fromListWith (++) $ mapMaybe go $ values $ i_fns ix
 
 resolveCall :: Name -> [Ty] -> MonoM Name
 resolveCall absName tys = do
-    allImpls <- asks $ fromMaybe [] . M.lookup absName . mc_fns_by_impl
-    let goodImpls = mapMaybe (unifyImplFn tys) allImpls
-    case goodImpls of
+    fnsByImpl <- asks mc_fns_by_impl
+    if not $ M.member absName fnsByImpl then monoFnName absName tys else do
+    let goodImpls = mapMaybe (unifyImplFn tys) $ fnsByImpl M.! absName
+    case takeMostSpecific goodImpls of
         [(name, tys)] -> monoFnName name tys
         [] -> error $ "no instance for " ++ absName ++ show (map (runPp . ppTy) tys)
         _ -> error $
             "multiple instances for " ++ absName ++ show (map (runPp . ppTy) tys) ++ ":" ++
-            concatMap (\(name, ty) -> "\n" ++ name ++ show (map (runPp . ppTy) tys)) goodImpls
+            concatMap (\(name, tys) -> "\n" ++ name ++ show (map (runPp . ppTy) tys)) goodImpls
+
+typeSize ty = case ty of
+    TVar _ -> 1
+    TAdt _ _ tys -> 1 + maximum (map typeSize tys)
+    TTuple tys -> 1 + maximum (map typeSize tys)
+    TRef _ _ ty -> 1 + typeSize ty
+    TPtr _ ty -> 1 + typeSize ty
+    TStr -> 1
+    TVec ty -> 1 + typeSize ty
+    TFixedVec _ ty -> 1 + typeSize ty
+    TInt _ -> 1
+    TUint _ -> 1
+    TFloat _ -> 1
+    TBool -> 1
+    TChar -> 1
+    TFn -> 1
+    TUnit -> 1
+    TBottom -> 1
+    TAbstract _ _ tys -> 1 + maximum (map typeSize tys)
+
+takeMostSpecific :: [(Name, [Ty])] -> [(Name, [Ty])]
+takeMostSpecific impls = takeWhile (\i -> implCost i == implCost (head sorted)) sorted
+  where implCost = sum . map typeSize . snd
+        sorted = sortBy (comparing implCost) impls
 
 
 buildTypesByImpl :: [Item] -> M.Map Name [AssociatedTypeDef]
@@ -214,11 +243,22 @@ monoRefs x = resolveTypes x >>= walk
     walk :: Data d => d -> MonoM d
     walk = gmapM walk `extM` goExpr `extM` goTy
 
-    goExpr (ECall name _ tys args) = do
-        name' <- resolveCall name tys
-        args' <- mapM walk args
-        return $ ECall name' [] [] args'
+    -- TODO: hack to pass off drop_glue handling to crust.native
+    goExpr e@(ECall "drop_glue" _ _ _) = gmapM walk e
+    goExpr e@(ECall name _ tys args) = do
+        exists <- checkFnExists name
+        if not exists then
+            return e
+        else do
+            name' <- resolveCall name tys
+            args' <- mapM walk args
+            return $ ECall name' [] [] args'
     goExpr e = gmapM walk e
+
+    checkFnExists name = do
+        concrete <- asks $ M.member name . i_fns . mc_ix
+        abstract <- asks $ M.member name . mc_fns_by_impl
+        return $ concrete || abstract
 
     goTy (TAdt name _ tys) = do
         name' <- monoTypeName name tys
@@ -282,6 +322,8 @@ runMono ix items act = items'
         goTy (TStruct s) = IStruct s
         goTy (TEnum e) = IEnum e
 
-monoTest ix is = runMono ix is $ monoFnName "drop6$f" []
---monoTest ix is = runMono ix is $ monoFnName "trait3$g" [TAdt "trait3$S" [] []]
 
+-- Monomorphize recursively starting from the named (non-polymorphic)
+-- functions.
+monomorphize :: Index -> [Name] -> [Item] -> [Item]
+monomorphize ix roots items = runMono ix items $ mapM (\n -> monoFnName n []) roots

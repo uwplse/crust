@@ -295,7 +295,8 @@ runBasicPass ix "add-driver-crust-init" = addDriverCrustInit ix
 runBasicPass _ "id" = id
 runBasicPass _ "dump" = dumpIr "dump"
 runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
-runBasicPass ix "test" = monoTest ix
+runBasicPass ix "monomorphize-from-driver-root" = monomorphize ix ["_$crust_init"]
+runBasicPass _ "strip-drop-glue-impls" = stripDropGlueImpls
 runBasicPass _ p = error $ "unknown pass: " ++ show p
 
 whnf x = seq x x
@@ -319,6 +320,13 @@ intrinsicFns = [nondet, assume, assert, unreachable, dropGlue]
 
     dropGlue = IAbstractFn $ AbstractFnDef "drop_glue" [] ["T"]
                     [ArgDecl (Pattern (TRef "r_anon" MMut $ TVar "T") $ PVar "self")] TUnit
+
+
+stripDropGlueImpls items = map go items
+  where
+    go (IFn (FnDef v n lps tps as ret (Just (ImplClause "drop_glue" _ _)) ps b)) =
+        IFn (FnDef v n lps tps as ret Nothing ps b)
+    go i = i
 
 
 addDriverCrustInit ix items = fn : items

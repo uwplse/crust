@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use rustc::metadata::csearch;
 use rustc::middle::astencode;
+use rustc::middle::const_eval;
 use rustc::middle::def;
 use rustc::middle::region;
 use rustc::middle::subst::ParamSpace::*;
@@ -624,10 +625,19 @@ impl Trans for Expr {
                 format!("while ([bool] simple_literal true) [unit] {}",
                         body.trans(trcx)),
 
-            ExprMatch(ref expr, ref arms, _src) =>
+            ExprMatch(ref expr, ref arms, _src) => {
+                let mut arm_strs = vec![];
+                for arm in arms.iter() {
+                    for pat in arm.pats.iter() {
+                        arm_strs.push(format!("{{ {} >> {} }}",
+                                              pat.trans(trcx),
+                                              arm.body.trans(trcx)));
+                    }
+                }
                 format!("match {} {}",
                         expr.trans(trcx),
-                        arms.trans(trcx)),
+                        arm_strs.trans(trcx))
+            },
 
             ExprClosure(..) => panic!("unsupported ExprClosure"),
 
@@ -674,7 +684,7 @@ impl Trans for Expr {
                             },
                             ty::FnDiverging => panic!("unexpected FnDiverging"),
                         };
-                        let result_ty = trcx.tcx.node_types()[&idx.id];
+                        let result_ty = trcx.tcx.node_types()[&self.id];
                         let result_ptr_ty = auto_ref_ty(trcx, self, Some(mutbl), result_ty);
                         format!("deref ({} {})",
                                 result_ptr_ty.trans(trcx),
@@ -962,13 +972,7 @@ fn find_variant(trcx: &mut TransCtxt, id: NodeId) -> Option<(String, usize)> {
 impl Trans for Lit {
     fn trans(&self, trcx: &mut TransCtxt) -> String {
         match self.node {
-            LitStr(ref s, ref style) => {
-                let mut result = String::from_str("str_");
-                for b in s.bytes() {
-                    result.push_str(&*format!("{:02x}", b));
-                }
-                result
-            },
+            LitStr(ref s, ref style) => print_str_lit(s.bytes()),
             // LitBinary
             LitByte(b) => format!("{}", b),
             LitChar(c) => format!("{}", c as u32),
@@ -978,16 +982,6 @@ impl Trans for Lit {
             LitBool(b) => format!("{}", b),
             _ => panic!("unrecognized Lit_ variant"),
         }
-    }
-}
-
-impl Trans for Arm {
-    fn trans(&self, trcx: &mut TransCtxt) -> String {
-        assert!(self.pats.len() == 1);
-        assert!(self.guard.is_none());
-        format!("{{ {} >> {} }}",
-                self.pats[0].trans(trcx),
-                self.body.trans(trcx))
     }
 }
 
@@ -1028,7 +1022,16 @@ impl TransExtra<String> for Pat {
             PatTup(ref args) => format!("tuple {}", args.trans(trcx)),
             PatRegion(ref pat, _mutbl) => format!("addr_of {}", pat.trans(trcx)),
             // NB: For PatLit, we skip the code below that adds the pattern type.
-            PatLit(ref expr) => return expr.trans(trcx),
+            PatLit(ref expr) =>
+                match const_eval::eval_const_expr(trcx.tcx, expr) {
+                    const_eval::const_float(f) => format!("simple_literal {}", f),
+                    const_eval::const_int(i) => format!("simple_literal {}", i),
+                    const_eval::const_uint(i) => format!("simple_literal {}", i),
+                    const_eval::const_str(s) => format!("simple_literal {}",
+                                                        print_str_lit(s.bytes())),
+                    const_eval::const_bool(b) => format!("simple_literal {}", b as u8),
+                    _ => panic!("unhandled const_val variant"),
+                },
             _ => panic!("unhandled Pat_ variant"),
         };
 
@@ -1749,6 +1752,14 @@ fn print_abstract_type_decls(trcx: &mut TransCtxt) {
                     types.trans(trcx))
         }, &*name));
     }
+}
+
+fn print_str_lit<I: Iterator<Item=u8>>(bytes: I) -> String {
+    let mut result = String::from_str("str_");
+    for b in bytes {
+        result.push_str(&*format!("{:02x}", b));
+    }
+    result
 }
 
 

@@ -31,12 +31,14 @@ generateDropGlues items =
 
 dropGlueName name = name ++ "$__drop_glue"
 
-mkDropGlue ix ty = FnDef Private (dropGlueName $ ty_name ty) lifetimes tyParams [argDecl] TUnit Nothing [] body
+mkDropGlue ix ty = FnDef Private (dropGlueName $ ty_name ty) lifetimes tyParams [argDecl]
+        TUnit (Just implClause) [] body
   where
     lifetimes = ty_lifetimeParams ty
     tyParams = ty_tyParams ty
     tyArgs = map TVar tyParams
-    argTy = TPtr MMut $ TAdt (ty_name ty) lifetimes tyArgs
+    selfTy = TAdt (ty_name ty) lifetimes tyArgs
+    argTy = TPtr MMut selfTy
     argDecl = ArgDecl $ Pattern argTy $ PVar "self"
     argUse = mkE ix $ var argTy "self"
 
@@ -48,6 +50,8 @@ mkDropGlue ix ty = FnDef Private (dropGlueName $ ty_name ty) lifetimes tyParams 
         TEnum x -> enumGlueCalls argTy
 
     body = mkE ix $ block (dtorCall ++ glueCalls) unit
+
+    implClause = ImplClause "drop_glue" lifetimes [selfTy]
 
 structGlueCalls selfTy = (:[]) $ do
     self <- deref (var selfTy "self")

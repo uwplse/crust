@@ -117,11 +117,9 @@ let resolve_abstract_fn =
         Some l
     | _ -> assert false
   in
-  let mk_targs tb1 tb2 t_param = 
-    if List.mem_assoc t_param tb1 then
-      List.assoc t_param tb1
-    else if List.mem_assoc t_param tb2 then
-      List.assoc t_param tb2
+  let mk_targs tb t_param = 
+    if List.mem_assoc t_param tb then
+      List.assoc t_param tb
     else `Bottom (* awful *)
   in
   fun abstract_name type_args param_args ->
@@ -135,11 +133,11 @@ let resolve_abstract_fn =
           in
           let fn_typarams = impl_def.Ir.fn_tparams in
           let arg_types = List.map snd impl_def.Ir.fn_args in
-          match (match_types true param_args arg_types),(match_types false type_args impl_types) with
-          | (Some tb1),(Some tb2) ->
-            let type_args = List.map (mk_targs tb1 tb2) fn_typarams in
+          match match_types false type_args impl_types with
+          | Some tb ->
+            let type_args = List.map (mk_targs tb) fn_typarams in
             (type_args,fn_name)::accum
-          | _,_ -> accum
+          | None -> accum
         ) [] abstract_impls 
     in
     match possible_insts with 
