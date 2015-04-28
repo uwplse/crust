@@ -58,13 +58,45 @@ data DriverExpr = DE
 
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
 genDrivers ix limit lib constr =
-    mkDriverTrees ix limit lib constr >>= addMutCalls ix limit constr >>= addCopies
+    let lib' = filter (not . isUnsafe) lib
+        unsafeLib = filter hasUnsafe lib'
+        unsafeRefLib = filter producesRef unsafeLib
+
+        drivers1 = mkDriverTrees ix limit unsafeLib constr
+        drivers2 = mkDriverTreePairs ix limit unsafeRefLib constr
+    in  traceShow ("lib sizes", length lib, length lib', length unsafeLib, length unsafeRefLib) $
+        traceShow ("orig", map (\(a,_,_) -> a) lib) $
+        traceShow ("safe", map (\(a,_,_) -> a) lib') $
+        traceShow ("has unsafe", map (\(a,_,_) -> a) unsafeLib) $
+        traceShow ("produces ref", map (\(a,_,_) -> a) unsafeRefLib) $
+        (drivers1 ++ drivers2) >>= addMutCalls ix limit constr >>= addCopies
+  where
+    isUnsafe (f, _, _) = case i_fns ix M.! f of
+        FConcrete (FnDef _ _ _ _ _ _ _ _ (Expr _ (EUnsafe _ _))) ->
+            traceShow ("fn is unsafe", f) True
+        FExtern _ -> traceShow ("fn is unsafe", f) $True
+        _ -> False
+
+    hasUnsafe (f, _, _) = case i_fns ix M.! f of
+        FConcrete (FnDef _ _ _ _ _ _ _ _ body) ->
+            let check (EUnsafe _ _) = True
+                check _ = False
+            in everything (||) (False `mkQ` check) body || traceShow ("fn has no unsafe", f) False
+        _ -> traceShow ("fn has no unsafe (not concrete)", f) False
+
+    producesRef (f, _, retTy) = hasRef ix retTy || traceShow ("fn produces no ref", f) False
 
 mkDriverTrees :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
 mkDriverTrees ix limit lib constr = do
     (name, argTys, retTy) <- lib
     tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) (getTyParams ix name)
     genCall ix (limit + 1) constr name argTys tyArgs DECall
+
+mkDriverTreePairs :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
+mkDriverTreePairs ix limit lib constr = do
+    a <- mkDriverTrees ix limit lib constr
+    b <- mkDriverTrees ix limit lib constr
+    return $ DETupleIntro [a, b]
 
 genCall :: Index -> Int -> [FnDesc] -> Name -> [Ty] -> [Ty] ->
     (Name -> [Ty] -> [DriverTree] -> DriverTree) -> [DriverTree]

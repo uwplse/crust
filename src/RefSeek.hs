@@ -67,3 +67,19 @@ withCollectedRefs ix mkBody input = evalState (go [] [input]) 0
         return $ "vr_" ++ clean base ++ "_" ++ show idx
 
     clean name = map (\c -> case c of '$' -> '_'; _ -> c) name
+
+hasRef :: Index -> Ty -> Bool
+hasRef ix ty = case ty of
+    TVar _ -> False
+    TAdt name las tas -> case i_types ix M.! name of
+        TStruct (StructDef _ lps tps fields _) ->
+            let fieldTys = map (\(FieldDef _ ty) -> ty) fields
+                fieldTys' = map (subst (lps, tps) (las, tas)) fieldTys
+            in any (hasRef ix) fieldTys'
+        TEnum (EnumDef _ lps tps variants _) ->
+            let argTys = concatMap (\(VariantDef _ tys) -> tys) variants
+                argTys' = map (subst (lps, tps) (las, tas)) argTys
+            in any (hasRef ix) argTys'
+    TTuple tys -> any (hasRef ix) tys
+    TRef _ _ _ -> True
+    _ -> False  -- There may be refs, but withCollectedRefs can't find them.
