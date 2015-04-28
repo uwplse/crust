@@ -55,28 +55,33 @@ let arith_intrinsics0 = List.flatten
   @@ List.map (fun size ->
       List.map (fun (i_name, macro_name) ->
           List.map (fun (i_pref, macro_prefix) ->
-              let f_name = Printf.sprintf "core$intrinsics$%s%d_%s_with_overflow" i_pref size i_name in
+              let f_name = Printf.sprintf "core$intrinsics$%s%s_%s_with_overflow" i_pref size i_name in
               {
                 i_name = f_name;
                 i_params = [];
-                i_body = Macro (Printf.sprintf "%s_%s(%d)" macro_prefix macro_name size)
+                i_body = Macro (Printf.sprintf "%s_%s(%s)" macro_prefix macro_name size)
               }
             ) [ ("u", "UNSIGNED"); ("i", "SIGNED") ]
         ) a_ops
-    ) [ 8; 16; 32; 64 ]
+    ) [ "8"; "16"; "32"; "64"; "size" ]
 
-let arith_intrinsics1 =
-  List.flatten
-  @@ List.map (fun (i_name, macro_name) ->
-      List.map (fun (i_pref, macro_prefix) ->
-          let f_name = Printf.sprintf "core$intrinsics$overflowing_%s" i_name in
-          {
-            i_name = f_name;
-            i_params = ["t1" ];
-            i_body = Inline (Printf.sprintf "{t1}_%s_with_overflow({arg1}, {arg2})" i_name)
-          }
-        ) [ ("u", "UNSIGNED"); ("i", "SIGNED") ]
-    ) a_ops
+let arith_intrinsics1 = [
+    {
+        i_name = "core$intrinsics$overflowing_add";
+        i_params = ["t1"];
+        i_body = Inline ("(({t1})((uint64_t)({arg1}) + (uint64_t)({arg2})))")
+    };
+    {
+        i_name = "core$intrinsics$overflowing_sub";
+        i_params = ["t1"];
+        i_body = Inline ("(({t1})((uint64_t)({arg1}) - (uint64_t)({arg2})))")
+    };
+    {
+        i_name = "core$intrinsics$overflowing_mul";
+        i_params = ["t1"];
+        i_body = Inline ("(({t1})((uint64_t)({arg1}) * (uint64_t)({arg2})))")
+    };
+]
 
 let arith_intrinsics = arith_intrinsics0 @ arith_intrinsics1
 
@@ -112,6 +117,15 @@ let i_list = arith_intrinsics @ [
     i_body = Template ("{u1} {mname}({t1} to_trans) {\n" ^
                        "\t union { {t1} source; {u1} dest; } _cast_temp;\n"^
                        "\t _cast_temp.source = to_trans;\n" ^
+                       "\t return _cast_temp.dest;" ^
+                       "}")
+  };
+  {
+    i_name = "core$intrinsics$transmute_copy";
+    i_params = [ "t1"; "u1" ];
+    i_body = Template ("{u1} {mname}({t1} const * to_trans) {\n" ^
+                       "\t union { {t1} source; {u1} dest; } _cast_temp;\n"^
+                       "\t _cast_temp.source = *to_trans;\n" ^
                        "\t return _cast_temp.dest;" ^
                        "}")
   };

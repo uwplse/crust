@@ -65,7 +65,7 @@
 	if(((b > 0) && (a > (INT##width##_MAX - b))) || ((b < 0) && (a < (INT##width##_MIN - b)))) { \
 	  __crust_signed_fail(width);										\
 	} else {															\
-	  __crust_signed_success(width, (a + b));							\
+	  __crust_signed_success(width, (si_a + si_b));						\
 	}																	\
   }
 
@@ -93,7 +93,7 @@
 		}																\
 	  }																	\
 	}																	\
-	__crust_signed_success(width, (a * b));								\
+	__crust_signed_success(width, (si_a * si_b));						\
   }																		\
   
 #define SIGNED_SUB(width)						\

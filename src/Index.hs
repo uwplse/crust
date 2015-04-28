@@ -9,6 +9,8 @@ import Data.Maybe
 
 import Parser
 
+import Debug.Trace
+
 
 -- TODO: move this somewhere more appropriate
 
@@ -216,3 +218,38 @@ itemName (IStatic (StaticDef name _ _)) = name
 itemName (IMeta s) = "<metadata item: " ++ s ++ ">"
 itemName (IUseDefault (UseDefault _ _ (ImplClause name _ tps))) = "<use default: " ++ name ++ " " ++ show tps ++ ">"
 itemName (IDriver e) = "<driver>"
+
+
+isDst ty = case ty of
+    TStr -> True
+    TVec _ -> True
+    _ -> False
+
+isFatPointer ty = case ty of
+    TPtr _ t | isDst t -> True
+    TRef _ _ t | isDst t -> True
+    _ -> False
+
+
+computedType ix (Expr ty e) = case e of
+    EConst c ->
+        let ConstDef _ ty' _ = i_consts ix M.! c
+        in ty'
+    ETupleLiteral es -> TTuple $ map (computedType ix) es
+    EMatch _ (MatchArm _ e' : _) -> computedType ix e'
+    EBlock _ e' -> computedType ix e'
+    ECall f _ tas _ ->
+        let fn = i_fns ix M.! f
+            rawRet = fn_retTy fn
+            tps = fn_tyParams fn
+        in subst ([], tps) ([], tas) rawRet
+    EUnsafe _ e' -> computedType ix e'
+    EAssign _ _ -> TUnit
+    EAssignOp _ _ _ -> TUnit
+    EWhile _ _ -> TUnit
+    EReturn _ -> TBottom
+    EFor _ _ _ -> TUnit
+    EBreak -> TBottom
+    EContinue -> TBottom
+    _ -> ty
+

@@ -12,7 +12,7 @@ FILTERS ?= $(TEST_HOME)/filters
 ZEALOT ?= python $(TEST_HOME)/bin/zealot.py
 
 
-STDLIBS = core libc alloc unicode collections
+STDLIBS = core libc alloc unicode collections __crust2
 STDLIB_RLIBS = $(patsubst %,lib/lib%.rlib,$(STDLIBS))
 STDLIB_IRS = $(patsubst %,ir/lib%.ir,$(STDLIBS))
 
@@ -31,6 +31,9 @@ lib/lib%.rlib: ../tests/driver/%.rs
 lib/lib__crust.rlib: ../src/crust-stubs.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
+lib/lib__crust2.rlib: ../src/crust.rs
+	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
+
 
 ir/lib%.ir: $(SRC)/lib%/lib.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
@@ -41,6 +44,10 @@ ir/lib%.ir: ../tests/%.rs $(STDLIB_RLIBS)
 	mv -v $@.tmp $@
 
 ir/lib%.ir: ../tests/driver/%.rs $(STDLIB_RLIBS)
+	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
+	mv -v $@.tmp $@
+
+ir/lib__crust2.ir: ../src/crust.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 

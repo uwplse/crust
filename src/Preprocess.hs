@@ -246,7 +246,6 @@ runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (item
             , "desugar-unsize"
             , "fix-clone"
             , "fix-address"
-            , "fix-bottom"
             , "fix-bool"
             , "fix-if"
             , "const-expand"
@@ -255,10 +254,15 @@ runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (item
             , "rename-locals"
             , "add-cleanup"
             , "rename-locals"
-            , "filter-extern-fns"
             , "generate-drop-glues"
             , "cleanup-drops"
             , "cleanup-temps"
+            , "strip-drop-glue-impls"
+            -- fix-unreachable-lets requires that extern fns and TBottom return
+            -- values are still around.
+            , "fix-unreachable-lets"
+            , "fix-bottom"
+            , "filter-extern-fns"
             ]
 
 runPass _ pass (items, ix) = return (runBasicPass ix pass items, ix)
@@ -297,6 +301,7 @@ runBasicPass _ "dump" = dumpIr "dump"
 runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runBasicPass ix "monomorphize-from-driver-root" = monomorphize ix ["_$crust_init"]
 runBasicPass _ "strip-drop-glue-impls" = stripDropGlueImpls
+runBasicPass ix "fix-unreachable-lets" = fixUnreachableLets ix
 runBasicPass _ p = error $ "unknown pass: " ++ show p
 
 whnf x = seq x x
@@ -511,6 +516,19 @@ fixBottom = everywhere (mkT go)
   where
     go TBottom = TUnit
     go t = t
+
+fixUnreachableLets ix = everywhere (mkT go)
+  where
+    go (s@(SLet p@(Pattern pTy _) (Just e)) : ss)
+      | check p e =
+        traceShow ("unreachable let:", runPp . ppTy $ pTy, runPp . ppExpr $ e) $
+        (SExpr e : SLet p Nothing : ss)
+    go ss = ss
+
+    check (Pattern pTy _) e =
+        (computedType ix e == TUnit && pTy /= TUnit) ||
+        (computedType ix e == TBottom)
+
 
 data Location = Rvalue | Lvalue | LvalueMut
   deriving (Eq, Show, Data, Typeable)

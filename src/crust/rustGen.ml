@@ -168,6 +168,7 @@ let prelude = [
   "extern crate alloc;";
   "extern crate collections;";
   "extern crate __crust;";
+  "extern crate __crust2;";
   "";
 ]
 
@@ -651,7 +652,11 @@ class rust_pp buf output_file_prefix num_tests = object(self)
 
   method emit_call_path fn_name ty_args =
     if String.compare fn_name "__crust$nondet" == 0
-    then self#put "__crust::nondet"
+    then begin
+      self#put "__crust::nondet::<";
+      self#put_many ", " self#emit_ty ty_args;
+      self#put ">";
+    end
     else if String.compare fn_name "__crust$assert" == 0
     then self#put "__crust::assert"
     else if String.compare fn_name "__crust$assume" == 0

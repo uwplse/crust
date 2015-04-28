@@ -335,12 +335,31 @@ expandDriver ix de = trace "expandDriver'" block
          ])
         (Expr TUnit $ ESimpleLiteral "unit")
 
-    mkBody es = Expr TUnit $ EBlock (map go es) (Expr TUnit $ ESimpleLiteral "unit")
+    mkBody es = Expr TUnit $ EBlock stmts (Expr TUnit $ ESimpleLiteral "unit")
       where
+        stmts = oneStmts ++ twoStmts
+
+        oneStmts = do
+            e <- es
+            return $ assertNotNull e
+
+        twoStmts = do
+            (e1, e2) <- pairs es
+            return $ assertNotAliased e1 e2
+
+        assertNotNull e = SExpr $ Expr TUnit $ ECall "__crust2$assert_not_null" [] [TBottom] [e]
+        assertNotAliased e1 e2 =
+            SExpr $ Expr TUnit $ ECall "__crust2$assert_not_aliased" [] [TBottom, TBottom] [e1, e2]
+
+{-
         castRef e@(Expr (TRef _ mutbl ty) _) = Expr (TPtr mutbl ty) $ ECast e
         uint = TUint PtrSize
         go e = SExpr $ Expr TUnit $ ECall "__crust$assert" [] [] [Expr TBool $
             EBinOp "BiNe" (Expr uint $ ECast $ castRef e) (Expr uint $ ESimpleLiteral "0")]
+-}
+
+        pairs [] = []
+        pairs (x:xs) = zip (repeat x) xs ++ pairs xs
 
 
 
