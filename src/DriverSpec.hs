@@ -62,14 +62,16 @@ genDrivers ix limit lib constr =
         unsafeLib = filter hasUnsafe lib'
         unsafeRefLib = filter producesRef unsafeLib
 
-        drivers1 = mkDriverTrees ix limit unsafeLib constr
-        drivers2 = mkDriverTreePairs ix limit unsafeRefLib constr
+        constr' = filter (not . isUnsafe) constr
+
+        drivers1 = mkDriverTrees ix limit unsafeLib constr'
+        drivers2 = mkDriverTreePairs ix limit unsafeRefLib constr'
     in  traceShow ("lib sizes", length lib, length lib', length unsafeLib, length unsafeRefLib) $
         traceShow ("orig", map (\(a,_,_) -> a) lib) $
         traceShow ("safe", map (\(a,_,_) -> a) lib') $
         traceShow ("has unsafe", map (\(a,_,_) -> a) unsafeLib) $
         traceShow ("produces ref", map (\(a,_,_) -> a) unsafeRefLib) $
-        (drivers1 ++ drivers2) >>= addMutCalls ix limit constr >>= addCopies
+        (drivers1 ++ drivers2) >>= addMutCalls ix limit constr' >>= addCopies
   where
     isUnsafe (f, _, _) = case i_fns ix M.! f of
         FConcrete (FnDef _ _ _ _ _ _ _ _ (Expr _ (EUnsafe _ _))) ->
@@ -168,12 +170,15 @@ chooseTyArgs params retTy targetTy = do
 
 
 addCopies :: DriverTree -> [DriverExpr]
-addCopies dt = results
+addCopies dt = traceShow ("before copies", dt) $ results
   where
     (nodeCount, hashList) = execState (walk goHash dt) (0, [])
       where goHash dt = do
-                (idx, hs) <- get
-                put (idx + 1, (idx, dt, hash dt) : hs)
+                -- Avoid copying DENondet nodes by avoiding placing them in the
+                -- hash table.
+                when (case dt of DENondet _ -> False; _ -> True) $ do
+                    (idx, hs) <- get
+                    put (idx + 1, (idx, dt, hash dt) : hs)
                 return (dt :: DriverTree) 
     hashMap = M.fromListWith (++) $ map (\(i,d,h) -> ((h,d), [(i,d)])) hashList
 
@@ -232,7 +237,7 @@ treeSize dt = execState (walk  go dt) 0
 
 
 addMutCalls :: Index -> Int -> [FnDesc] -> DriverTree -> [DriverTree]
-addMutCalls ix limit constr origDt = go (-1) origDt
+addMutCalls ix limit constr origDt = traceShow ("before muts", origDt) $ go (-1) origDt
   where
     callsBelow dt = case dt of
         DECall _ _ dts' -> 1 + (maximum $ 0 : map callsBelow dts')
@@ -258,7 +263,7 @@ addMutCalls ix limit constr origDt = go (-1) origDt
 
         DEMutCall _ _ _ _ -> error "unexpected DEMutCall"
         DENondet ty -> return $ DENondet ty
-        DETupleIntro dts' -> DETupleIntro <$> map (go callsAbove) dts'
+        DETupleIntro dts' -> DETupleIntro <$> mapM (go callsAbove) dts'
         DETupleElim idx dt' -> DETupleElim idx <$> go callsAbove dt'
         DERefIntro mutbl dt' -> DERefIntro mutbl <$> go callsAbove dt'
         DERefElim dt' -> DERefElim <$> go callsAbove dt'

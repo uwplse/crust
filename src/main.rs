@@ -17,6 +17,9 @@ extern crate rustc_back;
 extern crate rustc_driver;
 extern crate rustc_trans;
 extern crate rustc_resolve;
+extern crate rustc_privacy;
+extern crate rustc_borrowck;
+extern crate rustc_typeck;
 extern crate libc;
 extern crate arena;
 
@@ -28,17 +31,39 @@ use std::fs;
 use std::io;
 use std::os;
 use std::path::{Path, PathBuf};
+/*
 use rustc::metadata::common::*;
 use rustc::plugin;
 use rustc::session::config;
-use rustc::session;
 use rustc::session::config::Input;
-use rustc_driver::driver;
+use rustc::util::common::time;
 use rustc_llvm as llvm;
 use rustc_trans::back::link;
+*/
 use syntax::ast;
 use syntax::ast_map;
 use arena::TypedArena;
+
+use rustc::session;
+use rustc::session::Session;
+use rustc::session::config::{self, Input, OutputFilenames};
+use rustc::session::search_paths::PathKind;
+use rustc::lint;
+use rustc::metadata;
+use rustc::metadata::creader::CrateReader;
+use rustc::middle::{stability, ty, reachable};
+use rustc::middle::dependency_format;
+use rustc::middle;
+use rustc::plugin::registry::Registry;
+use rustc::plugin;
+use rustc::util::common::time;
+use rustc_borrowck as borrowck;
+use rustc_driver::driver;
+use rustc_resolve as resolve;
+use rustc_trans::back::link;
+use rustc_trans::back::write;
+//use rustc_trans::trans;
+use rustc_typeck as typeck;
 
 mod trans;
 
@@ -127,11 +152,154 @@ pub fn compile_input(sess: session::Session,
     let (ast_map, arenas) =
         (driver::assign_node_ids_and_map(&sess, &mut forest),
          rustc::middle::ty::CtxtArenas::new());
-    let analysis = driver::phase_3_run_analysis_passes(sess,
-                                                       ast_map,
-                                                       &arenas,
-                                                       id,
-                                                       rustc_resolve::MakeGlobMap::No);
+    let (tcx, name) = phase_3_run_analysis_passes(sess,
+                                                  ast_map,
+                                                  &arenas,
+                                                  id,
+                                                  rustc_resolve::MakeGlobMap::No);
 
-    trans::process(&analysis.ty_cx, filter_fn, analysis.name.clone());
+    trans::process(&tcx, filter_fn, name);
 }
+
+/// Run the resolution, typechecking, region checking and other
+/// miscellaneous analysis passes on the crate. Return various
+/// structures carrying the results of the analysis.
+pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
+                                         ast_map: ast_map::Map<'tcx>,
+                                         arenas: &'tcx ty::CtxtArenas<'tcx>,
+                                         name: String,
+                                         make_glob_map: resolve::MakeGlobMap)
+                                         -> (ty::ctxt<'tcx>, String) {
+    let time_passes = sess.time_passes();
+    let krate = ast_map.krate();
+
+    time(time_passes, "external crate/lib resolution", (), |_|
+         CrateReader::new(&sess).read_crates(krate));
+
+    let lang_items = time(time_passes, "language item collection", (), |_|
+                          middle::lang_items::collect_language_items(krate, &sess));
+
+    let resolve::CrateMap {
+        def_map,
+        freevars,
+        export_map,
+        trait_map,
+        external_exports,
+        glob_map,
+    } =
+        time(time_passes, "resolution", (),
+             |_| resolve::resolve_crate(&sess,
+                                        &ast_map,
+                                        &lang_items,
+                                        krate,
+                                        make_glob_map));
+
+    // Discard MTWT tables that aren't required past resolution.
+    syntax::ext::mtwt::clear_tables();
+
+    let named_region_map = time(time_passes, "lifetime resolution", (),
+                                |_| middle::resolve_lifetime::krate(&sess, krate, &def_map));
+
+    time(time_passes, "looking for entry point", (),
+         |_| middle::entry::find_entry_point(&sess, &ast_map));
+
+    sess.plugin_registrar_fn.set(
+        time(time_passes, "looking for plugin registrar", (), |_|
+            plugin::build::find_plugin_registrar(
+                sess.diagnostic(), krate)));
+
+    let region_map = time(time_passes, "region resolution", (), |_|
+                          middle::region::resolve_crate(&sess, krate));
+
+    time(time_passes, "loop checking", (), |_|
+         middle::check_loop::check_crate(&sess, krate));
+
+    time(time_passes, "static item recursion checking", (), |_|
+         middle::check_static_recursion::check_crate(&sess, krate, &def_map, &ast_map));
+
+    let ty_cx = ty::mk_ctxt(sess,
+                            arenas,
+                            def_map,
+                            named_region_map,
+                            ast_map,
+                            freevars,
+                            region_map,
+                            lang_items,
+                            stability::Index::new(krate));
+
+    // passes are timed inside typeck
+    typeck::check_crate(&ty_cx, trait_map);
+
+    time(time_passes, "const checking", (), |_|
+         middle::check_const::check_crate(&ty_cx));
+
+    /*
+    let (exported_items, public_items) =
+            time(time_passes, "privacy checking", (), |_|
+                 rustc_privacy::check_crate(&ty_cx, &export_map, external_exports));
+                 */
+
+    /*
+    // Do not move this check past lint
+    time(time_passes, "stability index", (), |_|
+         ty_cx.stability.borrow_mut().build(&ty_cx.sess, krate, &public_items));
+         */
+
+    time(time_passes, "intrinsic checking", (), |_|
+         middle::intrinsicck::check_crate(&ty_cx));
+
+    time(time_passes, "effect checking", (), |_|
+         middle::effect::check_crate(&ty_cx));
+
+    time(time_passes, "match checking", (), |_|
+         middle::check_match::check_crate(&ty_cx));
+
+    time(time_passes, "liveness checking", (), |_|
+         middle::liveness::check_crate(&ty_cx));
+
+    time(time_passes, "borrow checking", (), |_|
+         borrowck::check_crate(&ty_cx));
+
+    time(time_passes, "rvalue checking", (), |_|
+         middle::check_rvalues::check_crate(&ty_cx, krate));
+
+    // Avoid overwhelming user with errors if type checking failed.
+    // I'm not sure how helpful this is, to be honest, but it avoids a
+    // lot of annoying errors in the compile-fail tests (basically,
+    // lint warnings and so on -- kindck used to do this abort, but
+    // kindck is gone now). -nmatsakis
+    ty_cx.sess.abort_if_errors();
+
+    /*
+    let reachable_map =
+        time(time_passes, "reachability checking", (), |_|
+             reachable::find_reachable(&ty_cx, &exported_items));
+             */
+
+    /*
+    time(time_passes, "death checking", (), |_| {
+        middle::dead::check_crate(&ty_cx,
+                                  &exported_items,
+                                  &reachable_map)
+    });
+    */
+
+    let ref lib_features_used =
+        time(time_passes, "stability checking", (), |_|
+             stability::check_unstable_api_usage(&ty_cx));
+
+    time(time_passes, "unused lib feature checking", (), |_|
+         stability::check_unused_or_stable_features(
+             &ty_cx.sess, lib_features_used));
+
+    /*
+    time(time_passes, "lint checking", (), |_|
+         lint::check_crate(&ty_cx, &exported_items));
+         */
+
+    // The above three passes generate errors w/o aborting
+    ty_cx.sess.abort_if_errors();
+
+    (ty_cx, name)
+}
+

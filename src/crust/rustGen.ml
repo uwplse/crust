@@ -551,7 +551,9 @@ class rust_pp buf output_file_prefix num_tests = object(self)
     | `Struct_Field (expr, field) -> begin
         self#emit_expr expr;
         self#put ".";
-        self#put field;
+        match fst expr with
+        | `Tuple _ -> self#put (Str.string_after field 5)
+        | _ -> self#put field
       end
     | `Deref e' -> begin
         self#put "*";
