@@ -24,17 +24,18 @@ import Debug.Trace
 import Builder (typeOf)
 import qualified Index
 import Index hiding (getFn)
+import Monomorphize (checkPreds)
 import Parser
 import Pprint (ppTy, runPp)
 import RefSeek
 import Unify
 
 
-type FnDesc = (Name, [Ty], Ty)
+type FnDesc = (Name, [TyParam], [Ty], Ty, [Predicate])
 
 getFnDesc :: Item -> Maybe FnDesc
-getFnDesc (IFn (FnDef _ name _ _ args retTy _ _ _)) =
-    Just (name, map (\(ArgDecl (Pattern ty _)) -> ty) args, retTy)
+getFnDesc (IFn (FnDef _ name _ tps args retTy _ preds _)) =
+    Just (name, tps, map (\(ArgDecl (Pattern ty _)) -> ty) args, retTy, preds)
 getFnDesc _ = Nothing
 
 
@@ -67,31 +68,32 @@ genDrivers ix limit lib constr =
         drivers1 = mkDriverTrees ix limit unsafeLib constr'
         drivers2 = mkDriverTreePairs ix limit unsafeRefLib constr'
     in  traceShow ("lib sizes", length lib, length lib', length unsafeLib, length unsafeRefLib) $
-        traceShow ("orig", map (\(a,_,_) -> a) lib) $
-        traceShow ("safe", map (\(a,_,_) -> a) lib') $
-        traceShow ("has unsafe", map (\(a,_,_) -> a) unsafeLib) $
-        traceShow ("produces ref", map (\(a,_,_) -> a) unsafeRefLib) $
+        traceShow ("orig", map (\(a,_,_,_,_) -> a) lib) $
+        traceShow ("safe", map (\(a,_,_,_,_) -> a) lib') $
+        traceShow ("has unsafe", map (\(a,_,_,_,_) -> a) unsafeLib) $
+        traceShow ("produces ref", map (\(a,_,_,_,_) -> a) unsafeRefLib) $
         (drivers1 ++ drivers2) >>= addMutCalls ix limit constr' >>= addCopies
   where
-    isUnsafe (f, _, _) = case i_fns ix M.! f of
+    isUnsafe (f, _, _, _, _) = case i_fns ix M.! f of
         FConcrete (FnDef _ _ _ _ _ _ _ _ (Expr _ (EUnsafe _ _))) ->
             traceShow ("fn is unsafe", f) True
         FExtern _ -> traceShow ("fn is unsafe", f) $True
         _ -> False
 
-    hasUnsafe (f, _, _) = case i_fns ix M.! f of
+    hasUnsafe (f, _, _, _, _) = case i_fns ix M.! f of
         FConcrete (FnDef _ _ _ _ _ _ _ _ body) ->
             let check (EUnsafe _ _) = True
                 check _ = False
             in everything (||) (False `mkQ` check) body || traceShow ("fn has no unsafe", f) False
         _ -> traceShow ("fn has no unsafe (not concrete)", f) False
 
-    producesRef (f, _, retTy) = hasRef ix retTy || traceShow ("fn produces no ref", f) False
+    producesRef (f, _, _, retTy, _) = hasRef ix retTy || traceShow ("fn produces no ref", f) False
 
 mkDriverTrees :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
 mkDriverTrees ix limit lib constr = do
-    (name, argTys, retTy) <- lib
-    tyArgs <- mapM (\_ -> [TUnit, TUint (BitSize 8)]) (getTyParams ix name)
+    (name, tyParams, argTys, retTy, preds) <- lib
+    tyArgs <- --filter (checkPreds ix tyParams preds) $
+        mapM (\_ -> [TUnit, TUint (BitSize 8)]) tyParams
     genCall ix (limit + 1) constr name argTys tyArgs DECall
 
 mkDriverTreePairs :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
@@ -115,9 +117,10 @@ genTree ix limit constr ty = go limit ty
     -- Remaining cases require fuel to operate.
     go 0 ty = []
     go limit ty = do
-        (name, argTys, retTy) <- constr
+        (name, tyParams, argTys, retTy, preds) <- constr
         (retPart, destructOp) <- destructure retTy
-        tyArgs <- chooseTyArgs (getTyParams ix name) retPart ty
+        tyArgs <- filter (checkPreds ix tyParams preds) $
+            chooseTyArgs tyParams retPart ty
         genCall ix limit constr name argTys tyArgs
             (\n ts as -> destructOp $ DECall n ts as)
 
@@ -125,14 +128,15 @@ getFn ix name = runCtxM ix $ Index.getFn name
 getTyParams ix = fn_tyParams . getFn ix
 
 genMutCall ix limit constr ty dt = do
-    (name, argTys, retTy) <- constr
+    (name, tyParams, argTys, retTy, preds) <- constr
     (argIdx, chosenTy) <- zip [0..] argTys
     -- TODO: support constructing (&mut T, _), &mut &mut T, etc, instead of
     -- just &mut T
     guard $ case chosenTy of TRef _ MMut _ -> True; _ -> False
-    tyArgs <- chooseTyArgs (getTyParams ix name) chosenTy (TRef "r_dummy" MMut ty)
+    tyArgs <- filter (checkPreds ix tyParams preds) $
+        chooseTyArgs tyParams chosenTy (TRef "r_dummy" MMut ty)
 
-    let argTys' = map (subst ([], getTyParams ix name) ([], tyArgs)) argTys
+    let argTys' = map (subst ([], tyParams) ([], tyArgs)) argTys
     argExprs <- forM (zip [0..] argTys') $ \(idx, argTy) ->
         if idx == argIdx then do
             return $ DERefIntro MMut dt
