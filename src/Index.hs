@@ -32,6 +32,13 @@ subst (lp, tp) (la, ta) t = goTy t
 
     goLife n = case M.lookup n lifeMap of Just l -> l; Nothing -> n
 
+substPred :: ([LifetimeParam], [TyParam]) -> ([Lifetime], [Ty]) -> Predicate -> Predicate
+substPred (lp, tp) (la, ta) p =
+    let go = subst (lp, tp) (la, ta)
+    in case p of
+        PImpl name tys -> PImpl name (map go tys)
+        PEq ty1 ty2 -> PEq (go ty1) (go ty2)
+
 data AnyFnDef =
       FConcrete FnDef
     | FAbstract AbstractFnDef
@@ -77,14 +84,19 @@ data Index = Index
     , i_types :: M.Map Name TypeDef
     , i_consts :: M.Map Name ConstDef
     , i_statics :: M.Map Name StaticDef
+
+    , i_assoc_tys :: M.Map Name [AssociatedTypeDef]
+    , i_impls :: M.Map Name [TraitImpl]
     }
 
-mkIndex items = Index fns types consts statics
+mkIndex items = Index fns types consts statics assocTys impls
   where
     fns = M.fromList $ mapMaybe onFn items
     types = M.fromList $ mapMaybe onType items
     consts = M.fromList $ mapMaybe onConst items
     statics = M.fromList $ mapMaybe onStatic items
+    assocTys = M.fromListWith (++) $ mapMaybe onAssociatedType items
+    impls = M.fromListWith (++) $ mapMaybe onImpl items
 
     onFn (IFn x@(FnDef _ name _ _ _ _ _ _ _)) = Just (name, FConcrete x)
     onFn (IAbstractFn x@(AbstractFnDef name _ _ _ _)) = Just (name, FAbstract x)
@@ -101,6 +113,15 @@ mkIndex items = Index fns types consts statics
     onStatic (IStatic x@(StaticDef name _ _)) = Just (name, x)
     onStatic _ = Nothing
 
+    onAssociatedType (IAssociatedType x@(AssociatedTypeDef _ _ (ImplClause name _ _) _)) =
+        Just (name, [x])
+    onAssociatedType _ = Nothing
+
+    onImpl (ITraitImpl x@(TraitImpl _ _ (ImplClause name _ _) _)) = Just (name, [x])
+    onImpl _ = Nothing
+
+assocTys ix name = fromMaybe [] $ M.lookup name (i_assoc_tys ix)
+traitImpls ix name = fromMaybe [] $ M.lookup name (i_impls ix)
 
 
 

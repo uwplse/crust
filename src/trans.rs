@@ -1245,7 +1245,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                         trans_impl_clause(trcx,
                                                           self.id,
                                                           trait_ref.as_ref().unwrap(),
-                                                          name_str,
+                                                          Some(name_str),
                                                           self_str,
                                                           [].as_slice(),
                                                           [].as_slice()),
@@ -1276,7 +1276,7 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                                     let i = trans_impl_clause(trcx,
                                                               self.id,
                                                               trait_ref.as_ref().unwrap(),
-                                                              method_name,
+                                                              Some(method_name),
                                                               self_ty_str,
                                                               [].as_slice(),
                                                               [].as_slice());
@@ -1290,6 +1290,20 @@ impl<'a> TransExtra<&'a HashSet<String>> for Item {
                             ty::TypeTraitItem(..) => {},
                         }
                     }
+
+                    let preds = trcx.tcx.predicates.borrow().get(&local_def(self.id))
+                                    .unwrap().trans(trcx);
+                    let self_str = self_ty.trans(trcx);
+                    result.push_str(&*format!("impl {} {} {}",
+                                              impl_generics.trans_extra(trcx, TypeSpace),
+                                              trans_impl_clause(trcx,
+                                                                self.id,
+                                                                trait_ref.as_ref().unwrap(),
+                                                                None,
+                                                                self_str,
+                                                                [].as_slice(),
+                                                                [].as_slice()),
+                                              preds));
                 } else {
                     println!("# inherent impl");
                 }
@@ -1560,7 +1574,7 @@ fn trans_method(trcx: &mut TransCtxt,
                             trans_impl_clause(trcx,
                                               trait_.id,
                                               trait_ref,
-                                              name_str,
+                                              Some(name_str),
                                               self_ty_str,
                                               generics.lifetimes.as_slice(),
                                               generics.ty_params.as_slice()))
@@ -1619,7 +1633,7 @@ fn add_fn_ty_params(trcx: &mut TransCtxt,
 fn trans_impl_clause(trcx: &mut TransCtxt,
                      impl_id: NodeId,
                      trait_ref: &TraitRef,
-                     name: String,
+                     name: Option<String>,
                      self_ty: String,
                      fn_lifetimes: &[LifetimeDef],
                      fn_ty_params: &[TyParam]) -> String {
@@ -1643,9 +1657,16 @@ fn trans_impl_clause(trcx: &mut TransCtxt,
     add_fn_lifetimes(trcx, fn_lifetimes, &mut lifetimes);
     add_fn_ty_params(trcx, fn_ty_params, &mut ty_params);
 
-    format!("{}${} {} {}",
+    let name_tail =
+        if let Some(name) = name {
+            format!("$name")
+        } else {
+            format!("")
+        };
+
+    format!("{}{} {} {}",
             mangled_def_name(trcx, trcx.tcx.def_map.borrow()[&trait_ref.ref_id].def_id()),
-            name.trans(trcx),
+            name_tail,
             lifetimes.trans(trcx),
             ty_params.trans(trcx))
 }

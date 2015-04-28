@@ -118,6 +118,9 @@ data ExternFnDef = ExternFnDef Abi Name [LifetimeParam] [TyParam] [ArgDecl] Ty
 data ArgDecl = ArgDecl Pattern
   deriving (Eq, Show, Data, Typeable, Generic)
 
+data TraitImpl = TraitImpl [LifetimeParam] [TyParam] ImplClause [Predicate]
+  deriving (Eq, Show, Data, Typeable, Generic)
+
 data ImplClause = ImplClause Name [Lifetime] [Ty]
   deriving (Eq, Show, Data, Typeable, Generic)
 
@@ -200,6 +203,7 @@ data Item =
     | IAssociatedType AssociatedTypeDef
     | IStatic StaticDef
     | IUseDefault UseDefault
+    | ITraitImpl TraitImpl
     | IDriver Driver
     | IMeta String
   deriving (Eq, Show, Data, Typeable, Generic)
@@ -305,6 +309,9 @@ externFnDef = do
 
 argDecl = ArgDecl <$> pattern
 
+traitImpl = exactWord "impl" >>
+    TraitImpl <$> counted lifetimeParam <*> counted tyParam <*> implClause <*> counted predicate
+
 implClause = ImplClause <$> name <*> counted lifetime <*> counted ty
 
 expr = Expr <$> ty <*> expr_
@@ -379,6 +386,7 @@ item = choice
     , IAbstractType <$> abstractTypeDef
     , IAssociatedType <$> associatedTypeDef
     , IUseDefault <$> useDefault
+    , ITraitImpl <$> traitImpl
     , IDriver <$> driver
     , IStatic <$> staticDef
     ]
@@ -484,6 +492,9 @@ instance Pp ExternFnDef where
 instance Pp ArgDecl where
     pp' (ArgDecl a) = map pp [pp a]
 
+instance Pp TraitImpl where
+    pp' (TraitImpl a b c d) = [pp a, pp b, pp c, pp d]
+
 instance Pp ImplClause where
     pp' (ImplClause absName lifetimes tys) = [pp absName, pp lifetimes, pp tys]
 
@@ -571,6 +582,7 @@ instance Pp Item where
                     IAbstractType a -> pp a
                     IAssociatedType a -> pp a
                     IUseDefault a -> pp a
+                    ITraitImpl a -> pp a
                     IDriver a -> pp a
                     IStatic a -> pp a
                     IMeta s -> s

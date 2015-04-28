@@ -302,6 +302,9 @@ runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
 runBasicPass ix "monomorphize-from-driver-root" = monomorphize ix ["_$crust_init"]
 runBasicPass _ "strip-drop-glue-impls" = stripDropGlueImpls
 runBasicPass ix "fix-unreachable-lets" = fixUnreachableLets ix
+runBasicPass ix "test" = \is ->
+    let ty = TAdt "trait4$MyOption" [] [TInt $ BitSize 16]
+    in traceShow ("has impl?", hasTraitImpl ix "trait4$Foo" [ty, ty]) is
 runBasicPass _ p = error $ "unknown pass: " ++ show p
 
 whnf x = seq x x

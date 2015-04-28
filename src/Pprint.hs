@@ -149,6 +149,16 @@ ppExternFnDef (ExternFnDef abi name lps tps args retTy) = do
 ppArgDecl :: (MonadReader Int m, MonadWriter String m) => ArgDecl -> m ()
 ppArgDecl (ArgDecl pat@(Pattern ty _)) = ppPat pat >> tell ": " >> ppTy ty
 
+ppTraitImpl :: (MonadReader Int m, MonadWriter String m) => TraitImpl -> m ()
+ppTraitImpl (TraitImpl lps tps clause preds) = line $ do
+    tell "impl" >> listNe angles (map ppLifetime lps ++ map tell tps)
+    tell " " >> ppImplClause clause
+    forM_ preds $ \pred -> do
+        nl
+        indent $ indent $ indentation
+        tell "where " >> ppPredicate pred
+    tell ";"
+
 ppImplClause :: (MonadReader Int m, MonadWriter String m) => ImplClause -> m ()
 ppImplClause (ImplClause name lifetimes tys) = do
     tell name
@@ -251,6 +261,7 @@ ppItem (IAbstractType t) = ppAbstractTypeDef t
 ppItem (IAssociatedType t) = ppAssociatedTypeDef t
 ppItem (IStatic t) = ppStaticDef t
 ppItem (IUseDefault u) = ppUseDefault u
+ppItem (ITraitImpl i) = ppTraitImpl i
 ppItem (IDriver d) = ppDriver d
 ppItem (IMeta m) = line $ tell "// metadata: " >> tell m
 
