@@ -178,18 +178,20 @@ addCopies dt = traceShow ("before copies", dt) $ results
   where
     (nodeCount, hashList) = execState (walk goHash dt) (0, [])
       where goHash dt = do
-                -- Avoid copying DENondet nodes by avoiding placing them in the
-                -- hash table.
-                when (case dt of DENondet _ -> False; _ -> True) $ do
-                    (idx, hs) <- get
-                    put (idx + 1, (idx, dt, hash dt) : hs)
+                (idx, hs) <- get
+                put (idx + 1, (idx, dt, hash dt) : hs)
                 return (dt :: DriverTree) 
+    hashMap :: M.Map (Int, DriverTree) [(Int, DriverTree)]
     hashMap = M.fromListWith (++) $ map (\(i,d,h) -> ((h,d), [(i,d)])) hashList
 
     mergeChoices :: [[[(Int, DriverTree)]]]
     mergeChoices = do
-        let mergeable = filter ((>= 2) . length) $ map snd $ M.toList hashMap
+        let mergeable = filter check $ map snd $ M.toList hashMap
         concat <$> mapM (\x -> fst <$> partition x) mergeable
+      where
+        check xs = length xs >= 2 && checkTree (snd $ head xs)
+        checkTree (DENondet _) = False
+        checkTree _ = True
 
     results = do
         merges <- mergeChoices
