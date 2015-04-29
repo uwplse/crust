@@ -333,7 +333,9 @@ monomorphize ix roots items = runMono ix items $ mapM (\n -> monoFnName n []) ro
 
 hasTraitImpl _ "core$marker$Sized" _ = True
 hasTraitImpl _ "core$marker$Copy" _ = True
-hasTraitImpl ix traitName traitTys = ok && all checkPred preds
+hasTraitImpl ix traitName traitTys =
+    traceShow ("hasImpl", traitName, map (runPp . ppTy) traitTys) $
+    ok && all (checkPred ix) preds
   where
     candidates = traitImpls ix traitName
     traitTys' = everywhere (mkT $ resolveAbstractType' ix) traitTys
@@ -341,8 +343,9 @@ hasTraitImpl ix traitName traitTys = ok && all checkPred preds
         [x] -> (True, x)
         xs -> (False, error "unreachable: shouldn't eval this when !ok")
 
-    checkPred (PImpl name tys) = hasTraitImpl ix name tys
-    checkPred (PEq _ _) = True
+checkPred :: Index -> Predicate -> Bool
+checkPred ix (PImpl name tys) = hasTraitImpl ix name tys
+checkPred ix (PEq _ _) = True
 
 resolveAbstractType' :: Index -> Ty -> Ty
 resolveAbstractType' ix ty = go ty
@@ -363,3 +366,7 @@ unifyImplTrait tys (TraitImpl lps tps impl preds) = do
     tyArgs <- unifyImpl tps impl tys
     let go = substPred (lps, tps) (dummyRegions lps, tyArgs)
     return $ map go preds
+
+checkPreds :: Index -> [TyParam] -> [Predicate] -> [Ty] -> Bool
+checkPreds ix tps preds tas =
+    all (checkPred ix) $ map (substPred ([], tps) ([], tas)) preds

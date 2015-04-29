@@ -92,7 +92,7 @@ genDrivers ix limit lib constr =
 mkDriverTrees :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverTree]
 mkDriverTrees ix limit lib constr = do
     (name, tyParams, argTys, retTy, preds) <- lib
-    tyArgs <- --filter (checkPreds ix tyParams preds) $
+    tyArgs <- filter (checkPreds ix tyParams preds) $
         mapM (\_ -> [TUnit, TUint (BitSize 8)]) tyParams
     genCall ix (limit + 1) constr name argTys tyArgs DECall
 
