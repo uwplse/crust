@@ -72,6 +72,7 @@ genDrivers ix limit lib constr =
         traceShow ("safe", map (\(a,_,_,_,_) -> a) lib') $
         traceShow ("has unsafe", map (\(a,_,_,_,_) -> a) unsafeLib) $
         traceShow ("produces ref", map (\(a,_,_,_,_) -> a) unsafeRefLib) $
+        traceShow ("safe constr", map (\(a,_,_,_,_) -> a) constr') $
         (drivers1 ++ drivers2) >>= addMutCalls ix limit constr' >>= addCopies
   where
     isUnsafe (f, _, _, _, _) = case i_fns ix M.! f of
@@ -256,12 +257,12 @@ addMutCalls ix limit constr origDt = traceShow ("before muts", origDt) $ go (-1)
         DECopy idx -> error $ "unexpected DECopy"
 
     go callsAbove dt = case dt of
-        DECall name tas dts' -> do
+        DECall name tas dts' -> traceShow ("addMutCalls/go", callsAbove, name) $ do
             let ty = getFnRetTy ix name tas
             let maxInserts = limit - (callsAbove + callsBelow dt)
             insertCount <- [0 .. maxInserts]
 
-            dts'' <- mapM (go (callsAbove + insertCount)) dts'
+            dts'' <- mapM (go (callsAbove + insertCount + 1)) dts'
 
             dt' <- foldM (\dt idx -> addMutCall (limit - (callsAbove + idx + 1)) ty dt)
                 (DECall name tas dts'') [0 .. insertCount - 1]
