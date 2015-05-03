@@ -337,7 +337,12 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
     go (DERefElim dt) = do
         expr <- go dt
         return $ Expr (derefTy $ typeOf expr) $ EDeref expr
-    go (DECopy i) = goCopy i
+    go (DECopy i) = do
+        outVar <- fresh
+        e <- goCopy i
+        let retTy = typeOf e
+        tell [SLet (Pattern retTy $ PVar outVar) (Just e)]
+        return $ Expr retTy $ EVar outVar
 
     fresh = do
         idx <- gets $ \(x, _) -> x
