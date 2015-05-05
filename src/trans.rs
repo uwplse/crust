@@ -1659,7 +1659,7 @@ fn trans_impl_clause(trcx: &mut TransCtxt,
 
     let name_tail =
         if let Some(name) = name {
-            format!("$name")
+            format!("${}", name)
         } else {
             format!("")
         };

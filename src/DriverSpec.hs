@@ -65,15 +65,29 @@ genDrivers ix limit lib constr =
 
         constr' = filter (not . isUnsafe) constr
 
-        drivers1 = mkDriverTrees ix limit unsafeLib constr'
-        drivers2 = mkDriverTreePairs ix limit unsafeRefLib constr'
+        drivers1 =
+            (filter (\dt -> countDistinctCalls dt <= limit + 1) $
+                mkDriverTrees ix limit unsafeLib constr') >>=
+            (filter (\dt -> countDistinctCalls dt <= limit + 1) .
+                addMutCalls ix limit constr') >>=
+            (filter (\de -> countCalls de <= limit + 1) .
+                addCopies)
+
+        drivers2 =
+            (filter (\dt -> countDistinctCalls dt <= limit + 1) $
+                mkDriverTrees ix limit unsafeLib constr') >>=
+            (filter (\dt -> countDistinctCalls dt <= limit + 1) .
+                addMutCalls ix limit constr') >>=
+            (filter (\de -> countCalls de <= limit + 1) .
+                addCopies)
+
     in  traceShow ("lib sizes", length lib, length lib', length unsafeLib, length unsafeRefLib) $
         traceShow ("orig", map (\(a,_,_,_,_) -> a) lib) $
         traceShow ("safe", map (\(a,_,_,_,_) -> a) lib') $
         traceShow ("has unsafe", map (\(a,_,_,_,_) -> a) unsafeLib) $
         traceShow ("produces ref", map (\(a,_,_,_,_) -> a) unsafeRefLib) $
         traceShow ("safe constr", map (\(a,_,_,_,_) -> a) constr') $
-        (drivers1 ++ drivers2) >>= addMutCalls ix limit constr' >>= addCopies
+        drivers1 ++ drivers2
   where
     isUnsafe (f, _, _, _, _) = case i_fns ix M.! f of
         FConcrete (FnDef _ _ _ _ _ _ _ _ (Expr _ (EUnsafe _ _))) ->
@@ -128,6 +142,16 @@ genTree ix limit constr ty = go limit ty
 getFn ix name = runCtxM ix $ Index.getFn name
 getTyParams ix = fn_tyParams . getFn ix
 
+countCalls x = everything (+) (0 `mkQ` go) x
+  where go (DECall _ _ _) = 1
+        go (DEMutCall _ _ _ _) = 1
+        go _ = 0
+
+countDistinctCalls x = S.size $ everything S.union (S.empty `mkQ` go) x
+  where go (DECall name _ _) = S.singleton (False, name)
+        go (DEMutCall _ name _ _) = S.singleton (True, name)
+        go _ = S.empty
+
 genMutCall ix limit constr ty dt = do
     (name, tyParams, argTys, retTy, preds) <- constr
     (argIdx, chosenTy) <- zip [0..] argTys
@@ -165,7 +189,6 @@ destructure ty = go id ty
         _ -> []
 
 chooseTyArgs params retTy targetTy = do
-    traceShow ("try unify", retTy, targetTy) $ do
     let (uty, intern) = toUTy retTy
     result <- unify uty targetTy
     forM params $ \param ->
@@ -175,7 +198,7 @@ chooseTyArgs params retTy targetTy = do
 
 
 addCopies :: DriverTree -> [DriverExpr]
-addCopies dt = traceShow ("before copies", dt) $ results
+addCopies dt = results
   where
     (nodeCount, hashList) = execState (walk goHash dt) (0, [])
       where goHash dt = do
@@ -205,7 +228,6 @@ addCopies dt = traceShow ("before copies", dt) $ results
         guard (allCopiesUsedTwice (length copyList) (dt' : map snd copyList))
 
         let copies = A.array (0, length copyList - 1) copyList
-        traceShow ("old", dt) $ traceShow ("new", dt', copies) $ do
         return $ DE dt' copies
 
     rewrite m base dt = evalState (walk go dt) base
@@ -244,7 +266,7 @@ treeSize dt = execState (walk  go dt) 0
 
 
 addMutCalls :: Index -> Int -> [FnDesc] -> DriverTree -> [DriverTree]
-addMutCalls ix limit constr origDt = traceShow ("before muts", origDt) $ go (-1) origDt
+addMutCalls ix limit constr origDt = go (-1) origDt
   where
     callsBelow dt = case dt of
         DECall _ _ dts' -> 1 + (maximum $ 0 : map callsBelow dts')
@@ -257,7 +279,7 @@ addMutCalls ix limit constr origDt = traceShow ("before muts", origDt) $ go (-1)
         DECopy idx -> error $ "unexpected DECopy"
 
     go callsAbove dt = case dt of
-        DECall name tas dts' -> traceShow ("addMutCalls/go", callsAbove, name) $ do
+        DECall name tas dts' -> do
             let ty = getFnRetTy ix name tas
             let maxInserts = limit - (callsAbove + callsBelow dt)
             insertCount <- [0 .. maxInserts]
@@ -439,8 +461,8 @@ filterFnsByName filterLines items = traceShow regexStr $ filter check items
     check (IFn (FnDef _ name _ _ _ _ _ _ _)) =
         case RE.execute regex name of
             Left e -> error e
-            Right (Just _) -> True --traceShow ("keep", name) True
-            Right Nothing -> False --traceShow ("drop", name) False
+            Right (Just _) -> True
+            Right Nothing -> False
     check _ = False
 
 

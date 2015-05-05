@@ -216,6 +216,7 @@ runPass config "hl-generate-drivers" (items, ix) = runPasses' config passes (ite
 runPass config "hl-clean-drivers" (items, ix) = runPasses' config passes (items, ix)
   where passes =
             [ "filter-extern-fns"
+            , "filter-trait-impls"
             , "desugar-arg-patterns"
             , "desugar-pattern-lets"
             , "const-expand"
@@ -263,6 +264,7 @@ runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (item
             , "fix-unreachable-lets"
             , "fix-bottom"
             , "filter-extern-fns"
+            , "filter-trait-impls"
             ]
 
 runPass _ pass (items, ix) = return (runBasicPass ix pass items, ix)
@@ -285,6 +287,7 @@ runBasicPass ix "lift-temps" = liftTemps ix
 runBasicPass ix "rename-locals" = renameLocals ix
 runBasicPass ix "add-cleanup" = addCleanup ix
 runBasicPass _ "filter-extern-fns" = filter (not . isExternFn)
+runBasicPass _ "filter-trait-impls" = filter (not . isTraitImpl)
 runBasicPass _ "generate-drop-glues" = generateDropGlues
 runBasicPass _ "lift-strings" = liftStrings
 runBasicPass ix "generate-default-methods" = generateDefaultMethods ix
@@ -450,6 +453,9 @@ fixSpecialFn items = filter (not . isAbort) $ everywhere (mkT renameAbortDef) $ 
 
 isExternFn (IExternFn _) = True
 isExternFn _ = False
+
+isTraitImpl (ITraitImpl _) = True
+isTraitImpl _ = False
 
 fixAddress = everywhere (mkT stripAddr)
   where

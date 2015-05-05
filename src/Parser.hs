@@ -493,7 +493,7 @@ instance Pp ArgDecl where
     pp' (ArgDecl a) = map pp [pp a]
 
 instance Pp TraitImpl where
-    pp' (TraitImpl a b c d) = [pp a, pp b, pp c, pp d]
+    pp' (TraitImpl a b c d) = ppGo "impl" [pp a, pp b, pp c, pp d]
 
 instance Pp ImplClause where
     pp' (ImplClause absName lifetimes tys) = [pp absName, pp lifetimes, pp tys]

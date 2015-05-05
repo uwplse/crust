@@ -31,7 +31,7 @@ lib/lib%.rlib: ../tests/driver/%.rs
 lib/lib__crust.rlib: ../src/crust-stubs.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
-lib/lib__crust2.rlib: ../src/crust.rs
+lib/lib__crust2.rlib: ../src/crust.rs lib/lib__crust.rlib
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
 
