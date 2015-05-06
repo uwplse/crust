@@ -1,0 +1,7 @@
+# ir: stdlibs
+
+library core$slice$*
+
+construction core$slice$*$Default$default
+construction core$slice$*ref_slice
+construction core$slice$*$iter*

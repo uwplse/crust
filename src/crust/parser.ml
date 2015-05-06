@@ -87,11 +87,8 @@ let consume_word = consume_name
 
 let consume_int tokens cb = match tokens with
   | h::t -> 
-	 begin
-	   try 
-		 cb (int_of_string h) t
-	   with Failure _ -> raise @@ Parse_failure ("consume_int",tokens)
-	 end
+     let i = try int_of_string h with Failure _ -> raise @@ Parse_failure ("consume_int",tokens)
+     in cb i t
   | _ -> raise (Unexpected_stream_end "consume_int")
 
 let parse_int_size tokens cb = match tokens with

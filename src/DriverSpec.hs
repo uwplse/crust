@@ -24,10 +24,11 @@ import Debug.Trace
 import Builder (typeOf)
 import qualified Index
 import Index hiding (getFn)
-import Monomorphize (checkPreds)
+import Monomorphize (checkPreds, buildFnsByImpl)
 import Parser
 import Pprint (ppTy, runPp)
 import RefSeek
+import TempLift (hasStableLocation)
 import Unify
 
 
@@ -57,28 +58,33 @@ data DriverExpr = DE
     }
   deriving (Eq, Show, Data, Typeable, Generic)
 
+traceFilter msg f xs = filter (\x -> f x || traceShow ("discard", msg) False) xs
+
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
 genDrivers ix limit lib constr =
     let lib' = filter (not . isUnsafe) lib
         unsafeLib = filter hasUnsafe lib'
         unsafeRefLib = filter producesRef unsafeLib
 
-        constr' = filter (not . isUnsafe) constr
+        constr' = traceFilter "unsafe (constr)" (not . isUnsafe) constr
+        isBoring = isBoringMut ix
+        mutConstr' = traceFilter "boring (mut constr)"
+            (\(n, _, _, _, _) -> not $ isBoring n) constr'
 
         drivers1 =
-            (filter (\dt -> countDistinctCalls dt <= limit + 1) $
+            (traceFilter "d1 p1" (\dt -> countDistinctCalls dt <= limit + 1) $
                 mkDriverTrees ix limit unsafeLib constr') >>=
-            (filter (\dt -> countDistinctCalls dt <= limit + 1) .
-                addMutCalls ix limit constr') >>=
-            (filter (\de -> countCalls de <= limit + 1) .
+            (traceFilter "d1 p2" (\dt -> countDistinctCalls dt <= limit + 1) .
+                addMutCalls ix limit mutConstr') >>=
+            (traceFilter "d1 p3" (\de -> countCalls' de <= limit + 1) .
                 addCopies)
 
         drivers2 =
-            (filter (\dt -> countDistinctCalls dt <= limit + 1) $
-                mkDriverTrees ix limit unsafeLib constr') >>=
-            (filter (\dt -> countDistinctCalls dt <= limit + 1) .
-                addMutCalls ix limit constr') >>=
-            (filter (\de -> countCalls de <= limit + 1) .
+            (traceFilter "d2 p1" (\dt -> countDistinctCalls dt <= limit + 2) $
+                mkDriverTreePairs ix limit unsafeRefLib constr') >>=
+            (traceFilter "d2 p2" (\dt -> countDistinctCalls dt <= limit + 2) .
+                addMutCalls ix limit mutConstr') >>=
+            (traceFilter "d2 p3" (\de -> countCalls' de <= limit + 2) .
                 addCopies)
 
     in  traceShow ("lib sizes", length lib, length lib', length unsafeLib, length unsafeRefLib) $
@@ -87,6 +93,9 @@ genDrivers ix limit lib constr =
         traceShow ("has unsafe", map (\(a,_,_,_,_) -> a) unsafeLib) $
         traceShow ("produces ref", map (\(a,_,_,_,_) -> a) unsafeRefLib) $
         traceShow ("safe constr", map (\(a,_,_,_,_) -> a) constr') $
+        traceShow ("transmute boring", isBoring "core$intrinsics$transmute") $
+        traceShow ("slice::from_raw_parts boring", isBoring "core$slice$from_raw_parts") $
+        traceShow ("slice::ref_slice boring", isBoring "core$slice$ref_slice") $
         drivers1 ++ drivers2
   where
     isUnsafe (f, _, _, _, _) = case i_fns ix M.! f of
@@ -142,15 +151,29 @@ genTree ix limit constr ty = go limit ty
 getFn ix name = runCtxM ix $ Index.getFn name
 getTyParams ix = fn_tyParams . getFn ix
 
-countCalls x = everything (+) (0 `mkQ` go) x
-  where go (DECall _ _ _) = 1
-        go (DEMutCall _ _ _ _) = 1
-        go _ = 0
+countCalls' de = countCalls (d_tree de) + sum (map countCalls $ A.elems $ d_copies de)
 
-countDistinctCalls x = S.size $ everything S.union (S.empty `mkQ` go) x
-  where go (DECall name _ _) = S.singleton (False, name)
-        go (DEMutCall _ name _ _) = S.singleton (True, name)
-        go _ = S.empty
+countCalls dt = go dt
+  where
+    go (DECall name _ args) = 1 + sum (map go args)
+    go (DEMutCall _ name _ args) = 1 + sum (map go args)
+    go (DENondet _) = 0
+    go (DETupleIntro dts) = sum $ map go dts
+    go (DETupleElim _ dt) = go dt
+    go (DERefIntro _ dt) = go dt
+    go (DERefElim dt) = go dt
+    go (DECopy _) = 0
+
+countDistinctCalls dt = S.size $ go dt
+  where
+    go (DECall name _ args) = S.insert name $ S.unions (map go args)
+    go (DEMutCall _ name _ args) = S.insert name $ S.unions (map go args)
+    go (DENondet _) = S.empty
+    go (DETupleIntro dts) = S.unions $ map go dts
+    go (DETupleElim _ dt) = go dt
+    go (DERefIntro _ dt) = go dt
+    go (DERefElim dt) = go dt
+    go (DECopy _) = S.empty
 
 genMutCall ix limit constr ty dt = do
     (name, tyParams, argTys, retTy, preds) <- constr
@@ -242,9 +265,12 @@ addCopies dt = results
                     Nothing -> return dt
 
     allCopiesUsedTwice count dts = all ((>= 2) . snd) $ M.toList copyCounts
-      where copyCounts = execState (everywhereM (mkM go) dts) $ M.fromList $ zip [0 .. count - 1] (repeat 0)
-            go dt@(DECopy i) = modify (M.adjust (+1) i) >> return dt
-            go dt = return dt
+      where
+        copyCounts = execState (mapM_ (walk' go) dts) init
+        init = M.fromList $ zip [0 .. count - 1] (repeat 0)
+
+        go (DECopy i) = modify (M.adjust (+1) i)
+        go _ = return ()
 
 
 walk a dt = do
@@ -259,10 +285,21 @@ walk a dt = do
         DERefElim dt' -> DERefElim <$> walk a dt'
         DECopy x -> return $ DECopy x
 
-treeSize dt = execState (walk  go dt) 0
-  where go dt = do
-            modify (+1)
-            return (dt :: DriverTree)
+walk' a dt = do
+    a dt
+    case dt of
+        DECall x y dts' -> mapM_ (walk' a) dts'
+        DEMutCall x y z dts' -> mapM_ (walk' a) dts'
+        DENondet x -> return ()
+        DETupleIntro dts' -> mapM_ (walk' a) dts'
+        DETupleElim x dt' -> walk' a dt'
+        DERefIntro x dt' -> walk' a dt'
+        DERefElim dt' -> walk' a dt'
+        DECopy x -> return ()
+
+
+treeSize dt = execState (walk' go dt) 0
+  where go dt = modify (+1)
 
 
 addMutCalls :: Index -> Int -> [FnDesc] -> DriverTree -> [DriverTree]
@@ -300,6 +337,51 @@ addMutCalls ix limit constr origDt = go (-1) origDt
 
     -- TODO: add mut calls to arguments of the mut call
     addMutCall i ty dt = genMutCall ix i constr ty dt
+
+isBoringMut ix = \name -> S.member name boring
+  where
+    fnsByImpl = buildFnsByImpl ix
+
+    boring = S.fromList $ evalState (filterM getBoring $ M.keys (i_fns ix)) M.empty
+
+    getBoring name = do
+        m <- get
+        case M.lookup name m of
+            Just b -> return b
+            Nothing -> do
+                modify (M.insert name False)
+                b <- calcBoring name
+                modify (M.insert name b)
+                return b
+
+    safeIntrinNames = S.fromList
+        [ "core$intrinsics$transmute"
+        , "core$intrinsics$offset"
+        ]
+
+    calcBoring name | Just f <- M.lookup name $ i_fns ix = case f of
+        FConcrete (FnDef _ _ _ _ _ _ _ _ body) -> do
+            let (ok, fns) = everything combine ((True, []) `mkQ` goExpr) body
+            if ok then do
+                bs <- mapM getBoring fns
+                return $ and bs
+            else return False
+        FAbstract (AbstractFnDef name _ _ _ _) -> do
+            bs <- forM (fromMaybe [] $ M.lookup name fnsByImpl) $
+                \(FnDef _ name _ _ _ _ _ _ _) -> getBoring name
+            return $ and bs
+        FExtern (ExternFnDef "RustIntrinsic" name _ _ _ _)
+          | traceShow ("check intrin", name) $ S.member name safeIntrinNames -> return True
+        FExtern _ -> return False
+    calcBoring _ = return False
+
+    goExpr (EAssign _ _) = (False, [])
+    goExpr (EAssignOp _ _ _) = (False, [])
+    goExpr (ECall name _ _ _) = (True, [name])
+    goExpr _ = (True, [])
+
+    combine (b1, fns1) (b2, fns2) = (b1 && b2, fns1 ++ fns2)
+
 
 
 -- Partition every subsequence into groups of two or more.  Returns the list of
@@ -355,7 +437,12 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
         return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr ("field" ++ show idx)
     go (DERefIntro mutbl dt) = do
         expr <- go dt
-        return $ Expr (TRef "_" mutbl $ typeOf expr) $ EAddrOf expr
+        expr' <- if hasStableLocation expr then return expr else do
+            var <- fresh
+            let ty = typeOf expr
+            tell [SLet (Pattern ty $ PVar var) (Just expr)]
+            return $ Expr ty $ EVar var
+        return $ Expr (TRef "_" mutbl $ typeOf expr') $ EAddrOf expr'
     go (DERefElim dt) = do
         expr <- go dt
         return $ Expr (derefTy $ typeOf expr) $ EDeref expr
@@ -418,9 +505,13 @@ expandDriver ix de = trace "expandDriver'" block
             (e1, e2) <- pairs es
             return $ assertNotAliased e1 e2
 
-        assertNotNull e = SExpr $ Expr TUnit $ ECall "__crust2$assert_not_null" [] [TBottom] [e]
+        assertNotNull e =
+            SExpr $ Expr TUnit $ ECall "__crust2$assert_not_null" [] [TBottom]
+                [addrOf e]
         assertNotAliased e1 e2 =
-            SExpr $ Expr TUnit $ ECall "__crust2$assert_not_aliased" [] [TBottom, TBottom] [e1, e2]
+            SExpr $ Expr TUnit $ ECall "__crust2$assert_not_aliased" [] [TBottom, TBottom]
+                [addrOf e1, addrOf e2]
+        addrOf e = Expr (TRef "_" MImm $ typeOf e) (EAddrOf e)
 
 {-
         castRef e@(Expr (TRef _ mutbl ty) _) = Expr (TPtr mutbl ty) $ ECast e

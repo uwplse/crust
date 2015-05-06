@@ -4,3 +4,4 @@ library collections$vec$*
 
 construction collections$vec$Vec$*$new
 construction collections$vec$Vec$*$push
+construction collections$vec$Vec$*$iter*

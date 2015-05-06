@@ -198,7 +198,7 @@ runPass config "generate-drivers" (items, ix) = do
             constrLines <- lines <$> readFile constrFileName
             return (libLines, constrLines)
 
-    return (addDrivers ix 4 (libLines, constrLines) items, ix)
+    return (addDrivers ix 2 (libLines, constrLines) items, ix)
 
 runPass config "hl-generate-drivers" (items, ix) = runPasses' config passes (items, ix)
   where passes =
@@ -706,14 +706,16 @@ desugarPatternLets = flip evalState 0 . everywhereM (mkM goExpr)
 
 fresh base = do
     cur <- get
-    modify (+1)
+    let next = cur + 1
+    next `seq` put next
     return $ base ++ show cur
 
-liftStrings x = x'''
+liftStrings x = evalState (concat <$> mapM go x) 0
   where
-    x' = everywhereM (mkM goExpr) x
-    x'' = evalStateT x' 0
-    x''' = let (a, b) = runWriter x'' in a ++ b
+    go :: Item -> State Int [Item]
+    go x = do
+        (x', extra) <- runWriterT $ everywhereM (mkM goExpr) x
+        return $ x' : extra
 
     goExpr orig@(Expr (TRef life mutbl TStr) (ESimpleLiteral lit)) = do
         let bytes = unhex $ drop 4 lit   -- drop "str_" prefix

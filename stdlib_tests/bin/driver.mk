@@ -103,7 +103,7 @@ test/%_0.drv-pp.ir: test/%_0.drv.ir driver/%.drv0
 		--passes hl-compile-drivers >$@.tmp
 	mv -v $@.tmp $@
 
-test/%_0.c: test/%_0.drv-pp.ir
+test/%.c: test/%.drv-pp.ir
 	$(CRUST_NATIVE) $< >$@.tmp
 	mv -v $@.tmp $@
 
