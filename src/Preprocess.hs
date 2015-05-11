@@ -267,6 +267,88 @@ runPass config "hl-compile-drivers" (items, ix) = runPasses' config passes (item
             , "filter-trait-impls"
             ]
 
+runPass config "hl-prepare-libs" (items, ix) = runPasses' config passes (items, ix)
+  where passes =
+            [ "inject-intrinsics"
+            -- Move some EBreak/EContinue into statement positions
+            -- first, since `scrub` will kill functions for having them
+            -- in non-Stmt positions.
+            , "move-break"
+            , "lift-strings"
+            , "reindex"
+            , "scrub"
+            , "generate-default-methods"
+            , "fix-block-ret"
+            , "desugar-index"
+            , "desugar-range"
+            , "desugar-arg-patterns"
+            , "desugar-pattern-lets"
+            , "desugar-for"
+            , "desugar-unsize"
+            , "fix-clone"
+            , "fix-address"
+            , "fix-bool"
+            , "fix-if"
+            , "const-expand"
+            , "lift-temps"
+            , "reindex"
+            , "rename-locals"
+            , "add-cleanup"
+            , "rename-locals"
+            , "generate-drop-glues"
+            , "cleanup-drops"
+            , "cleanup-temps"
+            ]
+
+runPass config "hl-prepare-drivers" (items, ix) = runPasses' config passes (items, ix)
+  where passes =
+            [ "inject-intrinsics"
+            , "add-driver-crust-init"
+            -- Move some EBreak/EContinue into statement positions
+            -- first, since `scrub` will kill functions for having them
+            -- in non-Stmt positions.
+            , "move-break"
+            -- , "lift-strings"
+            , "reindex"
+            , "scrub"
+            , "count"
+            -- , "generate-drop-glues"
+            , "filter-stubs"
+            , "count"
+            -- , "generate-default-methods"
+            , "fix-block-ret"
+            , "desugar-index"
+            , "desugar-range"
+            , "desugar-arg-patterns"
+            , "desugar-pattern-lets"
+            , "desugar-for"
+            , "desugar-unsize"
+            , "fix-clone"
+            , "fix-address"
+            , "fix-bool"
+            , "fix-if"
+            -- , "const-expand"
+            , "lift-temps"
+            , "reindex"
+            , "rename-locals"
+            , "add-cleanup"
+            , "rename-locals"
+            , "cleanup-drops"
+            , "cleanup-temps"
+            ]
+
+runPass config "hl-finish-drivers" (items, ix) = runPasses' config passes (items, ix)
+  where passes =
+            [ "strip-drop-glue-impls"
+            -- fix-unreachable-lets requires that extern fns and TBottom return
+            -- values are still around.
+            , "fix-unreachable-lets"
+            , "fix-bottom"
+            , "filter-extern-fns"
+            , "filter-trait-impls"
+            , "clean-duplicates"
+            ]
+
 runPass _ pass (items, ix) = return (runBasicPass ix pass items, ix)
 
 
@@ -288,6 +370,8 @@ runBasicPass ix "rename-locals" = renameLocals ix
 runBasicPass ix "add-cleanup" = addCleanup ix
 runBasicPass _ "filter-extern-fns" = filter (not . isExternFn)
 runBasicPass _ "filter-trait-impls" = filter (not . isTraitImpl)
+runBasicPass _ "filter-stubs" = filter (not . isStub)
+runBasicPass _ "stubify" = stubify
 runBasicPass _ "generate-drop-glues" = generateDropGlues
 runBasicPass _ "lift-strings" = liftStrings
 runBasicPass ix "generate-default-methods" = generateDefaultMethods ix
@@ -302,9 +386,11 @@ runBasicPass ix "add-driver-crust-init" = addDriverCrustInit ix
 runBasicPass _ "id" = id
 runBasicPass _ "dump" = dumpIr "dump"
 runBasicPass _ p | "dump-" `isPrefixOf` p = dumpIr (drop 5 p)
+runBasicPass _ "count" = \is -> traceShow ("item count:", length is) is
 runBasicPass ix "monomorphize-from-driver-root" = monomorphize ix ["_$crust_init"]
 runBasicPass _ "strip-drop-glue-impls" = stripDropGlueImpls
 runBasicPass ix "fix-unreachable-lets" = fixUnreachableLets ix
+runBasicPass _ "clean-duplicates" = cleanDuplicates
 runBasicPass ix "test" = \is ->
     let ty = TAdt "trait4$MyOption" [] [TInt $ BitSize 16]
     in traceShow ("has impl?", hasTraitImpl ix "trait4$Foo" [ty, ty]) is
@@ -390,6 +476,15 @@ cleanupDrops = everywhere (mkT cleanupDropT)
     isDroplessType (TFloat _) = True
     isDroplessType TChar = True
     isDroplessType _ = False
+
+stubify is = map go is
+  where
+    go (IFn (FnDef vis name lps tps args retTy impl preds _)) =
+        IFn (FnDef vis name lps tps args retTy impl preds (Expr retTy $ ESimpleLiteral "__stub"))
+    go i = i
+
+isStub (IFn (FnDef _ _ _ _ _ _ _ _ (Expr _ (ESimpleLiteral "__stub")))) = True
+isStub _ = False
 
 cleanupTemps = everywhere (mkT cleanupTempT)
   where
@@ -717,7 +812,8 @@ liftStrings x = evalState (concat <$> mapM go x) 0
         (x', extra) <- runWriterT $ everywhereM (mkM goExpr) x
         return $ x' : extra
 
-    goExpr orig@(Expr (TRef life mutbl TStr) (ESimpleLiteral lit)) = do
+    goExpr orig@(Expr (TRef life mutbl TStr) (ESimpleLiteral lit)) | lit /= "__stub" = do
+        traceShow lit $ do
         let bytes = unhex $ drop 4 lit   -- drop "str_" prefix
         traceShow bytes $ return ()
 
@@ -814,7 +910,7 @@ scrub items = scrubbed'
       (everything (&&) (True `mkQ` goTy (itemName item)) item)
       && (everything (&&) (True `mkQ` goExpr (itemName item)) item)
       && adtHasValidDrop item
-      && hasAbstractFn item
+      && goUseDefault item
       && stmtOnly (itemName item) item
 
     discardFor loc reason = traceShow ("discard", loc, "for", reason) False
@@ -833,9 +929,10 @@ scrub items = scrubbed'
         name `M.member` i_fns ix || discardFor loc ("missing drop", name)
     adtHasValidDrop _ = True
 
-    hasAbstractFn d@(IUseDefault (UseDefault _ _ (ImplClause name _ _))) =
-        name `M.member` i_fns ix || discardFor (itemName d) ("missing abstract fn")
-    hasAbstractFn _ = True
+    goUseDefault d@(IUseDefault (UseDefault _ _ (ImplClause name _ _))) =
+        (name `M.member` i_fns ix || discardFor (itemName d) ("missing abstract fn")) &&
+        ((name ++ "$$__default") `M.member` i_fns ix || discardFor (itemName d) ("missing __default"))
+    goUseDefault _ = True
 
     -- Check for EBreak/EContinue in non-statement positions.
     stmtOnly :: Data d => String -> d -> Bool
@@ -850,6 +947,47 @@ scrub items = scrubbed'
     stmtOnly_Expr_ loc EBreak = discardFor loc "non-Stmt EBreak"
     stmtOnly_Expr_ loc EContinue = discardFor loc "non-Stmt EContinue"
     stmtOnly_Expr_ loc e = and $ gmapQ (stmtOnly loc) e
+
+
+data CleanDuplicatesState = CleanDuplicatesState
+    { cd_vals :: S.Set Name
+    , cd_tys :: S.Set Name
+    , cd_impls :: S.Set ImplClause
+    }
+
+cleanDuplicates is = evalState (filterM checkDup is) $ CleanDuplicatesState S.empty S.empty S.empty
+  where
+    -- Returns False on dupes so they get filtered out, True otherwise.
+    checkDup i = case i of
+        IStruct (StructDef name _ _ _ _) -> checkTy name
+        IEnum (EnumDef name _ _ _ _) -> checkTy name
+        IConst (ConstDef name _ _) -> checkVal name
+        IFn (FnDef _ name _ _ _ _ _ _ _) -> checkVal name
+        IAbstractFn (AbstractFnDef name _ _ _ _) -> checkVal name
+        IExternFn (ExternFnDef _ name _ _ _ _) -> checkVal name
+        IAbstractType (AbstractTypeDef name _ _) -> checkTy name
+        IAssociatedType (AssociatedTypeDef _ _ impl _) -> checkImpl impl
+        IStatic (StaticDef name _ _) -> checkVal name
+        IUseDefault (UseDefault _ _ impl) -> checkImpl impl
+        ITraitImpl (TraitImpl _ _ impl _) -> checkImpl impl
+        IDriver _ -> return True
+        IMeta _ -> return True
+
+    checkVal name = do
+        present <- gets $ S.member name . cd_vals
+        when (not present) $ modify $ \s -> s { cd_vals = S.insert name $ cd_vals s }
+        return $ not present
+
+    checkTy name = do
+        present <- gets $ S.member name . cd_tys
+        when (not present) $ modify $ \s -> s { cd_tys = S.insert name $ cd_tys s }
+        return $ not present
+
+    checkImpl impl = do
+        present <- gets $ S.member impl . cd_impls
+        when (not present) $ modify $ \s -> s { cd_impls = S.insert impl $ cd_impls s }
+        return $ not present
+        
 
 
 moveBreak items = everywhere (mkT goMatchArm) items

@@ -107,9 +107,13 @@ let i_list = arith_intrinsics @ [
     i_body = Template ("{t1} {mname}();")
   };
   {
-    i_name = "core$intrinsics$set_memory";
+    i_name = "core$intrinsics$write_bytes";
     i_params = [ "t1" ];
-    i_body = Inline "memset({arg1}, {arg2}, sizeof({t1}) * {arg3})"
+    i_body = Template (
+        "rs_unit {mname}({t1} * dst, rs_u8 val, rs_usize count) {\n" ^
+        "\t memset(dst, val, count * sizeof({t1}));\n" ^
+        "\t return UNIT;\n" ^
+        "}")
   };
   {
     i_name = "core$intrinsics$transmute";

@@ -28,7 +28,7 @@ for f in "$dir/1/"*"/stdout"; do
         awk '/Violated property:/ {go=1} /^$/ {go=0} {if (go) print}' "$f"
         echo
 
-        awk '/^fn/ {go=0} /^fn '$fn'/ {go=1} {if (go) print}' "$input_file" | \
+        awk '/^fn/ {go=0} /^fn '$fn'\(/ {go=1} {if (go) print}' "$input_file" | \
             python "$(dirname "$0")/simple_format.py"
         echo
 

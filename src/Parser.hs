@@ -122,7 +122,7 @@ data TraitImpl = TraitImpl [LifetimeParam] [TyParam] ImplClause [Predicate]
   deriving (Eq, Show, Data, Typeable, Generic)
 
 data ImplClause = ImplClause Name [Lifetime] [Ty]
-  deriving (Eq, Show, Data, Typeable, Generic)
+  deriving (Eq, Ord, Show, Data, Typeable, Generic)
 
 data Expr = Expr Ty Expr_
   deriving (Eq, Show, Data, Typeable, Generic)

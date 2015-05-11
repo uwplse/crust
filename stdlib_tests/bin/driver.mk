@@ -10,6 +10,7 @@ TEST_HOME ?= .
 SRC ?= $(TEST_HOME)/src
 FILTERS ?= $(TEST_HOME)/filters
 ZEALOT ?= python $(TEST_HOME)/bin/zealot.py
+SCRIPT_BIN ?= $(TEST_HOME)/bin
 
 
 STDLIBS = core libc alloc unicode collections __crust2
@@ -72,13 +73,29 @@ ir/%.scrubbed.ir: ir/%.ir
 	$(PREPROCESS) --passes move-break,scrub <$< >$@.tmp
 	mv -v $@.tmp $@
 
+ir/%.prep.ir: ir/%.ir
+	$(PREPROCESS) --passes hl-prepare-libs <$< >$@.tmp
+	mv -v $@.tmp $@
+
+ir/%.stubs.ir: ir/%.prep.ir
+	$(PREPROCESS) --passes stubify <$< >$@.tmp
+	mv -v $@.tmp $@
+
 .SECONDEXPANSION:
 
-driver/%.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
+driver/%.lib.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 
-driver/%.drv0: driver/%.ir
+driver/%.lib-prep.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).prep.ir \
+		$(FILTERS)/%.filter
+	cp -v $< $@
+
+driver/%.lib-stubs.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).stubs.ir \
+		$(FILTERS)/%.filter
+	cp -v $< $@
+
+driver/%.drv0: driver/%.lib.ir
 	cat $< | $(PREPROCESS) \
 		--passes hl-generate-drivers \
 		--merged-filter $(FILTERS)/$*.filter \
@@ -91,19 +108,35 @@ driver/%.drv: driver/%.drv0
 		>$@.tmp
 	mv -v $@.tmp $@
 
-test/%_0.rs: driver/%.drv
+test/%.rs: driver/%.drv
 	cat $< | $(CRUST_NATIVE) -driver-gen -test-case-prefix test/$*
+	mv -v test/$*_0.rs $@
 
-test/%_0.drv.ir: test/%_0.rs lib/lib__crust.rlib
+test/%.drv.ir: test/%.rs lib/lib__crust.rlib
 	$(ZEALOT) $(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
-test/%_0.drv-pp.ir: test/%_0.drv.ir driver/%.drv0
-	cat $^ | $(PREPROCESS) \
-		--passes hl-compile-drivers >$@.tmp
+test/%.drv-prep.ir: driver/%.lib-stubs.ir test/%.drv.ir
+	cat $^ | $(PREPROCESS) --passes hl-prepare-drivers >$@.tmp
 	mv -v $@.tmp $@
 
-test/%.c: test/%.drv-pp.ir
+#test/%.drv-split.stamp: test/%.drv.ir
+#	rm -fv test/$*.drv-split-*.ir
+#	$(SCRIPT_BIN)/split-drivers.sh $< test/$*.drv-split
+#	touch $@
+
+#test/%.drv-prep.stamp: driver/%.lib-stubs.ir test/%.drv-split.stamp
+#	rm -fv test/$*.drv-prep-*.ir
+#	ls test/$*.drv-split-*.ir | parallel \
+#		$(SCRIPT_BIN)/prepare-driver.sh $(PREPROCESS) $< test/$*.drv-prep
+#	cat $^ | $(PREPROCESS) --passes hl-prepare-drivers >$@.tmp
+#	touch $@
+
+test/%.drv-fin.ir: driver/%.lib-prep.ir test/%.drv-prep.ir
+	cat $^ | $(PREPROCESS) --passes hl-finish-drivers >$@.tmp
+	mv -v $@.tmp $@
+
+test/%.c: test/%.drv-fin.ir
 	$(CRUST_NATIVE) $< >$@.tmp
 	mv -v $@.tmp $@
 

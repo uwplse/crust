@@ -97,14 +97,8 @@ extTr def ext = unTr ((Tr def) `ext0` (Tr ext))
 mkTr = extTr (\a d -> return (d, a))
 
 liftTempsM :: [Item] -> LifterM [Item]
-liftTempsM x = goItems x
+liftTempsM x = concat <$> mapM goItem x
   where
-    goItems [] = return []
-    goItems (i : is) = do
-        i' <- goItem i
-        is' <- goItems is
-        return (i' ++ is')
-
     goItem (IFn f) = do
         (f', ds) <- traverse go concat f
         return [IFn f']
