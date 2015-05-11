@@ -11,7 +11,7 @@ import Control.Monad.Writer
 import qualified Data.Array as A
 import Data.Generics hiding (typeOf, Generic)
 import Data.Hashable
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, nub)
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
@@ -58,6 +58,9 @@ data DriverExpr = DE
     }
   deriving (Eq, Show, Data, Typeable, Generic)
 
+instance Hashable DriverExpr where
+    hashWithSalt s de = hashWithSalt s (d_tree de) * 17 + hashWithSalt s (A.elems $ d_copies de)
+
 traceFilter msg f xs = filter (\x -> f x || traceShow ("discard", msg) False) xs
 
 genDrivers :: Index -> Int -> [FnDesc] -> [FnDesc] -> [DriverExpr]
@@ -72,19 +75,25 @@ genDrivers ix limit lib constr =
             (\(n, _, _, _, _) -> not $ isBoring n) constr'
 
         drivers1 =
-            (traceFilter "d1 p1" (\dt -> countDistinctCalls dt <= limit + 1) $
+            (dedupDrivers .
+                traceFilter "d1 p1" (\dt -> countDistinctCalls dt <= limit + 1) $
                 mkDriverTrees ix limit unsafeLib constr') >>=
-            (traceFilter "d1 p2" (\dt -> countDistinctCalls dt <= limit + 1) .
+            (dedupDrivers .
+                traceFilter "d1 p2" (\dt -> countDistinctCalls dt <= limit + 1) .
                 addMutCalls ix limit mutConstr') >>=
-            (traceFilter "d1 p3" (\de -> countCalls' de <= limit + 1) .
+            (dedupDrivers .
+                traceFilter "d1 p3" (\de -> countCalls' de <= limit + 1) .
                 addCopies)
 
         drivers2 =
-            (traceFilter "d2 p1" (\dt -> countDistinctCalls dt <= limit + 2) $
+            (dedupDrivers .
+                traceFilter "d2 p1" (\dt -> countDistinctCalls dt <= limit + 2) $
                 mkDriverTreePairs ix limit unsafeRefLib constr') >>=
-            (traceFilter "d2 p2" (\dt -> countDistinctCalls dt <= limit + 2) .
+            (dedupDrivers .
+                traceFilter "d2 p2" (\dt -> countDistinctCalls dt <= limit + 2) .
                 addMutCalls ix limit mutConstr') >>=
-            (traceFilter "d2 p3" (\de -> countCalls' de <= limit + 2) .
+            (dedupDrivers .
+                traceFilter "d2 p3" (\de -> countCalls' de <= limit + 2) .
                 addCopies)
 
     in  traceShow ("lib sizes", length lib, length lib', length unsafeLib, length unsafeRefLib) $
@@ -564,3 +573,9 @@ splitFilter filterLines =
     go prefix ln
       | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
       | otherwise = Nothing
+
+
+dedupDrivers ds = concat $ map snd $ M.toList table'
+  where
+    table = M.fromListWith (++) $ map (\d -> (hash d, [d])) ds
+    table' = M.map nub table
