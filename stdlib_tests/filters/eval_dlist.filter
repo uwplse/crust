@@ -1,0 +1,7 @@
+# ir: stdlibs
+
+library collections$linked_list$*
+
+construction collections$linked_list$LinkedList$*$new
+construction collections$linked_list$LinkedList$*$push_back
+construction collections$linked_list$LinkedList$*$iter*

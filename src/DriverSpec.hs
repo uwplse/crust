@@ -443,7 +443,7 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
         return $ Expr (TTuple $ map typeOf exprs) $ ETupleLiteral exprs
     go (DETupleElim idx dt) = do
         expr <- go dt
-        return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr (show idx)
+        return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr $ "field" ++ show idx
     go (DERefIntro mutbl dt) = do
         expr <- go dt
         expr' <- if hasStableLocation expr then return expr else do

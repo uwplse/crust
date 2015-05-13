@@ -1,0 +1,7 @@
+# ir: stdlibs
+
+library collections$vec_deque$*
+
+construction collections$vec_deque$VecDeque$*$with_capacity
+construction collections$vec_deque$VecDeque$*$push_*
+construction collections$vec_deque$VecDeque$*$iter*
