@@ -10,4 +10,8 @@ done | \
     parallel \
         --results "results/$(date +%Y%m%d-%H%M%S)-$(basename "$cfile")" \
         --timeout 300 \
-        cbmc --unwind 5 --no-unwinding-assertions -I ../src --ILP32 --function '{/}' '{//}'
+        cbmc --unwind 5 --no-unwinding-assertions -I ../src --ILP32 \
+            --pointer-check --bounds-check \
+            --function '{/}' '{//}'
+
+# No --z3 because that backend can't handle empty structs like rs_unit.

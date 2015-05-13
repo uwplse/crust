@@ -1,4 +1,5 @@
 # ir: stdlibs
+## bound = 2
 
 library core$slice$*
 

@@ -11,10 +11,13 @@ fi
 
 echo "collecting failed results from ${dir}"
 
-input_file="${dir%/*/*/*}"
-input_file="$(basename "$input_file")"
-input_file="${input_file#*-*-}"
-input_file="test/${input_file}.rs"
+input_file=$2
+if [[ -z "$input_file" ]]; then
+    input_file="${dir%/*/*/*}"
+    input_file="$(basename "$input_file")"
+    input_file="${input_file#*-*-}"
+    input_file="test/${input_file}.rs"
+fi
 echo "input file: $input_file"
 
 num_failed=0

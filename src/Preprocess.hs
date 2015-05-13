@@ -58,6 +58,7 @@ data Config = Config
     , c_filter_file :: String
     , c_passes :: [String]
     , c_trace_passes :: Bool
+    , c_driver_bound :: Int
     }
 
 defaultConfig = Config
@@ -69,6 +70,7 @@ defaultConfig = Config
     , c_filter_file = ""
     , c_passes = []
     , c_trace_passes = False
+    , c_driver_bound = 3
     }
 
 readArgs config args = go args config
@@ -86,6 +88,7 @@ readArgs config args = go args config
     go ("--passes" : passes : args) config = go args $
         config { c_passes = words $ map (\c -> case c of ',' -> ' '; c -> c) passes
                , c_mode = MRunPasses }
+    go ("--driver-bound" : boundStr : args) config = go args $ config { c_driver_bound = read boundStr }
     go ("--trace-passes" : args) config = go args $ config { c_trace_passes = True }
     go [] config = config
 
@@ -184,11 +187,12 @@ tracePass (Config { c_trace_passes = shouldTrace }) idx pass (items, ix) = do
 
 runPass _ "reindex" (items, _) = return (items, mkIndex items)
 runPass config "generate-drivers" (items, ix) = do
-    (libLines, constrLines) <-
+    (libLines, constrLines, bound) <-
         if isJust $ c_merged_filter_file config then do
             let fileName = fromJust $ c_merged_filter_file config
             filterLines <- lines <$> readFile fileName
-            return $ splitFilter filterLines
+            let (lib, constr, optBound) = splitFilter filterLines
+            return (lib, constr, fromMaybe (c_driver_bound config) optBound)
         else do
             let libFileName = fromMaybe (error "need --library-filter") $
                     c_library_filter_file config
@@ -196,9 +200,9 @@ runPass config "generate-drivers" (items, ix) = do
                     c_construction_filter_file config
             libLines <- lines <$> readFile libFileName
             constrLines <- lines <$> readFile constrFileName
-            return (libLines, constrLines)
+            return (libLines, constrLines, c_driver_bound config)
 
-    return (addDrivers ix 2 (libLines, constrLines) items, ix)
+    return (addDrivers ix bound (libLines, constrLines) items, ix)
 
 runPass config "hl-generate-drivers" (items, ix) = runPasses' config passes (items, ix)
   where passes =

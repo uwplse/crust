@@ -443,7 +443,7 @@ expandDriver' ix de = traceShow de $ Expr (typeOf expr) $ EBlock stmts expr
         return $ Expr (TTuple $ map typeOf exprs) $ ETupleLiteral exprs
     go (DETupleElim idx dt) = do
         expr <- go dt
-        return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr ("field" ++ show idx)
+        return $ Expr (tupleFieldTy idx $ typeOf expr) $ EField expr (show idx)
     go (DERefIntro mutbl dt) = do
         expr <- go dt
         expr' <- if hasStableLocation expr then return expr else do
@@ -512,6 +512,7 @@ expandDriver ix de = trace "expandDriver'" block
 
         twoStmts = do
             (e1, e2) <- pairs es
+            guard $ isMutRef e1 || isMutRef e2
             return $ assertNotAliased e1 e2
 
         assertNotNull e =
@@ -531,6 +532,10 @@ expandDriver ix de = trace "expandDriver'" block
 
         pairs [] = []
         pairs (x:xs) = zip (repeat x) xs ++ pairs xs
+
+        isMutRef e = case typeOf e of
+            TRef _ MMut _ -> True
+            _ -> False
 
 
 
@@ -566,13 +571,18 @@ filterFnsByName filterLines items = traceShow regexStr $ filter check items
     check _ = False
 
 
+splitFilter :: [String] -> ([String], [String], Maybe Int)
 splitFilter filterLines =
     (mapMaybe (go "library ") filterLines,
-     mapMaybe (go "construction ") filterLines)
+     mapMaybe (go "construction ") filterLines,
+     parseBound <$> listToMaybe (mapMaybe (go "## bound = ") filterLines))
   where
     go prefix ln
       | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
       | otherwise = Nothing
+
+    parseBound :: String -> Int
+    parseBound ln = read $ drop (length "## bound = ") ln
 
 
 dedupDrivers ds = concat $ map snd $ M.toList table'

@@ -275,7 +275,7 @@ let i_list = arith_intrinsics @ [
         "        return malloc(new_size);\n" ^
         "    } else {\n" ^
         "        rs_u8 *to_ret = malloc(new_size);\n" ^
-        "        memmove(to_ret, ptr, new_size);\n" ^
+        "        memcpy(to_ret, ptr, new_size);\n" ^
         "        free(ptr);\n" ^
         "        return to_ret;\n" ^
         "    }\n" ^
