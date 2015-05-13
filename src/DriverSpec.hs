@@ -575,14 +575,11 @@ splitFilter :: [String] -> ([String], [String], Maybe Int)
 splitFilter filterLines =
     (mapMaybe (go "library ") filterLines,
      mapMaybe (go "construction ") filterLines,
-     parseBound <$> listToMaybe (mapMaybe (go "## bound = ") filterLines))
+     read <$> listToMaybe (mapMaybe (go "## bound = ") filterLines))
   where
     go prefix ln
       | prefix `isPrefixOf` ln = Just $ drop (length prefix) ln
       | otherwise = Nothing
-
-    parseBound :: String -> Int
-    parseBound ln = read $ drop (length "## bound = ") ln
 
 
 dedupDrivers ds = concat $ map snd $ M.toList table'
