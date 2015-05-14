@@ -213,7 +213,7 @@ let i_list = arith_intrinsics @ [
   {
     i_name = "core$intrinsics$copy";
     i_params = [ "t1" ];
-    i_body = Inline ("(memmove({arg2}, {arg1}, {arg3} * sizeof({t1}))," ^ CRep.literal_unit_name ^ ")")
+    i_body = Inline ("(memcpy({arg2}, {arg1}, {arg3} * sizeof({t1}))," ^ CRep.literal_unit_name ^ ")")
   };
   {
     i_name = "core$ptr$read";
