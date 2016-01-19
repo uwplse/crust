@@ -561,12 +561,14 @@ class rust_pp buf output_file_prefix num_tests = object(self)
         self#emit_expr e';
       end
     | `Address_of e' -> begin
+        self#put "(";
         self#put "&";
         (match fst e with
         | `Ref_Mut _ -> self#put "mut "
         | `Ptr_Mut _ -> self#put "mut "
         | _ -> ());
         self#emit_expr e';
+        self#put ")";
       end
     | `Call (name, las, tas, args) -> begin
         self#emit_call_path name tas;
