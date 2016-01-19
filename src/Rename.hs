@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction, Rank2Types #-}
+{-# LANGUAGE NoMonomorphismRestriction, Rank2Types, FlexibleContexts #-}
 module Rename
 where
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable,
-             FlexibleInstances, OverlappingInstances #-}
+             FlexibleContexts, FlexibleInstances, OverlappingInstances #-}
 module Unify
 where
 

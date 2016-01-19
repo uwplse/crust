@@ -1,6 +1,8 @@
-{-# LANGUAGE NoMonomorphismRestriction, Rank2Types #-}
+{-# LANGUAGE NoMonomorphismRestriction, Rank2Types, FlexibleContexts #-}
 module TempLift
 where
+
+import Prelude hiding (traverse)
 
 import Control.Applicative
 import Control.Monad

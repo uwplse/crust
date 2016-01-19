@@ -1,5 +1,5 @@
 {-# LANGUAGE NoMonomorphismRestriction, DeriveDataTypeable, Rank2Types,
-        ScopedTypeVariables #-}
+        ScopedTypeVariables, FlexibleContexts #-}
 import Control.Applicative ((<$>))
 import Control.Exception (evaluate)
 import Control.Monad
