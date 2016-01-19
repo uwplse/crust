@@ -6,7 +6,7 @@ RBMC ?= $(CRUST_HOME)/bin/rbmc
 PREPROCESS ?= $(CRUST_HOME)/bin/Preprocess
 CRUST_NATIVE ?= $(CRUST_HOME)/bin/crust.native
 
-TEST_HOME ?= .
+TEST_HOME ?= $(CRUST_HOME)/stdlib_tests
 SRC ?= $(TEST_HOME)/src
 FILTERS ?= $(TEST_HOME)/filters
 ZEALOT ?= python $(TEST_HOME)/bin/zealot.py
@@ -17,22 +17,22 @@ STDLIBS = core libc alloc unicode collections __crust2
 STDLIB_RLIBS = $(patsubst %,lib/lib%.rlib,$(STDLIBS))
 STDLIB_IRS = $(patsubst %,ir/lib%.ir,$(STDLIBS))
 
-TARGET = x86_64-custom-linux-gnu.json
+TARGET = $(TEST_HOME)/x86_64-custom-linux-gnu.json
 
 
 lib/lib%.rlib: $(SRC)/lib%/lib.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
-lib/lib%.rlib: ../tests/%.rs
+lib/lib%.rlib: $(CRUST_HOME)/tests/%.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
-lib/lib%.rlib: ../tests/driver/%.rs
+lib/lib%.rlib: $(CRUST_HOME)/tests/driver/%.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
-lib/lib__crust.rlib: ../src/crust-stubs.rs
+lib/lib__crust.rlib: $(CRUST_HOME)/src/crust-stubs.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
-lib/lib__crust2.rlib: ../src/crust.rs lib/lib__crust.rlib
+lib/lib__crust2.rlib: $(CRUST_HOME)/src/crust.rs lib/lib__crust.rlib
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
 
@@ -40,15 +40,15 @@ ir/lib%.ir: $(SRC)/lib%/lib.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
-ir/lib%.ir: ../tests/%.rs $(STDLIB_RLIBS)
+ir/lib%.ir: $(CRUST_HOME)/tests/%.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
-ir/lib%.ir: ../tests/driver/%.rs $(STDLIB_RLIBS)
+ir/lib%.ir: $(CRUST_HOME)/tests/driver/%.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
-ir/lib__crust2.ir: ../src/crust.rs $(STDLIB_RLIBS)
+ir/lib__crust2.ir: $(CRUST_HOME)/src/crust.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
@@ -83,15 +83,15 @@ ir/%.stubs.ir: ir/%.prep.ir
 
 .SECONDEXPANSION:
 
-driver/%.lib.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
+driver/%.lib.ir: ir/$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 
-driver/%.lib-prep.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).prep.ir \
+driver/%.lib-prep.ir: ir/$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).prep.ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 
-driver/%.lib-stubs.ir: ir/$$(shell bin/filter_helper.sh $(FILTERS)/$$*.filter).stubs.ir \
+driver/%.lib-stubs.ir: ir/$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).stubs.ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 
