@@ -253,7 +253,7 @@ isFatPointer ty = case ty of
     _ -> False
 
 
-computedType ix (Expr ty e) = case e of
+computedType ix (Expr ty e) = traceShow ("computing type of", e) $ case e of
     EConst c ->
         let ConstDef _ ty' _ = i_consts ix M.! c
         in ty'

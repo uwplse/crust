@@ -29,6 +29,9 @@ lib/lib%.rlib: $(CRUST_HOME)/tests/%.rs
 lib/lib%.rlib: $(CRUST_HOME)/tests/driver/%.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
+lib/lib%.rlib: $(CRUST_HOME)/tests/custom/%.rs
+	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
+
 lib/lib__crust.rlib: $(CRUST_HOME)/src/crust-stubs.rs
 	$(RUSTC) -L lib --out-dir=lib --target=$(TARGET) $<
 
@@ -48,10 +51,27 @@ ir/lib%.ir: $(CRUST_HOME)/tests/driver/%.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
+ir/lib%.ir: $(CRUST_HOME)/tests/custom/%.rs $(STDLIB_RLIBS)
+	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
+	mv -v $@.tmp $@
+
 ir/lib__crust2.ir: $(CRUST_HOME)/src/crust.rs $(STDLIB_RLIBS)
 	$(RBMC) -L lib --target=$(TARGET) $< >$@.tmp
 	mv -v $@.tmp $@
 
+
+# NB: avoid overlap with other (prefix)%.ir rules
+ir/scrubbed.%.ir: ir/%.ir
+	$(PREPROCESS) --passes move-break,scrub <$< >$@.tmp
+	mv -v $@.tmp $@
+
+ir/prep.%.ir: ir/%.ir
+	$(PREPROCESS) --passes hl-prepare-libs <$< >$@.tmp
+	mv -v $@.tmp $@
+
+ir/stubs.%.ir: ir/prep.%.ir
+	$(PREPROCESS) --passes stubify <$< >$@.tmp
+	mv -v $@.tmp $@
 
 ir/stdlibs.ir: $(STDLIB_IRS)
 	cat $^ >$@.tmp
@@ -69,29 +89,17 @@ ir/alloc_lib%.ir: ir/lib%.ir ir/libcore.ir ir/liblibc.ir ir/liballoc.ir
 	cat $^ >$@.tmp
 	mv -v $@.tmp $@
 
-ir/%.scrubbed.ir: ir/%.ir
-	$(PREPROCESS) --passes move-break,scrub <$< >$@.tmp
-	mv -v $@.tmp $@
-
-ir/%.prep.ir: ir/%.ir
-	$(PREPROCESS) --passes hl-prepare-libs <$< >$@.tmp
-	mv -v $@.tmp $@
-
-ir/%.stubs.ir: ir/%.prep.ir
-	$(PREPROCESS) --passes stubify <$< >$@.tmp
-	mv -v $@.tmp $@
-
 .SECONDEXPANSION:
 
 driver/%.lib.ir: ir/$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 
-driver/%.lib-prep.ir: ir/$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).prep.ir \
+driver/%.lib-prep.ir: ir/prep.$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 
-driver/%.lib-stubs.ir: ir/$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).stubs.ir \
+driver/%.lib-stubs.ir: ir/stubs.$$(shell $(TEST_HOME)/bin/filter_helper.sh $(FILTERS)/$$*.filter).ir \
 		$(FILTERS)/%.filter
 	cp -v $< $@
 

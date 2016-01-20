@@ -1,0 +1,5 @@
+# ir: core_libcell
+
+library cell$*
+
+construction cell$*$new

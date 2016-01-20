@@ -1,68 +1,57 @@
-CRust is implemented as three separate binaries that are called in sequence.
-The `rbmc` program invokes parts of the Rust compiler and processes the output
-to produce IR corresponding to the input code.  `Preprocess` preprocesses the
-IR to simplify it slightly.  Finally, `crust` analyzes the IR, converts it to
-C code, and generates the driver function.
+# Dependencies
 
-The tests/ directory includes several Rust source files that together define
-the set of interesting features of Rust that we support.  The most complex test
-case is `refcell.rs`, which mainly consists of code copied from the Rust
-standard library's definition of the RefCell type.
+ * [rust-lang/rust](https://github.com/rust-lang/rust), revision 1.0.0-alpha.2-1771-gd528aa9
 
-To generate the C code and driver functions for a given input, run the
-following command:
-    bin/rbmc -L libs -A warnings tests/foo.rs | \
-        bin/Preprocess | \
-        bin/crust.native - > ./output.c
+ * GHC 7
+ * [parsec](https://hackage.haskell.org/package/parsec)
+ * [regex-tdfa](https://hackage.haskell.org/package/regex-tdfa)
+ * [syb](https://hackage.haskell.org/package/syb)
 
-output.c can then be verified via cbmc with:
-    cbmc ./output.c
+ * OCaml compiler
+ * ocamlbuild
 
-The current version of refcell.rs included in tests/ is a working
-version. The refcell_error*.patch files are a collection of changes to
-refcell.rs that lead to the introduction of a bug. To verify that
-these bugs are in fact caught by CRust, patch refcell.rs (remember to
-make a backup of the original beforehand!), and re-run the above
-process from the beginning. cbmc should output a verification failure
-and a (long) counter-example execution trace.
+ * [CBMC](http://www.cprover.org/cbmc/)
 
-For the refcell.rs test case, you can also use the provided bin/verify_rc.sh
-script.  verify_rc.sh runs all steps (including invoking cbmc) on the base
-refcell.rs example and also checks the result of applying each of the
-refcell_error patches.
+Crust runs only on 64-bit Linux.
 
 
-Installation and building:
-CBMC is freely available software and is available in Debian and derived
-distributions.  For other operating systems or distributions, consult the CBMC
-homepage or your OS's package manager.
+# Environment
 
-Building rbmc:
-The rbmc tool currently only works with a very specific version of the Rust
-compiler. To build rbmc, you must have the corresponding version of the
-compiler installed on your system.  The version required is git revision
-336349c93207d792587eb0b5258b29da6ec0db8a from the rust git repository found
-at https://github.com/rust-lang/rust .  Note that building Rust from source can
-easily take 30-60 minutes.
+After compiling the version of Rust indicated above:
 
-For simplicity, consider configuring rustc using --enable-rpath.  Otherwise, it
-will be necessary to set LD_LIBRARY_PATH with the location of the Rust
-libraries.
+ * Add `/path/to/rust/x86_64-.../stage2/bin` to `$PATH`
+ * Add `/path/to/rust/x86_64-.../stage2/lib` to `$LD_LIBRARY_PATH`
 
-Once built, ensure that the rustc binary is installed in a location in your
-PATH.  rbmc can then be built with a simple "make rbmc" issued in the project's
-src/ directory.
+Also, add a symlink to the Rust source code in `stdlib_tests/`:
 
-Building Preprocess:
-Preprocess is written in Haskell and requires the ghc compiler, the alex lexer
-generator, and the libraries syb and parsec.  These are all bundled as part of
-the Haskell Platform.  Consult your operating system or distribution's package
-manager for how to get this software. Once you have installed these
-requirements, you should be able to build the Preprocess binary with
-"make Preprocess".
+    ln -s /path/to/rust/src /path/to/crust/stdlib_tests/src
 
-Building crust:
-Crust requires at least version 4.01 of the ocaml compiler. It also requires
-that you have ocamlfind and ocamlbuild installed on your system (ocamlbuild is
-sometimes bundled separately from the compiler). Once these preconditions are
-met, simply issue "make" in the src/crust/ subdirectory.
+
+# Compiling
+
+Run `make` at the top level.
+
+
+# Running tests
+
+    mkdir stdlib_tests_build
+    cd stdlib_tests_build
+    mkdir lib ir driver test
+    # Generate test drivers:
+    ../stdlib_tests/bin/driver.mk test/eval_vec.c
+    # Run tests:
+    ../stdlib_tests/bin/run_tests.sh test/eval_vec.c
+    # Report failed tests:
+    ../stdlib_tests/bin/collect_failing.sh
+
+Replace the name `eval_vec` with the basename of one of the files from
+`crust/stdlib_tests/filters` to change which tests are run.
+
+
+# Adding new tests
+
+TODO: not quite working yet - you can add new filters
+(`stdlib_tests/filters/cell.filter`) and new code
+(`crust/test/custom/cell.rs`), but you need to manually add
+`extern crate cell` to `build/test/z_cell.rs` and `.../bin/driver.mk
+lib/libcell.rlib`)
