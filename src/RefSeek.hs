@@ -39,7 +39,7 @@ withCollectedRefs ix mkBody input = evalState (go [] [addrOfExpr input]) 0
             stmts <- zipWithM (mkTupleLet e) [0..] tys
             expr <- go acc (map letToExpr stmts ++ es)
             return $ Expr TBottom $ EBlock stmts expr
-        TRef _ _ _ -> go (e : acc) es
+        TRef _ _ _ -> go (derefExpr e : acc) es
         _ -> go acc es
     go acc (e : es) = go acc es
     go acc [] = return $ mkBody acc
