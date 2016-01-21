@@ -55,7 +55,7 @@ withCollectedRefs ix mkBody input = evalState (go [] [addrOfExpr input]) 0
         varName <- fresh $ "tuple" ++ show idx
         return $ SLet (Pattern (refTy ty) $ PRefVar varName) (Just $ Expr ty $ EField base $ "field" ++ show idx)
 
-    letToExpr (SLet (Pattern (TRef _ _ ty) (PRefVar name)) _) = Expr ty $ EVar name
+    letToExpr (SLet (Pattern ty (PRefVar name)) _) = Expr ty $ EVar name
 
     mkMatchArm ty mkBody idx (VariantDef name tys) = do
         varNames <- replicateM (length tys) (fresh name)
