@@ -1,0 +1,31 @@
+diff --git a/src/librustc_privacy/lib.rs b/src/librustc_privacy/lib.rs
+index 44ab096..ac1a895 100644
+--- a/src/librustc_privacy/lib.rs
++++ b/src/librustc_privacy/lib.rs
+@@ -574,7 +574,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
+         match result {
+             None => true,
+             Some((span, msg, note)) => {
+-                self.tcx.sess.span_err(span, &msg[..]);
++                self.tcx.sess.span_warn(span, &msg[..]);
+                 match note {
+                     Some((span, msg)) => {
+                         self.tcx.sess.span_note(span, &msg[..])
+@@ -679,7 +679,7 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
+             UnnamedField(idx) => format!("field #{} of {} is private",
+                                          idx + 1, struct_desc),
+         };
+-        self.tcx.sess.span_err(span, &msg[..]);
++        self.tcx.sess.span_warn(span, &msg[..]);
+     }
+ 
+     // Given the ID of a method, checks to ensure it's in scope.
+@@ -908,7 +908,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for PrivacyVisitor<'a, 'tcx> {
+                             !self.private_accessible(f.id.node))
+                     });
+                     if any_priv {
+-                        self.tcx.sess.span_err(expr.span,
++                        self.tcx.sess.span_warn(expr.span,
+                             "cannot invoke tuple struct constructor \
+                              with private fields");
+                     }
