@@ -26,6 +26,12 @@ Also, add a symlink to the Rust source code in `stdlib_tests/`:
 
     ln -s /path/to/rust/src /path/to/crust/stdlib_tests/src
 
+Finally apply `stdlib_tests/patches/eval_panic_fix.patch` to the Rust source
+code.  This patch simplifies the `panic!()` macro to avoid using language
+features that Crust doesn't support.
+
+
+
 
 # Compiling
 
