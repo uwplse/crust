@@ -1,0 +1,15 @@
+This directory contains pre-generated tests for data structures from the Rust
+standard library.
+
+To compile these tests, you must apply `rustc-no-privacy-check.patch` to your
+Rust compiler (or otherwise change all `span_err` to `span_warn` in the
+definition of `rustc_privacy::PrivacyVisitor`).  The patch will downgrade the
+error about accessing private fields to a warning, so that the tests can check
+for invalid references inside fields of returned structures (such as
+iterators).
+
+The tests refer to the libraries `__crust` (low-level Crust verifier
+intrinsics) and `__crust2` (higher-level wrappers).  You can build a stub
+version of `__crust` from `../src/crust-stubs.rs`.  Then build `__crust2` from
+`../src/crust.rs`.  Once those are built, you can compile the test code in this
+directory.
