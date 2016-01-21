@@ -77,15 +77,15 @@ ir/stdlibs.ir: $(STDLIB_IRS)
 	cat $^ >$@.tmp
 	mv -v $@.tmp $@
 
-ir/stdlibs_lib%.ir: ir/lib%.ir ir/stdlibs.ir
+ir/stdlibs_lib%.ir: ir/lib%.ir ir/stdlibs.ir ir/lib__crust2.ir
 	cat $^ >$@.tmp
 	mv -v $@.tmp $@
 
-ir/core_lib%.ir: ir/lib%.ir ir/libcore.ir
+ir/core_lib%.ir: ir/lib%.ir ir/libcore.ir ir/lib__crust2.ir
 	cat $^ >$@.tmp
 	mv -v $@.tmp $@
 
-ir/alloc_lib%.ir: ir/lib%.ir ir/libcore.ir ir/liblibc.ir ir/liballoc.ir
+ir/alloc_lib%.ir: ir/lib%.ir ir/libcore.ir ir/liblibc.ir ir/liballoc.ir ir/lib__crust2.ir
 	cat $^ >$@.tmp
 	mv -v $@.tmp $@
 
