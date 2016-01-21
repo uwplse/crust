@@ -31,8 +31,6 @@ code.  This patch simplifies the `panic!()` macro to avoid using language
 features that Crust doesn't support.
 
 
-
-
 # Compiling
 
 Run `make` at the top level.
@@ -56,8 +54,15 @@ Replace the name `eval_vec` with the basename of one of the files from
 
 # Adding new tests
 
-TODO: not quite working yet - you can add new filters
-(`stdlib_tests/filters/cell.filter`) and new code
-(`crust/test/custom/cell.rs`), but you need to manually add
-`extern crate cell` to `build/test/z_cell.rs` and `.../bin/driver.mk
-lib/libcell.rlib`)
+To test other code from the Rust standard library, create a new `.filter` file in
+`stdlib_tests/filters`, following the format of
+`stdlib_tests/filters/eval_vec.filter`.  Edit the `library` and `construction`
+lines to reflect the mangled names of the functions you want to test (library
+set) and functions for constructing the data types of interest (construction
+set).  In general, the mangled name used by Crust is the fully qualified name
+of the function (as in `collections::vec::Vec::<T>::new`), with each `::`
+replaced by `$`.
+
+After creating the filter, follow the instructions above for running tests,
+replacing `eval_vec` with the name of the new filter (minus `.filter`
+extension).
