@@ -148,4 +148,13 @@ test/%.c: test/%.drv-fin.ir
 	$(CRUST_NATIVE) $< >$@.tmp
 	mv -v $@.tmp $@
 
+
+bmc/ready.%.ir: ir/stdlibs_lib%.ir
+	$(PREPROCESS) --passes hl-prepare-libs,hl-finish-drivers <$< >$@.tmp
+	mv -v $@.tmp $@
+
+bmc/%.c: bmc/ready.%.ir
+	$(CRUST_NATIVE) $< >$@.tmp
+	mv -v $@.tmp $@
+
 .SECONDARY:
