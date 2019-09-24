@@ -1,3 +1,5 @@
+**THIS PROJECT IS NO LONGER ACTIVELY MAINTAINED AND IS ARCHIVED HERE FOR REFERENCE PURPOSES**
+
 # Dependencies
 
  * [rust-lang/rust](https://github.com/rust-lang/rust), revision 1.0.0-alpha.2-1771-gd528aa9
